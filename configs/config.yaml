@@ -9,6 +9,14 @@ dataset:
   validation_retries: 3
   validation_retry_delay: 10
 
+database:
+  host: "postgres"
+  port: 5432
+  user: "ir_user"
+  password: "ir_pass"
+  database: "ir_db"
+  table: "documents"
+
 paths:
   data_root: "data"
   raw: "data/raw"

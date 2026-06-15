@@ -7,9 +7,25 @@ x-common: &common
     - PYTHONPATH=/app
     - PYTHONUNBUFFERED=1
     - IR_DATASETS_HOME=/app/data/.ir_datasets
+    - DATABASE_URL=postgresql://ir_user:ir_pass@postgres:5432/ir_db
   restart: on-failure
+  depends_on:
+    - postgres
 
 services:
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: ir_postgres
+    environment:
+      POSTGRES_USER: ir_user
+      POSTGRES_PASSWORD: ir_pass
+      POSTGRES_DB: ir_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
 
   api_gateway:
     <<: *common
@@ -86,4 +102,5 @@ services:
       - tools
     command: python scripts/build_indices.py
 
-volumes: {}
+volumes:
+  postgres_data:
