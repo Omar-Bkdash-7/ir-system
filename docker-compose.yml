@@ -1,0 +1,89 @@
+x-common: &common
+  build: .
+  working_dir: /app
+  volumes:
+    - .:/app
+  environment:
+    - PYTHONPATH=/app
+    - PYTHONUNBUFFERED=1
+    - IR_DATASETS_HOME=/app/data/.ir_datasets
+  restart: on-failure
+
+services:
+
+  api_gateway:
+    <<: *common
+    container_name: ir_api_gateway
+    command: uvicorn services.api_gateway.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    depends_on:
+      - preprocessing
+      - retrieval
+      - ranking
+      - query_refinement
+      - evaluation
+
+  preprocessing:
+    <<: *common
+    container_name: ir_preprocessing
+    command: uvicorn services.preprocessing.main:app --host 0.0.0.0 --port 8001 --reload
+    ports:
+      - "8001:8001"
+
+  indexing:
+    <<: *common
+    container_name: ir_indexing
+    command: uvicorn services.indexing.main:app --host 0.0.0.0 --port 8002 --reload
+    ports:
+      - "8002:8002"
+    depends_on:
+      - preprocessing
+
+  retrieval:
+    <<: *common
+    container_name: ir_retrieval
+    command: uvicorn services.retrieval.main:app --host 0.0.0.0 --port 8003 --reload
+    ports:
+      - "8003:8003"
+    depends_on:
+      - indexing
+
+  ranking:
+    <<: *common
+    container_name: ir_ranking
+    command: uvicorn services.ranking.main:app --host 0.0.0.0 --port 8004 --reload
+    ports:
+      - "8004:8004"
+
+  query_refinement:
+    <<: *common
+    container_name: ir_query_refinement
+    command: uvicorn services.query_refinement.main:app --host 0.0.0.0 --port 8005 --reload
+    ports:
+      - "8005:8005"
+
+  evaluation:
+    <<: *common
+    container_name: ir_evaluation
+    command: uvicorn services.evaluation.main:app --host 0.0.0.0 --port 8006 --reload
+    ports:
+      - "8006:8006"
+
+  frontend:
+    <<: *common
+    container_name: ir_frontend
+    command: streamlit run frontend/app.py --server.port 3000 --server.address 0.0.0.0
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api_gateway
+
+  build_indices:
+    <<: *common
+    container_name: ir_build_indices
+    profiles:
+      - tools
+    command: python scripts/build_indices.py
+
+volumes: {}
