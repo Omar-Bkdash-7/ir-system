@@ -27,6 +27,9 @@ logs/
 .env
 .env.*
 
+# Config overrides
+# configs/config.local.yaml
+
 # IDE
 .vscode/
 .idea/
