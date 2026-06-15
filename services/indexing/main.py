@@ -1,9 +1,19 @@
 from fastapi import FastAPI, HTTPException
 from services.indexing.dataset_service import (
     validate_and_store_metadata,
-    get_metadata,
     DatasetValidationError,
     ForbiddenDatasetError
+)
+from services.indexing.indexing_service import (
+    get_index_stats,
+    build_tfidf_index,
+    get_tfidf_status
+)
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
 app = FastAPI(title="Indexing Service")
@@ -15,8 +25,7 @@ def health():
 @app.post("/validate")
 def validate_dataset(dataset_id: str = "beir/quora"):
     try:
-        metadata = validate_and_store_metadata(dataset_id)
-        return metadata
+        return validate_and_store_metadata(dataset_id)
     except ForbiddenDatasetError as e:
         raise HTTPException(status_code=403, detail=str(e))
     except DatasetValidationError as e:
@@ -27,13 +36,24 @@ def validate_dataset(dataset_id: str = "beir/quora"):
 @app.get("/index/stats")
 def index_stats():
     try:
-        metadata = get_metadata()
-        return {
-            "vocab_size": None,
-            "total_docs": metadata["doc_count"],
-            "avg_doc_length": None
-        }
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Metadata not found. Run /validate first.")
+        return get_index_stats()
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/index/tfidf/build")
+def build_tfidf(force_rebuild: bool = False):
+    try:
+        return build_tfidf_index(force_rebuild)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error building TF-IDF index: {str(e)}")
+
+@app.get("/index/tfidf/status")
+def tfidf_status():
+    try:
+        return get_tfidf_status()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
