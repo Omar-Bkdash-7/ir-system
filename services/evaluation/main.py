@@ -1,11 +1,8 @@
 from fastapi import FastAPI
 from common.exception_handlers import register_exception_handlers
-import logging
+from common.logging_config import setup_logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+logger = setup_logging("evaluation")
 
 app = FastAPI(title="Evaluation Service")
 register_exception_handlers(app)

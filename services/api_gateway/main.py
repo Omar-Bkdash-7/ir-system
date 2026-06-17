@@ -1,12 +1,9 @@
 from fastapi import FastAPI
 from services.api_gateway.dataset_client import get_dataset_info
 from common.exception_handlers import register_exception_handlers
-import logging
+from common.logging_config import setup_logging
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+logger = setup_logging("api_gateway")
 
 app = FastAPI(title="API Gateway")
 register_exception_handlers(app)
