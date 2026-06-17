@@ -1,14 +1,11 @@
-from fastapi import FastAPI, HTTPException
-from services.indexing.dataset_service import (
-    validate_and_store_metadata,
-    DatasetValidationError,
-    ForbiddenDatasetError
-)
+from fastapi import FastAPI
+from services.indexing.dataset_service import validate_and_store_metadata
 from services.indexing.indexing_service import (
     get_index_stats,
     build_tfidf_index,
     get_tfidf_status
 )
+from common.exception_handlers import register_exception_handlers
 import logging
 
 logging.basicConfig(
@@ -17,6 +14,7 @@ logging.basicConfig(
 )
 
 app = FastAPI(title="Indexing Service")
+register_exception_handlers(app)
 
 @app.get("/health")
 def health():
@@ -24,36 +22,16 @@ def health():
 
 @app.post("/validate")
 def validate_dataset(dataset_id: str = "beir/quora"):
-    try:
-        return validate_and_store_metadata(dataset_id)
-    except ForbiddenDatasetError as e:
-        raise HTTPException(status_code=403, detail=str(e))
-    except DatasetValidationError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
+    return validate_and_store_metadata(dataset_id)
 
 @app.get("/index/stats")
 def index_stats():
-    try:
-        return get_index_stats()
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return get_index_stats()
 
 @app.post("/index/tfidf/build")
 def build_tfidf(force_rebuild: bool = False):
-    try:
-        return build_tfidf_index(force_rebuild)
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error building TF-IDF index: {str(e)}")
+    return build_tfidf_index(force_rebuild)
 
 @app.get("/index/tfidf/status")
 def tfidf_status():
-    try:
-        return get_tfidf_status()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return get_tfidf_status()

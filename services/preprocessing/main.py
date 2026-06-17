@@ -1,7 +1,7 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
-from typing import Literal
 from services.preprocessing.preprocessing_service import preprocess
+from services.preprocessing.schemas import PreprocessRequest, PreprocessResponse
+from common.exception_handlers import register_exception_handlers
 import logging
 
 logging.basicConfig(
@@ -10,14 +10,7 @@ logging.basicConfig(
 )
 
 app = FastAPI(title="Preprocessing Service")
-
-class PreprocessRequest(BaseModel):
-    text: str
-    mode: Literal["document", "query"] = "document"
-
-class PreprocessResponse(BaseModel):
-    tokens: list[str]
-    original: str
+register_exception_handlers(app)
 
 @app.get("/health")
 def health():

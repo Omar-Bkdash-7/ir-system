@@ -1,15 +1,10 @@
+from common.exceptions import DatasetValidationError, ForbiddenDatasetError
 import ir_datasets
 import json
 from pathlib import Path
 from datetime import datetime
 import time
 from common.config import get_config
-
-class DatasetValidationError(Exception):
-    pass
-
-class ForbiddenDatasetError(Exception):
-    pass
 
 def validate_and_store_metadata(dataset_id: str = None) -> dict:
     if dataset_id is None:
