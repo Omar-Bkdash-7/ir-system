@@ -89,9 +89,18 @@ services:
   frontend:
     <<: *common
     container_name: ir_frontend
-    command: streamlit run frontend/app.py --server.port 3000 --server.address 0.0.0.0
+    command: streamlit run frontend/app.py
     ports:
-      - "3000:3000"
+      - "8501:8501"
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+      - API_GATEWAY_URL=http://api_gateway:8000
+      - INDEXING_URL=http://indexing:8002
+      - RETRIEVAL_URL=http://retrieval:8003
+      - RANKING_URL=http://ranking:8004
+      - QUERY_REFINEMENT_URL=http://query_refinement:8005
+      - EVALUATION_URL=http://evaluation:8006
     depends_on:
       - api_gateway
 
