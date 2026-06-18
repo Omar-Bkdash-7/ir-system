@@ -6,7 +6,8 @@ from common.exceptions import (
     InvalidQueryError,
     RetrievalError,
     RankingError,
-    PreprocessingError
+    PreprocessingError,
+    ModelLoadError
 )
 import logging
 
@@ -72,10 +73,21 @@ async def general_exception_handler(request: Request, exc: Exception):
         }
     )
 
+async def model_load_error_handler(request: Request, exc: ModelLoadError):
+    logger.error(f"Model load error: {str(exc)}")
+    return JSONResponse(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "error": "ModelLoadError",
+            "detail": str(exc)
+        }
+    )
+
 def register_exception_handlers(app):
     app.add_exception_handler(IRSystemException, ir_system_exception_handler)
     app.add_exception_handler(IndexNotFoundError, index_not_found_handler)
     app.add_exception_handler(InvalidQueryError, invalid_query_handler)
+    app.add_exception_handler(ModelLoadError, model_load_error_handler)
     app.add_exception_handler(ValueError, value_error_handler)
     app.add_exception_handler(FileNotFoundError, file_not_found_handler)
     app.add_exception_handler(Exception, general_exception_handler)

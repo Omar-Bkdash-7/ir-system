@@ -48,7 +48,18 @@ class TFIDFRetriever:
             logger.warning("Empty query tokens provided")
             return []
         
-        query_str = " ".join(query_tokens)
+        # Apply preprocessing to query tokens (they are already tokens, so join and preprocess)
+        from services.preprocessing.preprocessing_service import preprocess
+        query_text = " ".join(query_tokens)
+        processed_tokens = preprocess(query_text, mode="query")
+        
+        if processed_tokens:
+            query_str = " ".join(processed_tokens)
+            logger.debug(f"Original tokens: {query_tokens[:5]}...")
+            logger.debug(f"Preprocessed tokens: {processed_tokens[:5]}...")
+        else:
+            query_str = query_text
+            logger.warning("Query preprocessing resulted in empty tokens, using original")
         q_vec = self.vectorizer.transform([query_str])
         
         if q_vec.nnz == 0:
