@@ -28,6 +28,7 @@ paths:
   processed_docs: "data/processed/quora_preprocessed.jsonl"
 
 indices:
+  bm25_index: "data/indices/bm25_index.pkl"
   inverted_index: "data/indices/bm25_index.pkl"
   tfidf_vectorizer: "data/indices/tfidf_vectorizer.pkl"
   tfidf_matrix: "data/indices/tfidf_matrix.npz"

@@ -66,8 +66,10 @@ def safe_request(method: str, url: str, **kwargs) -> Optional[Dict]:
 def get_dataset_info(): return safe_request("GET", f"{API_GATEWAY_URL}/datasets/info")
 def get_tfidf_status(): return safe_request("GET", f"{RETRIEVAL_URL}/status/tfidf")
 def get_embedding_status(): return safe_request("GET", f"{RETRIEVAL_URL}/status/embedding")
+def get_bm25_status(): return safe_request("GET", f"{RETRIEVAL_URL}/status/bm25")
 def build_tfidf_index(force=False): return safe_request("POST", f"{INDEXING_URL}/index/tfidf/build?force_rebuild={force}")
 def build_embedding_index(force=False): return safe_request("POST", f"{INDEXING_URL}/index/embedding/build?force_rebuild={force}")
+def build_bm25_index(force=False): return safe_request("POST", f"{INDEXING_URL}/index/bm25/build?force_rebuild={force}")
 
 def render_result_card(doc: Dict, idx: int):
     doc_id = doc.get("doc_id", "N/A")
@@ -103,8 +105,9 @@ with st.sidebar:
     st.markdown("### 🛠️ Indexes")
     tfidf_status = get_tfidf_status()
     embedding_status = get_embedding_status()
+    bm25_status = get_bm25_status()
     
-    all_ready = tfidf_status and embedding_status and embedding_status.get('status')=='ready'
+    all_ready = tfidf_status and embedding_status and bm25_status and embedding_status.get('status')=='ready' and bm25_status.get('status')=='ready'
     
     if tfidf_status:
         st.markdown("✅ **TF-IDF**: Ready")
@@ -117,6 +120,12 @@ with st.sidebar:
         st.caption(f"{embedding_status.get('total_docs',0):,} documents")
     else:
         st.markdown("⏳ **Embedding**: Loading...")
+    
+    if bm25_status and bm25_status.get('status')=='ready':
+        st.markdown("✅ **BM25**: Ready")
+        st.caption(f"{bm25_status.get('total_docs',0):,} documents")
+    else:
+        st.markdown("⏳ **BM25**: Loading...")
     
     if not all_ready:
         st.info("Indexes are loading in the background...")
@@ -135,7 +144,7 @@ col1, col2, col3, col4 = st.columns(4)
 with col1:
     use_tfidf = st.checkbox("📊 TF-IDF", value=True, key="use_tfidf")
 with col2:
-    use_bm25 = st.checkbox("📈 BM25", value=False, key="use_bm25", help="⚠️ In progress")
+    use_bm25 = st.checkbox("📈 BM25", value=True, key="use_bm25")
 with col3:
     use_embedding = st.checkbox("🧠 Embedding", value=True, key="use_embedding")
 with col4:
@@ -167,13 +176,15 @@ if use_embedding:
 
 if use_bm25:
     with st.expander("📈 BM25 Settings", expanded=True):
-        st.markdown("<div class='warning-box'>⚠️ BM25 implementation in progress</div>", unsafe_allow_html=True)
         col1, col2 = st.columns(2)
         with col1:
-            bm25_k1 = st.slider("k1 (Term Saturation)", 0.0, 3.0, 1.5, 0.1, key="bm25_k1")
+            bm25_k = st.slider("Candidates to Retrieve", 10, 200, 100, 5, key="bm25_k", help="Internal retrieval size")
+            bm25_k1 = st.slider("k1 (Term Saturation)", 0.0, 3.0, 1.5, 0.1, key="bm25_k1", help="Controls term frequency saturation")
         with col2:
-            bm25_b = st.slider("b (Length Normalization)", 0.0, 1.0, 0.75, 0.05, key="bm25_b")
+            bm25_disp = st.slider("Results to Display", 5, 50, 20, 5, key="bm25_disp", help="Shown in UI")
+            bm25_b = st.slider("b (Length Normalization)", 0.0, 1.0, 0.75, 0.05, key="bm25_b", help="Document length normalization")
         st.latex(r"BM25(q,d) = \sum_{t \in q} IDF(t) \cdot \frac{TF(t,d) \cdot (k_1 + 1)}{TF(t,d) + k_1 \cdot (1 - b + b \cdot \frac{|d|}{avgdl})}")
+        st.info(f"📊 Current parameters: k1={bm25_k1:.1f}, b={bm25_b:.2f}")
 
 if use_hybrid:
     with st.expander("🔀 Hybrid Configuration", expanded=True):
@@ -211,17 +222,33 @@ if st.button("🚀 Search", type="primary"):
         with st.spinner("🔄 Searching..."):
             all_results = []
             for model in selected_models:
-                if model == "bm25":
-                    st.markdown("<div class='warning-box'>⚠️ BM25 not implemented - skipping</div>", unsafe_allow_html=True)
+                if model == "tfidf":
+                    top_k = tfidf_k
+                    display_k = tfidf_disp
+                elif model == "embedding":
+                    top_k = emb_k
+                    display_k = emb_disp
+                elif model == "bm25":
+                    top_k = bm25_k
+                    display_k = bm25_disp
+                else:
                     continue
                 
-                top_k = tfidf_k if model == "tfidf" else emb_k
-                display_k = tfidf_disp if model == "tfidf" else emb_disp
+                req_data = {
+                    "query_text": query,
+                    "query_tokens": query.lower().split(),
+                    "model": model,
+                    "top_k": top_k,
+                    "include_text": True
+                }
                 
-                req = {"query_text":query,"query_tokens":query.lower().split(),"model":model,"top_k":top_k,"include_text":True}
-                res = safe_request("POST", f"{RETRIEVAL_URL}/retrieve/{model}", json=req)
+                if model == "bm25":
+                    req_data["bm25_k1"] = bm25_k1
+                    req_data["bm25_b"] = bm25_b
+                
+                res = safe_request("POST", f"{RETRIEVAL_URL}/retrieve/{model}", json=req_data)
                 if res:
-                    all_results.append({"model":model,"results":res.get("results",[])[:display_k]})
+                    all_results.append({"model": model, "results": res.get("results", [])[:display_k]})
             
             elapsed = (time.time()-start)*1000
             if all_results:

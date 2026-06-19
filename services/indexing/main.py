@@ -5,7 +5,9 @@ from services.indexing.indexing_service import (
     build_tfidf_index,
     get_tfidf_status,
     build_embedding_index,
-    get_embedding_status
+    get_embedding_status,
+    build_bm25_index,
+    get_bm25_status
 )
 from common.exception_handlers import register_exception_handlers
 from common.logging_config import setup_logging
@@ -49,3 +51,13 @@ def build_embedding(force_rebuild: bool = False):
 @app.get("/index/embedding/status")
 def embedding_status():
     return get_embedding_status()
+
+
+@app.post("/index/bm25/build")
+def build_bm25(force_rebuild: bool = False):
+    return build_bm25_index(force_rebuild)
+
+
+@app.get("/index/bm25/status")
+def bm25_status():
+    return get_bm25_status()

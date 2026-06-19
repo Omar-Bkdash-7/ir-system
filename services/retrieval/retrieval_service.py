@@ -1,5 +1,6 @@
 from services.retrieval.tfidf_retriever import TFIDFRetriever
 from services.retrieval.embedding_retriever import EmbeddingRetriever
+from services.retrieval.bm25_retriever import BM25Retriever
 from services.retrieval.schemas import RetrievalRequest
 from common.database import get_documents_by_ids
 from common.exceptions import InvalidQueryError, RetrievalError
@@ -9,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 _tfidf_retriever = None
 _embedding_retriever = None
+_bm25_retriever = None
 
 
 def get_tfidf_retriever() -> TFIDFRetriever:
@@ -31,6 +33,16 @@ def get_embedding_retriever() -> EmbeddingRetriever:
     return _embedding_retriever
 
 
+def get_bm25_retriever() -> BM25Retriever:
+    global _bm25_retriever
+    if _bm25_retriever is None:
+        logger.info("Initializing BM25 retriever")
+        _bm25_retriever = BM25Retriever()
+        _bm25_retriever.load()
+        logger.info("BM25 retriever ready")
+    return _bm25_retriever
+
+
 def retrieve(request: RetrievalRequest) -> list[dict]:
     model = request.model.lower()
 
@@ -41,6 +53,8 @@ def retrieve(request: RetrievalRequest) -> list[dict]:
             results = _retrieve_tfidf(request)
         elif model == "embedding":
             results = _retrieve_embedding(request)
+        elif model == "bm25":
+            results = _retrieve_bm25(request)
         else:
             raise InvalidQueryError(f"Unknown retrieval model: {model}")
 
@@ -68,7 +82,7 @@ def _retrieve_tfidf(request: RetrievalRequest) -> list[dict]:
 
     candidates = retriever.retrieve(request.query_tokens, candidates_k)
     results = candidates[:request.top_k]
-
+    
     logger.debug(f"TF-IDF: narrowed down to top {len(results)} results")
     return results
 
@@ -86,6 +100,25 @@ def _retrieve_embedding(request: RetrievalRequest) -> list[dict]:
     results = candidates[:request.top_k]
 
     logger.debug(f"Embedding: narrowed down to top {len(results)} results")
+    return results
+
+
+def _retrieve_bm25(request: RetrievalRequest) -> list[dict]:
+    if not request.query_tokens:
+        raise InvalidQueryError("query_tokens is required for BM25 retrieval")
+
+    retriever = get_bm25_retriever()
+    candidates_k = min(request.top_k * 20, len(retriever.doc_ids))
+    
+    k1 = getattr(request, 'bm25_k1', 1.5)
+    b = getattr(request, 'bm25_b', 0.75)
+
+    logger.debug(f"BM25: retrieving {candidates_k} candidates with k1={k1}, b={b}")
+
+    candidates = retriever.retrieve(request.query_tokens, candidates_k, k1=k1, b=b)
+    results = candidates[:request.top_k]
+
+    logger.debug(f"BM25: narrowed down to top {len(results)} results")
     return results
 
 
@@ -117,4 +150,9 @@ def retrieve_tfidf(request: RetrievalRequest) -> list[dict]:
 
 def retrieve_embedding(request: RetrievalRequest) -> list[dict]:
     request.model = "embedding"
+    return retrieve(request)
+
+
+def retrieve_bm25(request: RetrievalRequest) -> list[dict]:
+    request.model = "bm25"
     return retrieve(request)

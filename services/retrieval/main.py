@@ -3,8 +3,10 @@ from services.retrieval.retrieval_service import (
     retrieve,
     retrieve_tfidf,
     retrieve_embedding,
+    retrieve_bm25,
     get_tfidf_retriever,
-    get_embedding_retriever
+    get_embedding_retriever,
+    get_bm25_retriever
 )
 from services.retrieval.schemas import RetrievalRequest, RetrievalResponse
 from common.exception_handlers import register_exception_handlers
@@ -32,6 +34,12 @@ def startup_event():
     except Exception as e:
         logger.warning(f"Embedding retriever not available: {e}")
     
+    try:
+        get_bm25_retriever()
+        logger.info("BM25 retriever loaded successfully")
+    except Exception as e:
+        logger.warning(f"BM25 retriever not available: {e}")
+    
     logger.info("Startup complete")
 
 
@@ -56,6 +64,12 @@ def retrieve_tfidf_endpoint(req: RetrievalRequest):
 def retrieve_embedding_endpoint(req: RetrievalRequest):
     results = retrieve_embedding(req)
     return RetrievalResponse(results=results, total=len(results), model="embedding")
+
+
+@app.post("/retrieve/bm25", response_model=RetrievalResponse)
+def retrieve_bm25_endpoint(req: RetrievalRequest):
+    results = retrieve_bm25(req)
+    return RetrievalResponse(results=results, total=len(results), model="bm25")
 
 
 @app.get("/status/tfidf")
@@ -101,6 +115,7 @@ def embedding_status():
 def overall_status():
     tfidf_ok = False
     embedding_ok = False
+    bm25_ok = False
 
     try:
         get_tfidf_retriever()
@@ -114,10 +129,38 @@ def overall_status():
     except:
         pass
 
+    try:
+        get_bm25_retriever()
+        bm25_ok = True
+    except:
+        pass
+
     return {
         "service": "retrieval",
         "models": {
             "tfidf": "ready" if tfidf_ok else "unavailable",
-            "embedding": "ready" if embedding_ok else "unavailable"
+            "embedding": "ready" if embedding_ok else "unavailable",
+            "bm25": "ready" if bm25_ok else "unavailable"
         }
     }
+
+
+@app.get("/status/bm25")
+def bm25_status():
+    try:
+        retriever = get_bm25_retriever()
+        stats = retriever.get_statistics()
+        return {
+            "status": "ready",
+            "loaded": retriever.loaded,
+            **stats
+        }
+    except FileNotFoundError as e:
+        logger.warning(f"BM25 index not found: {e}")
+        return {
+            "status": "not_built",
+            "message": "BM25 index has not been built yet. Build it via /index/bm25/build endpoint on indexing service."
+        }
+    except Exception as e:
+        logger.error(f"Error getting BM25 status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

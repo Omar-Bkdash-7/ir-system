@@ -13,7 +13,7 @@ class RetrievalRequest(BaseModel):
     )
     model: str = Field(
         default="tfidf",
-        description="Retrieval model: 'tfidf' or 'embedding'"
+        description="Retrieval model: 'tfidf', 'embedding', or 'bm25'"
     )
     top_k: int = Field(
         default=50,
@@ -25,11 +25,23 @@ class RetrievalRequest(BaseModel):
         default=True,
         description="Whether to include document text in results"
     )
+    bm25_k1: Optional[float] = Field(
+        default=1.5,
+        ge=0.0,
+        le=3.0,
+        description="BM25 k1 parameter (term saturation)"
+    )
+    bm25_b: Optional[float] = Field(
+        default=0.75,
+        ge=0.0,
+        le=1.0,
+        description="BM25 b parameter (length normalization)"
+    )
 
     @field_validator("model")
     @classmethod
     def validate_model(cls, v: str) -> str:
-        allowed = ["tfidf", "embedding"]
+        allowed = ["tfidf", "embedding", "bm25"]
         if v.lower() not in allowed:
             raise ValueError(f"Model must be one of {allowed}, got '{v}'")
         return v.lower()
