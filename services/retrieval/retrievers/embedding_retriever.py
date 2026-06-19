@@ -141,3 +141,53 @@ class EmbeddingRetriever:
             "device": self.device,
             "model": get_config("models.embedding.model_name", "all-MiniLM-L6-v2")
         }
+    
+    def score_documents(self, query_text: str, doc_ids: list[str]) -> dict[str, float]:
+        if not self.loaded:
+            self.load()
+        
+        if not query_text or not query_text.strip() or not doc_ids:
+            return {}
+        
+        from services.preprocessing.preprocessing_service import preprocess
+        processed_tokens = preprocess(query_text, mode="query")
+        processed_query = " ".join(processed_tokens) if processed_tokens else query_text
+        
+        if not processed_query.strip():
+            processed_query = query_text
+        
+        normalize = get_config("models.embedding.normalize", True)
+        
+        query_embedding = self.model.encode(
+            [processed_query],
+            normalize_embeddings=normalize,
+            convert_to_numpy=True,
+            device=self.device
+        )
+        
+        doc_id_to_idx = {doc_id: idx for idx, doc_id in enumerate(self.doc_ids)}
+        
+        doc_indices = []
+        valid_doc_ids = []
+        for doc_id in doc_ids:
+            if doc_id in doc_id_to_idx:
+                doc_indices.append(doc_id_to_idx[doc_id])
+                valid_doc_ids.append(doc_id)
+        
+        if not doc_indices:
+            logger.warning("None of the provided doc_ids found in index")
+            return {doc_id: 0.0 for doc_id in doc_ids}
+        
+        doc_embeddings = self.embeddings[doc_indices]
+        
+        scores = (doc_embeddings @ query_embedding.T).flatten()
+        
+        result = {valid_doc_ids[i]: float(scores[i]) for i in range(len(valid_doc_ids))}
+        
+        for doc_id in doc_ids:
+            if doc_id not in result:
+                result[doc_id] = 0.0
+        
+        logger.debug(f"Scored {len(result)} documents")
+        
+        return result

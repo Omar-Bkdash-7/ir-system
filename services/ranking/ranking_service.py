@@ -1,4 +1,4 @@
-from services.ranking.cosine_ranker import rank_by_cosine
+from services.ranking.rankers import rank_by_cosine
 from services.ranking.schemas import RankingRequest
 from common.config import get_config
 import logging

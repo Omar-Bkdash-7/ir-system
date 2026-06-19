@@ -188,28 +188,47 @@ if use_bm25:
 
 if use_hybrid:
     with st.expander("🔀 Hybrid Configuration", expanded=True):
-        st.markdown("<div class='warning-box'>⚠️ Hybrid modes in progress</div>", unsafe_allow_html=True)
         hybrid_type = st.radio("Strategy", ["Serial (Re-ranking)", "Parallel (Fusion)"], key="hybrid_type")
         
         if "Serial" in hybrid_type:
             st.markdown("**Serial Pipeline**")
             col1, col2 = st.columns(2)
             with col1:
-                first_stage = st.selectbox("1st Stage (Fast)", ["BM25", "TF-IDF"], help="Initial retrieval")
+                first_stage = st.selectbox("1st Stage (Fast)", ["BM25", "TF-IDF", "Embedding"], key="first_stage_model", help="Initial retrieval")
             with col2:
-                second_stage = st.selectbox("2nd Stage (Strong)", ["Embedding", "TF-IDF"], help="Re-ranking")
-            st.info(f"📊 Pipeline: {first_stage} (1000 candidates) → {second_stage} (Top 50)")
+                second_stage = st.selectbox("2nd Stage (Strong)", ["Embedding", "BM25", "TF-IDF"], key="second_stage_model", help="Re-ranking")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                first_stage_k = st.slider("1st Stage Candidates", 100, 2000, 1000, 100, key="first_stage_k")
+            with col2:
+                final_top_k = st.slider("Final Results", 10, 200, 50, 10, key="final_top_k")
+            
+            st.info(f"📊 Pipeline: {first_stage} ({first_stage_k} candidates) → {second_stage} (Top {final_top_k})")
         else:
             st.markdown("**Parallel Fusion**")
-            fusion_method = st.selectbox("Fusion Method", ["CombSUM", "CombMNZ", "Weighted Average"])
+            fusion_method = st.selectbox("Fusion Method", ["CombSUM", "CombMNZ", "Weighted Average", "RRF"], key="fusion_method")
+            
+            if fusion_method == "RRF":
+                rrf_k = st.slider("RRF k parameter", 10, 100, 60, 5, key="rrf_k", help="Controls rank fusion behavior")
+                st.info("🔄 Reciprocal Rank Fusion: score = Σ(1 / (k + rank))")
+            
             if fusion_method == "Weighted Average":
                 st.markdown("**Model Weights**")
+                weights = {}
                 if use_tfidf:
-                    tfidf_weight = st.slider("TF-IDF Weight", 0.0, 1.0, 0.33, 0.01)
+                    weights['tfidf'] = st.slider("TF-IDF Weight", 0.0, 1.0, 0.33, 0.01, key="tfidf_weight")
                 if use_embedding:
-                    emb_weight = st.slider("Embedding Weight", 0.0, 1.0, 0.33, 0.01)
+                    weights['embedding'] = st.slider("Embedding Weight", 0.0, 1.0, 0.33, 0.01, key="emb_weight")
                 if use_bm25:
-                    bm25_weight = st.slider("BM25 Weight", 0.0, 1.0, 0.34, 0.01)
+                    weights['bm25'] = st.slider("BM25 Weight", 0.0, 1.0, 0.34, 0.01, key="bm25_weight")
+                
+                total = sum(weights.values())
+                if abs(total - 1.0) > 0.01:
+                    st.warning(f"⚠️ Weights sum to {total:.2f}, should be 1.0")
+            
+            parallel_top_k = st.slider("Results per Model", 50, 500, 200, 50, key="parallel_top_k")
+            parallel_final_k = st.slider("Final Fused Results", 10, 100, 50, 10, key="parallel_final_k")
 
 st.markdown("---")
 if st.button("🚀 Search", type="primary"):
@@ -221,34 +240,89 @@ if st.button("🚀 Search", type="primary"):
         start = time.time()
         with st.spinner("🔄 Searching..."):
             all_results = []
-            for model in selected_models:
-                if model == "tfidf":
-                    top_k = tfidf_k
-                    display_k = tfidf_disp
-                elif model == "embedding":
-                    top_k = emb_k
-                    display_k = emb_disp
-                elif model == "bm25":
-                    top_k = bm25_k
-                    display_k = bm25_disp
-                else:
-                    continue
-                
+            
+            if use_hybrid and "Serial" in hybrid_type:
                 req_data = {
                     "query_text": query,
                     "query_tokens": query.lower().split(),
-                    "model": model,
-                    "top_k": top_k,
+                    "first_model": first_stage.lower(),
+                    "second_model": second_stage.lower(),
+                    "first_stage_k": first_stage_k,
+                    "final_top_k": final_top_k,
                     "include_text": True
                 }
                 
-                if model == "bm25":
-                    req_data["bm25_k1"] = bm25_k1
-                    req_data["bm25_b"] = bm25_b
+                if "BM25" in first_stage or "BM25" in second_stage:
+                    req_data["bm25_k1"] = bm25_k1 if use_bm25 else 1.5
+                    req_data["bm25_b"] = bm25_b if use_bm25 else 0.75
                 
-                res = safe_request("POST", f"{RETRIEVAL_URL}/retrieve/{model}", json=req_data)
+                res = safe_request("POST", f"{RETRIEVAL_URL}/retrieve/hybrid/serial", json=req_data)
                 if res:
-                    all_results.append({"model": model, "results": res.get("results", [])[:display_k]})
+                    all_results.append({
+                        "model": f"hybrid_serial_{first_stage.lower()}_{second_stage.lower()}",
+                        "results": res.get("results", [])
+                    })
+            
+            elif use_hybrid and "Parallel" in hybrid_type:
+                if len(selected_models) < 2:
+                    st.error("❌ Parallel mode requires at least 2 models selected")
+                else:
+                    req_data = {
+                        "query_text": query,
+                        "query_tokens": query.lower().split(),
+                        "models": selected_models,
+                        "fusion_method": fusion_method.lower().replace(" ", "_"),
+                        "top_k_per_model": parallel_top_k,
+                        "final_top_k": parallel_final_k,
+                        "include_text": True
+                    }
+                    
+                    if fusion_method == "Weighted Average":
+                        req_data["weights"] = weights
+                    
+                    if fusion_method == "RRF":
+                        req_data["rrf_k"] = rrf_k
+                    
+                    if use_bm25:
+                        req_data["bm25_k1"] = bm25_k1
+                        req_data["bm25_b"] = bm25_b
+                    
+                    res = safe_request("POST", f"{RETRIEVAL_URL}/retrieve/hybrid/parallel", json=req_data)
+                    if res:
+                        all_results.append({
+                            "model": f"hybrid_parallel_{fusion_method.lower()}",
+                            "results": res.get("results", [])
+                        })
+            
+            else:
+                for model in selected_models:
+                    if model == "tfidf":
+                        top_k = tfidf_k
+                        display_k = tfidf_disp
+                    elif model == "embedding":
+                        top_k = emb_k
+                        display_k = emb_disp
+                    elif model == "bm25":
+                        top_k = bm25_k
+                        display_k = bm25_disp
+                    else:
+                        continue
+                    
+                    req_data = {
+                        "query_text": query,
+                        "query_tokens": query.lower().split(),
+                        "model": model,
+                        "top_k": top_k,
+                        "include_text": True
+                    }
+                    
+                    if model == "bm25":
+                        req_data["bm25_k1"] = bm25_k1
+                        req_data["bm25_b"] = bm25_b
+                    
+                    res = safe_request("POST", f"{RETRIEVAL_URL}/retrieve/{model}", json=req_data)
+                    if res:
+                        all_results.append({"model": model, "results": res.get("results", [])[:display_k]})
             
             elapsed = (time.time()-start)*1000
             if all_results:

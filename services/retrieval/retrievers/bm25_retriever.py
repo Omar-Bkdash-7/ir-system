@@ -137,3 +137,49 @@ class BM25Retriever:
             "vocab_size": len(self.inverted_index),
             "avg_doc_length": round(self.avg_doc_length, 2)
         }
+    
+    def score_documents(self, query_tokens: List[str], doc_ids: List[str], k1: float = 1.5, b: float = 0.75) -> Dict[str, float]:
+        if not self.loaded:
+            self.load()
+        
+        if not query_tokens or not doc_ids:
+            return {}
+        
+        query_text = " ".join(query_tokens)
+        processed_tokens = preprocess(query_text, mode="query")
+        
+        if not processed_tokens:
+            logger.warning("Query preprocessing resulted in empty tokens")
+            return {doc_id: 0.0 for doc_id in doc_ids}
+        
+        if self.avg_doc_length <= 0:
+            self.avg_doc_length = 1.0
+        
+        doc_id_set = set(doc_ids)
+        doc_scores: Dict[str, float] = {doc_id: 0.0 for doc_id in doc_ids}
+        
+        for term in processed_tokens:
+            if term not in self.inverted_index:
+                continue
+            
+            idf = self.compute_idf(term)
+            posting_list = self.inverted_index[term]
+            
+            for entry in posting_list:
+                doc_id = entry.doc_id
+                
+                if doc_id not in doc_id_set:
+                    continue
+                
+                tf = entry.term_freq
+                doc_len = self.doc_lengths.get(doc_id, self.avg_doc_length)
+                
+                numerator = tf * (k1 + 1)
+                denominator = tf + k1 * (1 - b + b * (doc_len / self.avg_doc_length))
+                
+                score_contribution = idf * (numerator / denominator)
+                doc_scores[doc_id] += score_contribution
+        
+        logger.debug(f"Scored {len(doc_scores)} documents with BM25")
+        
+        return doc_scores

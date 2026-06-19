@@ -92,6 +92,11 @@ services:
   frontend:
     host: "0.0.0.0"
     port: 3000
+  preprocessing_url: "http://localhost:8001"
+  retrieval_url: "http://localhost:8003"
+  ranking_url: "http://localhost:8004"
+  query_refinement_url: "http://localhost:8005"
+  evaluation_url: "http://localhost:8006"
 
 logging:
   level: "INFO"

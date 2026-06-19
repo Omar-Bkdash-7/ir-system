@@ -4,11 +4,12 @@ from services.retrieval.retrieval_service import (
     retrieve_tfidf,
     retrieve_embedding,
     retrieve_bm25,
+    retrieve_hybrid_serial,
     get_tfidf_retriever,
     get_embedding_retriever,
     get_bm25_retriever
 )
-from services.retrieval.schemas import RetrievalRequest, RetrievalResponse
+from services.retrieval.schemas import RetrievalRequest, RetrievalResponse, HybridSerialRequest
 from common.exception_handlers import register_exception_handlers
 from common.logging_config import setup_logging
 import logging
@@ -164,3 +165,13 @@ def bm25_status():
     except Exception as e:
         logger.error(f"Error getting BM25 status: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/retrieve/hybrid/serial", response_model=RetrievalResponse)
+def retrieve_hybrid_serial_endpoint(req: HybridSerialRequest):
+    results = retrieve_hybrid_serial(req)
+    return RetrievalResponse(
+        results=results,
+        total=len(results),
+        model=f"hybrid_serial_{req.first_model}_{req.second_model}"
+    )

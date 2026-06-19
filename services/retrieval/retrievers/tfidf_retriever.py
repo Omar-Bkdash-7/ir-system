@@ -81,3 +81,52 @@ class TFIDFRetriever:
         logger.info(f"Retrieved {len(results)} documents for query")
         
         return results
+    
+    def score_documents(self, query_tokens: list[str], doc_ids: list[str]) -> dict[str, float]:
+        if not self.loaded:
+            self.load()
+        
+        if not query_tokens or not doc_ids:
+            return {}
+        
+        from services.preprocessing.preprocessing_service import preprocess
+        query_text = " ".join(query_tokens)
+        processed_tokens = preprocess(query_text, mode="query")
+        
+        if processed_tokens:
+            query_str = " ".join(processed_tokens)
+        else:
+            query_str = query_text
+        
+        q_vec = self.vectorizer.transform([query_str])
+        
+        if q_vec.nnz == 0:
+            logger.warning("Query produces all-zero vector for scoring")
+            return {doc_id: 0.0 for doc_id in doc_ids}
+        
+        doc_id_to_idx = {doc_id: idx for idx, doc_id in enumerate(self.doc_ids)}
+        
+        doc_indices = []
+        valid_doc_ids = []
+        for doc_id in doc_ids:
+            if doc_id in doc_id_to_idx:
+                doc_indices.append(doc_id_to_idx[doc_id])
+                valid_doc_ids.append(doc_id)
+        
+        if not doc_indices:
+            logger.warning("None of the provided doc_ids found in index")
+            return {doc_id: 0.0 for doc_id in doc_ids}
+        
+        doc_vecs = self.matrix[doc_indices]
+        
+        scores = cosine_similarity(q_vec, doc_vecs).flatten()
+        
+        result = {valid_doc_ids[i]: float(scores[i]) for i in range(len(valid_doc_ids))}
+        
+        for doc_id in doc_ids:
+            if doc_id not in result:
+                result[doc_id] = 0.0
+        
+        logger.debug(f"Scored {len(result)} documents")
+        
+        return result
