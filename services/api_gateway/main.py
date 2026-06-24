@@ -2,7 +2,8 @@ from fastapi import FastAPI, HTTPException
 from services.api_gateway.clients import (
     get_dataset_info,
     search_hybrid_serial,
-    search_hybrid_parallel
+    search_hybrid_parallel,
+    search_basic
 )
 from common.exception_handlers import register_exception_handlers
 from common.logging_config import setup_logging
@@ -13,6 +14,14 @@ logger = setup_logging("api_gateway")
 
 app = FastAPI(title="API Gateway")
 register_exception_handlers(app)
+
+
+class BasicSearchRequest(BaseModel):
+    query: str = Field(description="Search query text")
+    model: str = Field(default="tfidf", description="Model: tfidf, embedding, or bm25")
+    top_k: int = Field(default=50, ge=1, le=1000, description="Number of results")
+    bm25_k1: Optional[float] = Field(default=1.5, ge=0.0, le=3.0)
+    bm25_b: Optional[float] = Field(default=0.75, ge=0.0, le=1.0)
 
 
 class HybridSerialSearchRequest(BaseModel):
@@ -60,9 +69,33 @@ def datasets_info():
     return get_dataset_info()
 
 
+@app.post("/search")
+def search_endpoint(req: BasicSearchRequest):
+    try:
+        if not req.query or not req.query.strip():
+            raise HTTPException(status_code=400, detail="Query cannot be empty")
+        
+        results = search_basic(
+            query=req.query,
+            model=req.model,
+            top_k=req.top_k,
+            bm25_k1=req.bm25_k1,
+            bm25_b=req.bm25_b
+        )
+        return results
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Basic search failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/search/hybrid/serial")
 def search_hybrid_serial_endpoint(req: HybridSerialSearchRequest):
     try:
+        if not req.query or not req.query.strip():
+            raise HTTPException(status_code=400, detail="Query cannot be empty")
+        
         results = search_hybrid_serial(
             query=req.query,
             first_model=req.first_model,
@@ -73,6 +106,8 @@ def search_hybrid_serial_endpoint(req: HybridSerialSearchRequest):
             bm25_b=req.bm25_b
         )
         return results
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Hybrid serial search failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -81,6 +116,9 @@ def search_hybrid_serial_endpoint(req: HybridSerialSearchRequest):
 @app.post("/search/hybrid/parallel")
 def search_hybrid_parallel_endpoint(req: HybridParallelSearchRequest):
     try:
+        if not req.query or not req.query.strip():
+            raise HTTPException(status_code=400, detail="Query cannot be empty")
+        
         results = search_hybrid_parallel(
             query=req.query,
             models=req.models,
@@ -93,6 +131,8 @@ def search_hybrid_parallel_endpoint(req: HybridParallelSearchRequest):
             bm25_b=req.bm25_b
         )
         return results
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Hybrid parallel search failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
