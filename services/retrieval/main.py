@@ -5,11 +5,17 @@ from services.retrieval.retrieval_service import (
     retrieve_embedding,
     retrieve_bm25,
     retrieve_hybrid_serial,
+    retrieve_hybrid_parallel,
     get_tfidf_retriever,
     get_embedding_retriever,
     get_bm25_retriever
 )
-from services.retrieval.schemas import RetrievalRequest, RetrievalResponse, HybridSerialRequest
+from services.retrieval.schemas import (
+    RetrievalRequest,
+    RetrievalResponse,
+    HybridSerialRequest,
+    HybridParallelRequest
+)
 from common.exception_handlers import register_exception_handlers
 from common.logging_config import setup_logging
 import logging
@@ -174,4 +180,15 @@ def retrieve_hybrid_serial_endpoint(req: HybridSerialRequest):
         results=results,
         total=len(results),
         model=f"hybrid_serial_{req.first_model}_{req.second_model}"
+    )
+
+
+@app.post("/retrieve/hybrid/parallel", response_model=RetrievalResponse)
+def retrieve_hybrid_parallel_endpoint(req: HybridParallelRequest):
+    results = retrieve_hybrid_parallel(req)
+    models_str = "_".join(req.models)
+    return RetrievalResponse(
+        results=results,
+        total=len(results),
+        model=f"hybrid_parallel_{models_str}_{req.fusion_method}"
     )

@@ -1,9 +1,13 @@
 from fastapi import FastAPI, HTTPException
-from services.api_gateway.clients import get_dataset_info, search_hybrid_serial
+from services.api_gateway.clients import (
+    get_dataset_info,
+    search_hybrid_serial,
+    search_hybrid_parallel
+)
 from common.exception_handlers import register_exception_handlers
 from common.logging_config import setup_logging
-from pydantic import BaseModel, Field
-from typing import List, Optional
+from pydantic import BaseModel, Field, model_validator
+from typing import List, Optional, Dict
 
 logger = setup_logging("api_gateway")
 
@@ -19,6 +23,31 @@ class HybridSerialSearchRequest(BaseModel):
     final_top_k: int = Field(default=50, ge=1, le=1000, description="Final number of results")
     bm25_k1: Optional[float] = Field(default=1.5, ge=0.0, le=3.0)
     bm25_b: Optional[float] = Field(default=0.75, ge=0.0, le=1.0)
+
+
+class HybridParallelSearchRequest(BaseModel):
+    query: str = Field(description="Search query text")
+    models: List[str] = Field(description="Models to run in parallel", min_length=2, max_length=3)
+    fusion_method: str = Field(default="rrf", description="Fusion method: rrf, combsum, combmnz, weighted")
+    model_weights: Optional[Dict[str, float]] = Field(default=None, description="Weights for weighted fusion")
+    top_k: int = Field(default=50, ge=1, le=1000, description="Final number of results")
+    candidates_per_model: int = Field(default=1000, ge=10, le=5000, description="Candidates per model")
+    rrf_k: int = Field(default=60, ge=1, le=100, description="RRF constant")
+    bm25_k1: Optional[float] = Field(default=1.5, ge=0.0, le=3.0)
+    bm25_b: Optional[float] = Field(default=0.75, ge=0.0, le=1.0)
+    
+    @model_validator(mode='after')
+    def validate_weights(self):
+        if self.fusion_method == "weighted":
+            if not self.model_weights:
+                raise ValueError("model_weights required when fusion_method='weighted'")
+            for model in self.models:
+                if model not in self.model_weights:
+                    raise ValueError(f"Weight for model '{model}' is missing")
+            total = sum(self.model_weights.values())
+            if not (0.99 <= total <= 1.01):
+                raise ValueError(f"Weights must sum to 1.0, got {total}")
+        return self
 
 
 @app.get("/health")
@@ -46,4 +75,24 @@ def search_hybrid_serial_endpoint(req: HybridSerialSearchRequest):
         return results
     except Exception as e:
         logger.error(f"Hybrid serial search failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/search/hybrid/parallel")
+def search_hybrid_parallel_endpoint(req: HybridParallelSearchRequest):
+    try:
+        results = search_hybrid_parallel(
+            query=req.query,
+            models=req.models,
+            fusion_method=req.fusion_method,
+            model_weights=req.model_weights,
+            top_k=req.top_k,
+            candidates_per_model=req.candidates_per_model,
+            rrf_k=req.rrf_k,
+            bm25_k1=req.bm25_k1,
+            bm25_b=req.bm25_b
+        )
+        return results
+    except Exception as e:
+        logger.error(f"Hybrid parallel search failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

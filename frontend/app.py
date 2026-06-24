@@ -63,10 +63,21 @@ def safe_request(method: str, url: str, **kwargs) -> Optional[Dict]:
     except:
         return None
 
-def get_dataset_info(): return safe_request("GET", f"{API_GATEWAY_URL}/datasets/info")
-def get_tfidf_status(): return safe_request("GET", f"{RETRIEVAL_URL}/status/tfidf")
-def get_embedding_status(): return safe_request("GET", f"{RETRIEVAL_URL}/status/embedding")
-def get_bm25_status(): return safe_request("GET", f"{RETRIEVAL_URL}/status/bm25")
+@st.cache_data(ttl=10)
+def get_dataset_info(): 
+    return safe_request("GET", f"{API_GATEWAY_URL}/datasets/info")
+
+@st.cache_data(ttl=5)
+def get_tfidf_status(): 
+    return safe_request("GET", f"{RETRIEVAL_URL}/status/tfidf")
+
+@st.cache_data(ttl=5)
+def get_embedding_status(): 
+    return safe_request("GET", f"{RETRIEVAL_URL}/status/embedding")
+
+@st.cache_data(ttl=5)
+def get_bm25_status(): 
+    return safe_request("GET", f"{RETRIEVAL_URL}/status/bm25")
 def build_tfidf_index(force=False): return safe_request("POST", f"{INDEXING_URL}/index/tfidf/build?force_rebuild={force}")
 def build_embedding_index(force=False): return safe_request("POST", f"{INDEXING_URL}/index/embedding/build?force_rebuild={force}")
 def build_bm25_index(force=False): return safe_request("POST", f"{INDEXING_URL}/index/bm25/build?force_rebuild={force}")
@@ -129,8 +140,9 @@ with st.sidebar:
     
     if not all_ready:
         st.info("Indexes are loading in the background...")
-        time.sleep(2)
-        st.rerun()
+        if st.button("🔄 Refresh Status", key="refresh_status"):
+            st.cache_data.clear()
+            st.rerun()
     st.markdown("---")
     enhanced_mode = st.toggle("🟢 Enhanced", help="Query Refinement + RAG")
     if enhanced_mode:
@@ -139,16 +151,22 @@ with st.sidebar:
 query = st.text_input("🔎 Search", placeholder="Enter your query...", help="Type your question")
 st.markdown("---")
 
-st.markdown("### 🎯 Select Retrieval Models")
-col1, col2, col3, col4 = st.columns(4)
-with col1:
-    use_tfidf = st.checkbox("📊 TF-IDF", value=True, key="use_tfidf")
-with col2:
-    use_bm25 = st.checkbox("📈 BM25", value=True, key="use_bm25")
-with col3:
-    use_embedding = st.checkbox("🧠 Embedding", value=True, key="use_embedding")
-with col4:
-    use_hybrid = st.checkbox("🔀 Hybrid", value=False, key="use_hybrid", help="⚠️ In progress")
+st.markdown("### 🎯 Select Retrieval Mode")
+use_hybrid = st.checkbox("🔀 Hybrid Mode", value=False, key="use_hybrid", help="Combine multiple models for better results")
+
+if not use_hybrid:
+    st.markdown("#### Individual Models")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        use_tfidf = st.checkbox("📊 TF-IDF", value=True, key="use_tfidf")
+    with col2:
+        use_bm25 = st.checkbox("📈 BM25", value=True, key="use_bm25")
+    with col3:
+        use_embedding = st.checkbox("🧠 Embedding", value=True, key="use_embedding")
+else:
+    use_tfidf = False
+    use_bm25 = False
+    use_embedding = False
 
 st.markdown("---")
 
@@ -190,13 +208,23 @@ if use_hybrid:
     with st.expander("🔀 Hybrid Configuration", expanded=True):
         hybrid_type = st.radio("Strategy", ["Serial (Re-ranking)", "Parallel (Fusion)"], key="hybrid_type")
         
+        st.markdown("---")
+        st.markdown("#### BM25 Parameters (if needed)")
+        col1, col2 = st.columns(2)
+        with col1:
+            bm25_k1 = st.slider("k1 (Term Saturation)", 0.0, 3.0, 1.5, 0.1, key="hybrid_bm25_k1", help="Controls term frequency saturation")
+        with col2:
+            bm25_b = st.slider("b (Length Normalization)", 0.0, 1.0, 0.75, 0.05, key="hybrid_bm25_b", help="Document length normalization")
+        
+        st.markdown("---")
+        
         if "Serial" in hybrid_type:
-            st.markdown("**Serial Pipeline**")
+            st.markdown("#### Serial Pipeline Configuration")
             col1, col2 = st.columns(2)
             with col1:
-                first_stage = st.selectbox("1st Stage (Fast)", ["BM25", "TF-IDF", "Embedding"], key="first_stage_model", help="Initial retrieval")
+                first_stage = st.selectbox("1st Stage (Fast)", ["bm25", "tfidf", "embedding"], key="first_stage_model", help="Initial retrieval", format_func=lambda x: x.upper())
             with col2:
-                second_stage = st.selectbox("2nd Stage (Strong)", ["Embedding", "BM25", "TF-IDF"], key="second_stage_model", help="Re-ranking")
+                second_stage = st.selectbox("2nd Stage (Strong)", ["embedding", "bm25", "tfidf"], key="second_stage_model", help="Re-ranking", format_func=lambda x: x.upper())
             
             col1, col2 = st.columns(2)
             with col1:
@@ -204,125 +232,230 @@ if use_hybrid:
             with col2:
                 final_top_k = st.slider("Final Results", 10, 200, 50, 10, key="final_top_k")
             
-            st.info(f"📊 Pipeline: {first_stage} ({first_stage_k} candidates) → {second_stage} (Top {final_top_k})")
+            st.info(f"📊 Pipeline: {first_stage.upper()} ({first_stage_k} candidates) → {second_stage.upper()} (Top {final_top_k})")
+            
+            parallel_models = []
+            fusion_method = "RRF"
+            candidates_per_model = 1000
+            parallel_final_k = 50
+            rrf_k = 60
+            weights = {}
+        
         else:
-            st.markdown("**Parallel Fusion**")
-            fusion_method = st.selectbox("Fusion Method", ["CombSUM", "CombMNZ", "Weighted Average", "RRF"], key="fusion_method")
+            st.markdown("#### Parallel Fusion Configuration")
+            
+            st.markdown("**Select Models to Combine** (minimum 2)")
+            parallel_models = st.multiselect(
+                "Models",
+                ["tfidf", "embedding", "bm25"],
+                default=["tfidf", "bm25"],
+                key="parallel_models",
+                help="Select 2-3 models to run in parallel and fuse results",
+                format_func=lambda x: x.upper()
+            )
+            
+            if len(parallel_models) < 2:
+                st.error("⚠️ Please select at least 2 models for parallel fusion")
+            
+            st.markdown("---")
+            
+            fusion_method = st.selectbox("Fusion Method", ["RRF", "CombSUM", "CombMNZ", "Weighted Average"], key="fusion_method", help="RRF (Recommended): Rank-based, stable results")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                candidates_per_model = st.slider("Candidates per Model", 100, 2000, 1000, 100, key="candidates_per_model", help="Retrieved from each model before fusion")
+            with col2:
+                parallel_final_k = st.slider("Final Fused Results", 10, 200, 50, 10, key="parallel_final_k", help="After fusion")
             
             if fusion_method == "RRF":
                 rrf_k = st.slider("RRF k parameter", 10, 100, 60, 5, key="rrf_k", help="Controls rank fusion behavior")
-                st.info("🔄 Reciprocal Rank Fusion: score = Σ(1 / (k + rank))")
+                st.latex(r"RRF(d) = \sum_{i} \frac{1}{k + rank_i(d)}")
+                st.info(f"🔄 Reciprocal Rank Fusion with k={rrf_k} - Rank-based, no score normalization issues")
+            else:
+                rrf_k = 60
+            
+            if fusion_method == "CombSUM":
+                st.info("📊 CombSUM: Sum of normalized scores from all models")
+            
+            if fusion_method == "CombMNZ":
+                st.info("📈 CombMNZ: CombSUM × number of models that retrieved the document")
             
             if fusion_method == "Weighted Average":
-                st.markdown("**Model Weights**")
+                st.markdown("**Model Weights** (must sum to 1.0)")
                 weights = {}
-                if use_tfidf:
-                    weights['tfidf'] = st.slider("TF-IDF Weight", 0.0, 1.0, 0.33, 0.01, key="tfidf_weight")
-                if use_embedding:
-                    weights['embedding'] = st.slider("Embedding Weight", 0.0, 1.0, 0.33, 0.01, key="emb_weight")
-                if use_bm25:
-                    weights['bm25'] = st.slider("BM25 Weight", 0.0, 1.0, 0.34, 0.01, key="bm25_weight")
+                
+                default_weight = 1.0 / len(parallel_models) if parallel_models else 0.0
+                
+                for model in parallel_models:
+                    weights[model] = st.slider(
+                        f"{model.upper()} Weight", 
+                        0.0, 1.0, 
+                        round(default_weight, 2), 
+                        0.01, 
+                        key=f"{model}_weight"
+                    )
                 
                 total = sum(weights.values())
                 if abs(total - 1.0) > 0.01:
                     st.warning(f"⚠️ Weights sum to {total:.2f}, should be 1.0")
+                else:
+                    st.success(f"✅ Weights sum to {total:.2f}")
+            else:
+                weights = {}
             
-            parallel_top_k = st.slider("Results per Model", 50, 500, 200, 50, key="parallel_top_k")
-            parallel_final_k = st.slider("Final Fused Results", 10, 100, 50, 10, key="parallel_final_k")
+            first_stage = "bm25"
+            second_stage = "embedding"
+            first_stage_k = 1000
+            final_top_k = 50
+else:
+    bm25_k1 = 1.5
+    bm25_b = 0.75
 
 st.markdown("---")
 if st.button("🚀 Search", type="primary"):
     if not query or not query.strip():
         st.error("❌ Enter a query")
-    elif not selected_models and not use_hybrid:
+    elif not use_hybrid and not selected_models:
         st.error("❌ Select at least one model")
+    elif use_hybrid and "Serial" in hybrid_type:
+        start = time.time()
+        with st.spinner("🔄 Searching..."):
+            all_results = []
+            
+            payload = {
+                "query": query,
+                "first_model": first_stage.lower(),
+                "second_model": second_stage.lower(),
+                "first_stage_k": first_stage_k,
+                "final_top_k": final_top_k
+            }
+            
+            if "bm25" in first_stage.lower() or "bm25" in second_stage.lower():
+                payload["bm25_k1"] = bm25_k1
+                payload["bm25_b"] = bm25_b
+            
+            res = safe_request("POST", f"{API_GATEWAY_URL}/search/hybrid/serial", json=payload)
+            if res:
+                all_results.append({
+                    "model": f"hybrid_serial_{first_stage.lower()}_{second_stage.lower()}",
+                    "results": res.get("results", [])
+                })
+            
+            elapsed = (time.time()-start)*1000
+            if all_results:
+                st.markdown("---")
+                st.markdown("## 📊 Results")
+                col1,col2,col3=st.columns(3)
+                with col1: st.metric("⏱️ Time",f"{elapsed:.0f} ms")
+                with col2: st.metric("📄 Docs",sum(len(r["results"]) for r in all_results))
+                with col3: st.metric("🎯 Mode","Hybrid Serial")
+                st.markdown("---")
+                if enhanced_mode:
+                    st.markdown("### 🤖 AI Answer")
+                    st.markdown("<div class='info-box'><b>RAG Preview:</b> AI-generated answers will appear here using Flan-T5.</div>", unsafe_allow_html=True)
+                    st.markdown("---")
+                for mr in all_results:
+                    st.markdown(f"### 📊 {mr['model'].upper().replace('_', ' ')} ({len(mr['results'])} docs)")
+                    for idx,doc in enumerate(mr['results'],1):
+                        render_result_card(doc,idx)
+                    st.markdown("---")
+            else:
+                st.markdown("<div class='error-box'>❌ No results</div>", unsafe_allow_html=True)
+    
+    elif use_hybrid and "Parallel" in hybrid_type:
+        if len(parallel_models) < 2:
+            st.error("❌ Parallel mode requires at least 2 models selected")
+        else:
+            start = time.time()
+            with st.spinner("🔄 Searching..."):
+                all_results = []
+                
+                fusion_method_map = {
+                    "CombSUM": "combsum",
+                    "CombMNZ": "combmnz",
+                    "Weighted Average": "weighted",
+                    "RRF": "rrf"
+                }
+                
+                payload = {
+                    "query": query,
+                    "models": parallel_models,
+                    "fusion_method": fusion_method_map.get(fusion_method, "rrf"),
+                    "top_k": parallel_final_k,
+                    "candidates_per_model": candidates_per_model
+                }
+                
+                if fusion_method == "Weighted Average":
+                    payload["model_weights"] = weights
+                
+                if fusion_method == "RRF":
+                    payload["rrf_k"] = rrf_k
+                
+                if "bm25" in parallel_models:
+                    payload["bm25_k1"] = bm25_k1
+                    payload["bm25_b"] = bm25_b
+                
+                res = safe_request("POST", f"{API_GATEWAY_URL}/search/hybrid/parallel", json=payload)
+                if res:
+                    all_results.append({
+                        "model": f"hybrid_parallel_{fusion_method.replace(' ', '_')}",
+                        "results": res.get("results", [])
+                    })
+                
+                elapsed = (time.time()-start)*1000
+                if all_results:
+                    st.markdown("---")
+                    st.markdown("## 📊 Results")
+                    col1,col2,col3=st.columns(3)
+                    with col1: st.metric("⏱️ Time",f"{elapsed:.0f} ms")
+                    with col2: st.metric("📄 Docs",sum(len(r["results"]) for r in all_results))
+                    with col3: st.metric("🎯 Mode",f"Hybrid Parallel ({fusion_method})")
+                    st.markdown("---")
+                    if enhanced_mode:
+                        st.markdown("### 🤖 AI Answer")
+                        st.markdown("<div class='info-box'><b>RAG Preview:</b> AI-generated answers will appear here using Flan-T5.</div>", unsafe_allow_html=True)
+                        st.markdown("---")
+                    for mr in all_results:
+                        st.markdown(f"### 📊 {mr['model'].upper().replace('_', ' ')} ({len(mr['results'])} docs)")
+                        for idx,doc in enumerate(mr['results'],1):
+                            render_result_card(doc,idx)
+                        st.markdown("---")
+                else:
+                    st.markdown("<div class='error-box'>❌ No results</div>", unsafe_allow_html=True)
+    
     else:
         start = time.time()
         with st.spinner("🔄 Searching..."):
             all_results = []
             
-            if use_hybrid and "Serial" in hybrid_type:
+            for model in selected_models:
+                if model == "tfidf":
+                    top_k = tfidf_k
+                    display_k = tfidf_disp
+                elif model == "embedding":
+                    top_k = emb_k
+                    display_k = emb_disp
+                elif model == "bm25":
+                    top_k = bm25_k
+                    display_k = bm25_disp
+                else:
+                    continue
+                
                 req_data = {
                     "query_text": query,
                     "query_tokens": query.lower().split(),
-                    "first_model": first_stage.lower(),
-                    "second_model": second_stage.lower(),
-                    "first_stage_k": first_stage_k,
-                    "final_top_k": final_top_k,
+                    "model": model,
+                    "top_k": top_k,
                     "include_text": True
                 }
                 
-                if "BM25" in first_stage or "BM25" in second_stage:
-                    req_data["bm25_k1"] = bm25_k1 if use_bm25 else 1.5
-                    req_data["bm25_b"] = bm25_b if use_bm25 else 0.75
+                if model == "bm25":
+                    req_data["bm25_k1"] = bm25_k1
+                    req_data["bm25_b"] = bm25_b
                 
-                res = safe_request("POST", f"{RETRIEVAL_URL}/retrieve/hybrid/serial", json=req_data)
+                res = safe_request("POST", f"{RETRIEVAL_URL}/retrieve/{model}", json=req_data)
                 if res:
-                    all_results.append({
-                        "model": f"hybrid_serial_{first_stage.lower()}_{second_stage.lower()}",
-                        "results": res.get("results", [])
-                    })
-            
-            elif use_hybrid and "Parallel" in hybrid_type:
-                if len(selected_models) < 2:
-                    st.error("❌ Parallel mode requires at least 2 models selected")
-                else:
-                    req_data = {
-                        "query_text": query,
-                        "query_tokens": query.lower().split(),
-                        "models": selected_models,
-                        "fusion_method": fusion_method.lower().replace(" ", "_"),
-                        "top_k_per_model": parallel_top_k,
-                        "final_top_k": parallel_final_k,
-                        "include_text": True
-                    }
-                    
-                    if fusion_method == "Weighted Average":
-                        req_data["weights"] = weights
-                    
-                    if fusion_method == "RRF":
-                        req_data["rrf_k"] = rrf_k
-                    
-                    if use_bm25:
-                        req_data["bm25_k1"] = bm25_k1
-                        req_data["bm25_b"] = bm25_b
-                    
-                    res = safe_request("POST", f"{RETRIEVAL_URL}/retrieve/hybrid/parallel", json=req_data)
-                    if res:
-                        all_results.append({
-                            "model": f"hybrid_parallel_{fusion_method.lower()}",
-                            "results": res.get("results", [])
-                        })
-            
-            else:
-                for model in selected_models:
-                    if model == "tfidf":
-                        top_k = tfidf_k
-                        display_k = tfidf_disp
-                    elif model == "embedding":
-                        top_k = emb_k
-                        display_k = emb_disp
-                    elif model == "bm25":
-                        top_k = bm25_k
-                        display_k = bm25_disp
-                    else:
-                        continue
-                    
-                    req_data = {
-                        "query_text": query,
-                        "query_tokens": query.lower().split(),
-                        "model": model,
-                        "top_k": top_k,
-                        "include_text": True
-                    }
-                    
-                    if model == "bm25":
-                        req_data["bm25_k1"] = bm25_k1
-                        req_data["bm25_b"] = bm25_b
-                    
-                    res = safe_request("POST", f"{RETRIEVAL_URL}/retrieve/{model}", json=req_data)
-                    if res:
-                        all_results.append({"model": model, "results": res.get("results", [])[:display_k]})
+                    all_results.append({"model": model, "results": res.get("results", [])[:display_k]})
             
             elapsed = (time.time()-start)*1000
             if all_results:
@@ -338,7 +471,7 @@ if st.button("🚀 Search", type="primary"):
                     st.markdown("<div class='info-box'><b>RAG Preview:</b> AI-generated answers will appear here using Flan-T5.</div>", unsafe_allow_html=True)
                     st.markdown("---")
                 for mr in all_results:
-                    st.markdown(f"### 📊 {mr['model'].upper()} ({len(mr['results'])} docs)")
+                    st.markdown(f"### 📊 {mr['model'].upper().replace('_', ' ')} ({len(mr['results'])} docs)")
                     for idx,doc in enumerate(mr['results'],1):
                         render_result_card(doc,idx)
                     st.markdown("---")

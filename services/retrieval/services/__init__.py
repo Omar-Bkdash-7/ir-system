@@ -10,6 +10,7 @@ from services.retrieval.services.basic_retrieval import (
     retrieve_bm25
 )
 from services.retrieval.services.hybrid_serial import retrieve_hybrid_serial
+from services.retrieval.services.hybrid_parallel import retrieve_hybrid_parallel
 
 __all__ = [
     "get_tfidf_retriever",
@@ -19,5 +20,6 @@ __all__ = [
     "retrieve_tfidf",
     "retrieve_embedding",
     "retrieve_bm25",
-    "retrieve_hybrid_serial"
+    "retrieve_hybrid_serial",
+    "retrieve_hybrid_parallel"
 ]
