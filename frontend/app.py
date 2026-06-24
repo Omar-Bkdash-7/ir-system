@@ -281,25 +281,46 @@ if use_hybrid:
                 st.info("📈 CombMNZ: CombSUM × number of models that retrieved the document")
             
             if fusion_method == "Weighted Average":
-                st.markdown("**Model Weights** (must sum to 1.0)")
-                weights = {}
+                st.markdown("---")
+                st.markdown("#### ⚖️ Model Weights Configuration")
+                st.info("🎯 Adjust the importance of each model. Total must equal 1.0")
                 
+                weights = {}
                 default_weight = 1.0 / len(parallel_models) if parallel_models else 0.0
                 
-                for model in parallel_models:
-                    weights[model] = st.slider(
-                        f"{model.upper()} Weight", 
-                        0.0, 1.0, 
-                        round(default_weight, 2), 
-                        0.01, 
-                        key=f"{model}_weight"
-                    )
+                st.markdown("**Individual Model Weights:**")
+                cols = st.columns(len(parallel_models))
+                for idx, model in enumerate(parallel_models):
+                    with cols[idx]:
+                        weights[model] = st.slider(
+                            f"{model.upper()}", 
+                            0.0, 1.0, 
+                            round(default_weight, 2), 
+                            0.01, 
+                            key=f"{model}_weight",
+                            help=f"Weight for {model.upper()} model"
+                        )
                 
                 total = sum(weights.values())
-                if abs(total - 1.0) > 0.01:
-                    st.warning(f"⚠️ Weights sum to {total:.2f}, should be 1.0")
-                else:
-                    st.success(f"✅ Weights sum to {total:.2f}")
+                
+                st.markdown("---")
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    if abs(total - 1.0) > 0.01:
+                        st.error(f"❌ Weights sum: {total:.2f} — Must be 1.0!")
+                        st.caption("💡 Tip: Adjust sliders so the total equals 1.0")
+                    else:
+                        st.success(f"✅ Weights sum: {total:.2f} — Perfect!")
+                
+                with col2:
+                    if abs(total - 1.0) > 0.01:
+                        st.metric("Sum", f"{total:.2f}", delta=f"{total-1.0:.2f}", delta_color="inverse")
+                    else:
+                        st.metric("Sum", "1.00", delta="0.00")
+                
+                st.markdown("**Weight Distribution:**")
+                weight_percentages = {k: f"{v*100:.1f}%" for k, v in weights.items()}
+                st.json(weight_percentages)
             else:
                 weights = {}
             
@@ -365,6 +386,9 @@ if st.button("🚀 Search", type="primary"):
     elif use_hybrid and "Parallel" in hybrid_type:
         if len(parallel_models) < 2:
             st.error("❌ Parallel mode requires at least 2 models selected")
+        elif fusion_method == "Weighted Average" and abs(sum(weights.values()) - 1.0) > 0.01:
+            st.error(f"❌ Cannot search: Weights sum to {sum(weights.values()):.2f} but must equal 1.0")
+            st.info("💡 Please adjust the weight sliders above so they sum to exactly 1.0")
         else:
             start = time.time()
             with st.spinner("🔄 Searching..."):
@@ -387,6 +411,7 @@ if st.button("🚀 Search", type="primary"):
                 
                 if fusion_method == "Weighted Average":
                     payload["model_weights"] = weights
+                    st.info(f"🎯 Using custom weights: {', '.join([f'{k.upper()}={v:.2f}' for k,v in weights.items()])}")
                 
                 if fusion_method == "RRF":
                     payload["rrf_k"] = rrf_k
@@ -410,6 +435,15 @@ if st.button("🚀 Search", type="primary"):
                     with col1: st.metric("⏱️ Time",f"{elapsed:.0f} ms")
                     with col2: st.metric("📄 Docs",sum(len(r["results"]) for r in all_results))
                     with col3: st.metric("🎯 Mode",f"Hybrid Parallel ({fusion_method})")
+                    
+                    if fusion_method == "Weighted Average":
+                        st.markdown("---")
+                        st.markdown("### ⚖️ Weights Used")
+                        weight_cols = st.columns(len(weights))
+                        for idx, (model, weight) in enumerate(weights.items()):
+                            with weight_cols[idx]:
+                                st.metric(model.upper(), f"{weight:.2f}", f"{weight*100:.0f}%")
+                    
                     st.markdown("---")
                     if enhanced_mode:
                         st.markdown("### 🤖 AI Answer")
