@@ -63,9 +63,12 @@ retrieval:
 
 query_refinement:
   max_synonyms_per_word: 2
-  max_wordnet_synsets: 3
-  history_lookback: 5
-  history_top_terms: 2
+  max_wordnet_synsets: 2
+  max_history_length: 10
+  similarity_threshold: 0.35
+  max_edit_distance: 2
+  min_term_length: 4
+  confidence_threshold: 0.7
 
 services:
   api_gateway:

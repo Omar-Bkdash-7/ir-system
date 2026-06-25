@@ -89,9 +89,11 @@ services:
   frontend:
     <<: *common
     container_name: ir_frontend
-    command: streamlit run frontend/app.py
+    command: streamlit run frontend/app.py --server.fileWatcherType=poll
     ports:
       - "8501:8501"
+    volumes:
+      - ./frontend:/app/frontend
     environment:
       - PYTHONPATH=/app
       - PYTHONUNBUFFERED=1

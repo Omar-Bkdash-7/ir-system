@@ -3,7 +3,8 @@ from services.api_gateway.clients import (
     get_dataset_info,
     search_hybrid_serial,
     search_hybrid_parallel,
-    search_basic
+    search_basic,
+    refine_query
 )
 from common.exception_handlers import register_exception_handlers
 from common.logging_config import setup_logging
@@ -22,6 +23,8 @@ class BasicSearchRequest(BaseModel):
     top_k: int = Field(default=50, ge=1, le=1000, description="Number of results")
     bm25_k1: Optional[float] = Field(default=1.5, ge=0.0, le=3.0)
     bm25_b: Optional[float] = Field(default=0.75, ge=0.0, le=1.0)
+    enable_refinement: bool = Field(default=False, description="Enable query refinement")
+    query_history: List[str] = Field(default=[], description="Query history for refinement")
 
 
 class HybridSerialSearchRequest(BaseModel):
@@ -32,6 +35,8 @@ class HybridSerialSearchRequest(BaseModel):
     final_top_k: int = Field(default=50, ge=1, le=1000, description="Final number of results")
     bm25_k1: Optional[float] = Field(default=1.5, ge=0.0, le=3.0)
     bm25_b: Optional[float] = Field(default=0.75, ge=0.0, le=1.0)
+    enable_refinement: bool = Field(default=False, description="Enable query refinement")
+    query_history: List[str] = Field(default=[], description="Query history for refinement")
 
 
 class HybridParallelSearchRequest(BaseModel):
@@ -44,6 +49,8 @@ class HybridParallelSearchRequest(BaseModel):
     rrf_k: int = Field(default=60, ge=1, le=100, description="RRF constant")
     bm25_k1: Optional[float] = Field(default=1.5, ge=0.0, le=3.0)
     bm25_b: Optional[float] = Field(default=0.75, ge=0.0, le=1.0)
+    enable_refinement: bool = Field(default=False, description="Enable query refinement")
+    query_history: List[str] = Field(default=[], description="Query history for refinement")
     
     @model_validator(mode='after')
     def validate_weights(self):
@@ -59,6 +66,12 @@ class HybridParallelSearchRequest(BaseModel):
         return self
 
 
+class QueryRefineRequest(BaseModel):
+    query: str = Field(description="Query to refine")
+    history: List[str] = Field(default=[], description="Query history")
+    enabled: bool = Field(default=True, description="Enable refinement")
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "api_gateway"}
@@ -69,19 +82,46 @@ def datasets_info():
     return get_dataset_info()
 
 
+@app.post("/query/refine")
+def query_refine_endpoint(req: QueryRefineRequest):
+    try:
+        if not req.query or not req.query.strip():
+            raise HTTPException(status_code=400, detail="Query cannot be empty")
+        
+        result = refine_query(req.query, req.history, req.enabled)
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Query refinement failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/search")
 def search_endpoint(req: BasicSearchRequest):
     try:
         if not req.query or not req.query.strip():
             raise HTTPException(status_code=400, detail="Query cannot be empty")
         
+        query_to_use = req.query
+        refinement_info = None
+        
+        if req.enable_refinement:
+            refinement_result = refine_query(req.query, req.query_history, True)
+            query_to_use = refinement_result.get("refined_query", req.query)
+            refinement_info = refinement_result
+        
         results = search_basic(
-            query=req.query,
+            query=query_to_use,
             model=req.model,
             top_k=req.top_k,
             bm25_k1=req.bm25_k1,
             bm25_b=req.bm25_b
         )
+        
+        if refinement_info:
+            results["refinement"] = refinement_info
+        
         return results
     except HTTPException:
         raise
@@ -96,8 +136,16 @@ def search_hybrid_serial_endpoint(req: HybridSerialSearchRequest):
         if not req.query or not req.query.strip():
             raise HTTPException(status_code=400, detail="Query cannot be empty")
         
+        query_to_use = req.query
+        refinement_info = None
+        
+        if req.enable_refinement:
+            refinement_result = refine_query(req.query, req.query_history, True)
+            query_to_use = refinement_result.get("refined_query", req.query)
+            refinement_info = refinement_result
+        
         results = search_hybrid_serial(
-            query=req.query,
+            query=query_to_use,
             first_model=req.first_model,
             second_model=req.second_model,
             first_stage_k=req.first_stage_k,
@@ -105,6 +153,10 @@ def search_hybrid_serial_endpoint(req: HybridSerialSearchRequest):
             bm25_k1=req.bm25_k1,
             bm25_b=req.bm25_b
         )
+        
+        if refinement_info:
+            results["refinement"] = refinement_info
+        
         return results
     except HTTPException:
         raise
@@ -119,8 +171,16 @@ def search_hybrid_parallel_endpoint(req: HybridParallelSearchRequest):
         if not req.query or not req.query.strip():
             raise HTTPException(status_code=400, detail="Query cannot be empty")
         
+        query_to_use = req.query
+        refinement_info = None
+        
+        if req.enable_refinement:
+            refinement_result = refine_query(req.query, req.query_history, True)
+            query_to_use = refinement_result.get("refined_query", req.query)
+            refinement_info = refinement_result
+        
         results = search_hybrid_parallel(
-            query=req.query,
+            query=query_to_use,
             models=req.models,
             fusion_method=req.fusion_method,
             model_weights=req.model_weights,
@@ -130,6 +190,10 @@ def search_hybrid_parallel_endpoint(req: HybridParallelSearchRequest):
             bm25_k1=req.bm25_k1,
             bm25_b=req.bm25_b
         )
+        
+        if refinement_info:
+            results["refinement"] = refinement_info
+        
         return results
     except HTTPException:
         raise

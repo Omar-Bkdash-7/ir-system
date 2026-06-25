@@ -30,6 +30,11 @@ def load_css():
     .stTabs [aria-selected="true"] { background: #89b4fa !important; color: #1e1e2e !important; border-color: #89b4fa !important; font-weight: 600; }
     .stButton>button { background: linear-gradient(135deg,#89b4fa,#74c7ec); color: #1e1e2e; border: none; border-radius: 6px; padding: 0.35rem 0.7rem; font-weight: 600; font-size: 0.8rem; white-space: nowrap; width: 100%; }
     .stButton>button:hover { background: linear-gradient(135deg,#74c7ec,#89dceb); transform: translateY(-1px); }
+    .stCheckbox > label > div[data-testid="stCheckboxLabel"] { color: #cdd6f4; }
+    .stCheckbox > label > div[data-testid="stCheckboxMark"] { background-color: #a6e3a1 !important; border-color: #a6e3a1 !important; }
+    input[type="checkbox"]:checked { background-color: #a6e3a1 !important; border-color: #a6e3a1 !important; }
+    .stSlider > div > div > div > div { background: #a6e3a1 !important; }
+    .stSlider > div > div > div[role="slider"] { background: #a6e3a1 !important; border-color: #a6e3a1 !important; }
     .stTextInput>div>div>input { background: rgba(49,50,68,0.6); border: 1px solid #45475a; border-radius: 6px; padding: 0.4rem 0.7rem; color: #cdd6f4; font-size: 0.9rem; }
     .stTextInput>div>div>input:focus { border-color: #89b4fa; box-shadow: 0 0 0 2px rgba(137,180,250,0.2); }
     div[data-testid="stMetricValue"] { font-size: 1.3rem; font-weight: 700; color: #89b4fa; }
@@ -50,6 +55,9 @@ def load_css():
     section[data-testid="stSidebar"] h2 { font-size: 1rem !important; margin: -0.8rem 0 0.3rem 0 !important; }
     section[data-testid="stSidebar"] button[kind="header"] { display: none; }
     .stExpander { background: rgba(49,50,68,0.3); border: 1px solid #45475a; border-radius: 6px; }
+    button[data-testid="stToolbarActionButton"] { display: none !important; }
+    header { visibility: hidden; }
+    footer { visibility: hidden; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -139,16 +147,139 @@ with st.sidebar:
         st.markdown("⏳ **BM25**: Loading...")
     
     if not all_ready:
-        st.info("Indexes are loading in the background...")
-        if st.button("🔄 Refresh Status", key="refresh_status"):
-            st.cache_data.clear()
-            st.rerun()
+        st.info("⏳ Indexes are loading...")
+        st.caption("Page will auto-refresh when ready")
+        time.sleep(2)
+        st.rerun()
+    
     st.markdown("---")
-    enhanced_mode = st.toggle("🟢 Enhanced", help="Query Refinement + RAG")
-    if enhanced_mode:
-        st.markdown("<div class='info-box'>Coming soon</div>", unsafe_allow_html=True)
+    enable_rag = st.toggle("🤖 RAG Mode", help="AI-generated answers using retrieved documents", value=False)
+    if enable_rag:
+        st.markdown("<div class='info-box'>✨ RAG Active - AI answers will be generated</div>", unsafe_allow_html=True)
 
-query = st.text_input("🔎 Search", placeholder="Enter your query...", help="Type your question")
+if "query_history" not in st.session_state:
+    st.session_state.query_history = []
+
+if "refined_query_result" not in st.session_state:
+    st.session_state.refined_query_result = None
+
+if "show_refinement_preview" not in st.session_state:
+    st.session_state.show_refinement_preview = False
+
+if "current_query" not in st.session_state:
+    st.session_state.current_query = ""
+
+if "refinement_accepted" not in st.session_state:
+    st.session_state.refinement_accepted = False
+
+col_search, col_refine = st.columns([4, 1])
+
+with col_search:
+    query = st.text_input(
+        "🔎 Search", 
+        value=st.session_state.current_query,
+        placeholder="Enter your query...", 
+        help="Type your question", 
+        key="main_query_input"
+    )
+
+with col_refine:
+    st.markdown("<div style='margin-top: 32px;'></div>", unsafe_allow_html=True)
+    if st.button("✨ Refine", type="secondary", use_container_width=True, help="Improve query with AI"):
+        if query and query.strip():
+            with st.spinner("🔄 Refining query..."):
+                refinement_result = safe_request("POST", f"{API_GATEWAY_URL}/query/refine", json={
+                    "query": query,
+                    "history": st.session_state.query_history[-3:],
+                    "enabled": True
+                })
+                if refinement_result:
+                    st.session_state.refined_query_result = refinement_result
+                    st.session_state.show_refinement_preview = True
+                    st.rerun()
+        else:
+            st.warning("⚠️ Enter a query first")
+
+if st.session_state.show_refinement_preview and st.session_state.refined_query_result:
+    st.markdown("---")
+    st.markdown("### 🔍 Query Refinement Preview")
+    
+    refined_data = st.session_state.refined_query_result
+    original = refined_data.get("original_query", "")
+    refined = refined_data.get("refined_query", "")
+    corrections = refined_data.get("corrections", {})
+    synonyms_added = refined_data.get("synonyms_added", {})
+    history_terms = refined_data.get("history_terms_added", [])
+    similarity = refined_data.get("history_similarity", 0.0)
+    boosted_terms = refined_data.get("boosted_terms", [])
+    
+    corrected_only = original.lower()
+    for wrong, correct in corrections.items():
+        corrected_only = corrected_only.replace(wrong, correct)
+    
+    refined_display = corrected_only
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Original Query:**")
+        st.info(f"📝 {original}")
+    with col2:
+        st.markdown("**Suggested Query:**")
+        st.success(f"✨ {refined_display}")
+    
+    changes_made = []
+    if corrections:
+        changes_made.append(f"🔤 Spelling: {len(corrections)} corrections")
+    if synonyms_added:
+        total_synonyms = sum(len(v) for v in synonyms_added.values())
+        changes_made.append(f"📚 WordNet: {total_synonyms} synonyms added")
+    if history_terms:
+        changes_made.append(f"🧠 SentenceTransformers: {len(history_terms)} semantic terms")
+    if boosted_terms:
+        changes_made.append(f"📈 History: {len(boosted_terms)} terms boosted")
+    
+    if changes_made:
+        st.markdown("**Improvements Applied:**")
+        for change in changes_made:
+            st.markdown(f"- {change}")
+        
+        if corrections:
+            with st.expander("🔤 Spelling Corrections"):
+                for wrong, correct in corrections.items():
+                    st.markdown(f"- `{wrong}` → `{correct}`")
+        
+        if synonyms_added:
+            with st.expander("📚 WordNet Synonyms"):
+                for word, syns in synonyms_added.items():
+                    st.markdown(f"- `{word}`: {', '.join([f'`{s}`' for s in syns])}")
+        
+        if history_terms:
+            with st.expander("🧠 SentenceTransformers Semantic Expansion"):
+                st.markdown(f"**Similarity Score:** {similarity:.3f}")
+                st.markdown(f"**Added Terms:** {', '.join([f'`{t}`' for t in history_terms])}")
+                st.caption(f"Recent queries: {st.session_state.query_history[-3:]}")
+        
+        if boosted_terms:
+            with st.expander("📈 History-based Boosting"):
+                st.markdown(f"**Boosted Terms:** {', '.join([f'`{t}`' for t in boosted_terms])}")
+    else:
+        st.markdown("<div class='info-box'>No refinements needed - query is already optimal!</div>", unsafe_allow_html=True)
+    
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("✅ Accept & Use Refined", type="primary", use_container_width=True):
+            st.session_state.current_query = corrected_only
+            st.session_state.refinement_accepted = True
+            st.session_state.show_refinement_preview = False
+            st.rerun()
+    with col2:
+        if st.button("❌ Reject & Keep Original", use_container_width=True):
+            st.session_state.refinement_accepted = False
+            st.session_state.show_refinement_preview = False
+            st.session_state.refined_query_result = None
+            st.rerun()
+
 st.markdown("---")
 
 st.markdown("### 🎯 Select Retrieval Mode")
@@ -201,7 +332,6 @@ if use_bm25:
         with col2:
             bm25_disp = st.slider("Results to Display", 5, 50, 20, 5, key="bm25_disp", help="Shown in UI")
             bm25_b = st.slider("b (Length Normalization)", 0.0, 1.0, 0.75, 0.05, key="bm25_b", help="Document length normalization")
-        st.latex(r"BM25(q,d) = \sum_{t \in q} IDF(t) \cdot \frac{TF(t,d) \cdot (k_1 + 1)}{TF(t,d) + k_1 \cdot (1 - b + b \cdot \frac{|d|}{avgdl})}")
         st.info(f"📊 Current parameters: k1={bm25_k1:.1f}, b={bm25_b:.2f}")
 
 if use_hybrid:
@@ -269,7 +399,6 @@ if use_hybrid:
             
             if fusion_method == "RRF":
                 rrf_k = st.slider("RRF k parameter", 10, 100, 60, 5, key="rrf_k", help="Controls rank fusion behavior")
-                st.latex(r"RRF(d) = \sum_{i} \frac{1}{k + rank_i(d)}")
                 st.info(f"🔄 Reciprocal Rank Fusion with k={rrf_k} - Rank-based, no score normalization issues")
             else:
                 rrf_k = 60
@@ -334,96 +463,48 @@ else:
 
 st.markdown("---")
 if st.button("🚀 Search", type="primary"):
-    if not query or not query.strip():
+    if st.session_state.show_refinement_preview:
+        st.warning("⚠️ Please accept or reject the refinement preview above before searching")
+    elif not query or not query.strip():
         st.error("❌ Enter a query")
     elif not use_hybrid and not selected_models:
         st.error("❌ Select at least one model")
-    elif use_hybrid and "Serial" in hybrid_type:
-        start = time.time()
-        with st.spinner("🔄 Searching..."):
-            all_results = []
-            
-            payload = {
-                "query": query,
-                "first_model": first_stage.lower(),
-                "second_model": second_stage.lower(),
-                "first_stage_k": first_stage_k,
-                "final_top_k": final_top_k
-            }
-            
-            if "bm25" in first_stage.lower() or "bm25" in second_stage.lower():
-                payload["bm25_k1"] = bm25_k1
-                payload["bm25_b"] = bm25_b
-            
-            res = safe_request("POST", f"{API_GATEWAY_URL}/search/hybrid/serial", json=payload)
-            if res:
-                all_results.append({
-                    "model": f"hybrid_serial_{first_stage.lower()}_{second_stage.lower()}",
-                    "results": res.get("results", [])
-                })
-            
-            elapsed = (time.time()-start)*1000
-            if all_results:
-                st.markdown("---")
-                st.markdown("## 📊 Results")
-                col1,col2,col3=st.columns(3)
-                with col1: st.metric("⏱️ Time",f"{elapsed:.0f} ms")
-                with col2: st.metric("📄 Docs",sum(len(r["results"]) for r in all_results))
-                with col3: st.metric("🎯 Mode","Hybrid Serial")
-                st.markdown("---")
-                if enhanced_mode:
-                    st.markdown("### 🤖 AI Answer")
-                    st.markdown("<div class='info-box'><b>RAG Preview:</b> AI-generated answers will appear here using Flan-T5.</div>", unsafe_allow_html=True)
-                    st.markdown("---")
-                for mr in all_results:
-                    st.markdown(f"### 📊 {mr['model'].upper().replace('_', ' ')} ({len(mr['results'])} docs)")
-                    for idx,doc in enumerate(mr['results'],1):
-                        render_result_card(doc,idx)
-                    st.markdown("---")
-            else:
-                st.markdown("<div class='error-box'>❌ No results</div>", unsafe_allow_html=True)
-    
-    elif use_hybrid and "Parallel" in hybrid_type:
-        if len(parallel_models) < 2:
-            st.error("❌ Parallel mode requires at least 2 models selected")
-        elif fusion_method == "Weighted Average" and abs(sum(weights.values()) - 1.0) > 0.01:
-            st.error(f"❌ Cannot search: Weights sum to {sum(weights.values()):.2f} but must equal 1.0")
-            st.info("💡 Please adjust the weight sliders above so they sum to exactly 1.0")
-        else:
+    else:
+        query_to_execute = query
+        refinement_info = None
+        
+        if st.session_state.refinement_accepted and st.session_state.refined_query_result:
+            refined_data = st.session_state.refined_query_result
+            query_to_execute = refined_data.get("refined_query", query)
+            refinement_info = refined_data
+            st.session_state.refinement_accepted = False
+        
+        if query not in st.session_state.query_history:
+            st.session_state.query_history.append(query)
+            if len(st.session_state.query_history) > 10:
+                st.session_state.query_history.pop(0)
+        
+        if use_hybrid and "Serial" in hybrid_type:
             start = time.time()
             with st.spinner("🔄 Searching..."):
                 all_results = []
                 
-                fusion_method_map = {
-                    "CombSUM": "combsum",
-                    "CombMNZ": "combmnz",
-                    "Weighted Average": "weighted",
-                    "RRF": "rrf"
-                }
-                
                 payload = {
-                    "query": query,
-                    "models": parallel_models,
-                    "fusion_method": fusion_method_map.get(fusion_method, "rrf"),
-                    "top_k": parallel_final_k,
-                    "candidates_per_model": candidates_per_model
+                    "query": query_to_execute,
+                    "first_model": first_stage.lower(),
+                    "second_model": second_stage.lower(),
+                    "first_stage_k": first_stage_k,
+                    "final_top_k": final_top_k
                 }
                 
-                if fusion_method == "Weighted Average":
-                    payload["model_weights"] = weights
-                    st.info(f"🎯 Using custom weights: {', '.join([f'{k.upper()}={v:.2f}' for k,v in weights.items()])}")
-                
-                if fusion_method == "RRF":
-                    payload["rrf_k"] = rrf_k
-                
-                if "bm25" in parallel_models:
+                if "bm25" in first_stage.lower() or "bm25" in second_stage.lower():
                     payload["bm25_k1"] = bm25_k1
                     payload["bm25_b"] = bm25_b
                 
-                res = safe_request("POST", f"{API_GATEWAY_URL}/search/hybrid/parallel", json=payload)
+                res = safe_request("POST", f"{API_GATEWAY_URL}/search/hybrid/serial", json=payload)
                 if res:
                     all_results.append({
-                        "model": f"hybrid_parallel_{fusion_method.replace(' ', '_')}",
+                        "model": f"hybrid_serial_{first_stage.lower()}_{second_stage.lower()}",
                         "results": res.get("results", [])
                     })
                 
@@ -434,18 +515,38 @@ if st.button("🚀 Search", type="primary"):
                     col1,col2,col3=st.columns(3)
                     with col1: st.metric("⏱️ Time",f"{elapsed:.0f} ms")
                     with col2: st.metric("📄 Docs",sum(len(r["results"]) for r in all_results))
-                    with col3: st.metric("🎯 Mode",f"Hybrid Parallel ({fusion_method})")
+                    with col3: st.metric("🎯 Mode","Hybrid Serial")
                     
-                    if fusion_method == "Weighted Average":
+                    if refinement_info:
                         st.markdown("---")
-                        st.markdown("### ⚖️ Weights Used")
-                        weight_cols = st.columns(len(weights))
-                        for idx, (model, weight) in enumerate(weights.items()):
-                            with weight_cols[idx]:
-                                st.metric(model.upper(), f"{weight:.2f}", f"{weight*100:.0f}%")
+                        st.markdown("### ✨ Query Refinement Applied")
+                        
+                        original_query = refinement_info.get('original_query', '')
+                        corrections = refinement_info.get('corrections', {})
+                        corrected_query = original_query.lower()
+                        for wrong, correct in corrections.items():
+                            corrected_query = corrected_query.replace(wrong, correct)
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown(f"**Original:** `{original_query}`")
+                        with col2:
+                            st.markdown(f"**Corrected:** `{corrected_query}`")
+                        
+                        improvements = []
+                        if refinement_info.get('corrections'):
+                            improvements.append(f"🔤 Spelling: {len(refinement_info['corrections'])}")
+                        if refinement_info.get('synonyms_added'):
+                            total_syns = sum(len(v) for v in refinement_info['synonyms_added'].values())
+                            improvements.append(f"📚 WordNet: {total_syns}")
+                        if refinement_info.get('history_terms_added'):
+                            improvements.append(f"🧠 Semantic: {len(refinement_info['history_terms_added'])}")
+                        
+                        if improvements:
+                            st.caption(" | ".join(improvements))
                     
                     st.markdown("---")
-                    if enhanced_mode:
+                    if enable_rag:
                         st.markdown("### 🤖 AI Answer")
                         st.markdown("<div class='info-box'><b>RAG Preview:</b> AI-generated answers will appear here using Flan-T5.</div>", unsafe_allow_html=True)
                         st.markdown("---")
@@ -456,61 +557,191 @@ if st.button("🚀 Search", type="primary"):
                         st.markdown("---")
                 else:
                     st.markdown("<div class='error-box'>❌ No results</div>", unsafe_allow_html=True)
-    
-    else:
-        start = time.time()
-        with st.spinner("🔄 Searching..."):
-            all_results = []
-            
-            for model in selected_models:
-                if model == "tfidf":
-                    top_k = tfidf_k
-                    display_k = tfidf_disp
-                elif model == "embedding":
-                    top_k = emb_k
-                    display_k = emb_disp
-                elif model == "bm25":
-                    top_k = bm25_k
-                    display_k = bm25_disp
-                else:
-                    continue
-                
-                req_data = {
-                    "query_text": query,
-                    "query_tokens": query.lower().split(),
-                    "model": model,
-                    "top_k": top_k,
-                    "include_text": True
-                }
-                
-                if model == "bm25":
-                    req_data["bm25_k1"] = bm25_k1
-                    req_data["bm25_b"] = bm25_b
-                
-                res = safe_request("POST", f"{RETRIEVAL_URL}/retrieve/{model}", json=req_data)
-                if res:
-                    all_results.append({"model": model, "results": res.get("results", [])[:display_k]})
-            
-            elapsed = (time.time()-start)*1000
-            if all_results:
-                st.markdown("---")
-                st.markdown("## 📊 Results")
-                col1,col2,col3=st.columns(3)
-                with col1: st.metric("⏱️ Time",f"{elapsed:.0f} ms")
-                with col2: st.metric("📄 Docs",sum(len(r["results"]) for r in all_results))
-                with col3: st.metric("🎯 Models",len(all_results))
-                st.markdown("---")
-                if enhanced_mode:
-                    st.markdown("### 🤖 AI Answer")
-                    st.markdown("<div class='info-box'><b>RAG Preview:</b> AI-generated answers will appear here using Flan-T5.</div>", unsafe_allow_html=True)
-                    st.markdown("---")
-                for mr in all_results:
-                    st.markdown(f"### 📊 {mr['model'].upper().replace('_', ' ')} ({len(mr['results'])} docs)")
-                    for idx,doc in enumerate(mr['results'],1):
-                        render_result_card(doc,idx)
-                    st.markdown("---")
+        elif use_hybrid and "Parallel" in hybrid_type:
+            if len(parallel_models) < 2:
+                st.error("❌ Parallel mode requires at least 2 models selected")
+            elif fusion_method == "Weighted Average" and abs(sum(weights.values()) - 1.0) > 0.01:
+                st.error(f"❌ Cannot search: Weights sum to {sum(weights.values()):.2f} but must equal 1.0")
+                st.info("💡 Please adjust the weight sliders above so they sum to exactly 1.0")
             else:
-                st.markdown("<div class='error-box'>❌ No results</div>", unsafe_allow_html=True)
+                start = time.time()
+                with st.spinner("🔄 Searching..."):
+                    all_results = []
+                    
+                    fusion_method_map = {
+                        "CombSUM": "combsum",
+                        "CombMNZ": "combmnz",
+                        "Weighted Average": "weighted",
+                        "RRF": "rrf"
+                    }
+                    
+                    payload = {
+                        "query": query_to_execute,
+                        "models": parallel_models,
+                        "fusion_method": fusion_method_map.get(fusion_method, "rrf"),
+                        "top_k": parallel_final_k,
+                        "candidates_per_model": candidates_per_model
+                    }
+                    
+                    if fusion_method == "Weighted Average":
+                        payload["model_weights"] = weights
+                        st.info(f"🎯 Using custom weights: {', '.join([f'{k.upper()}={v:.2f}' for k,v in weights.items()])}")
+                    
+                    if fusion_method == "RRF":
+                        payload["rrf_k"] = rrf_k
+                    
+                    if "bm25" in parallel_models:
+                        payload["bm25_k1"] = bm25_k1
+                        payload["bm25_b"] = bm25_b
+                    
+                    res = safe_request("POST", f"{API_GATEWAY_URL}/search/hybrid/parallel", json=payload)
+                    if res:
+                        all_results.append({
+                            "model": f"hybrid_parallel_{fusion_method.replace(' ', '_')}",
+                            "results": res.get("results", [])
+                        })
+                    
+                    elapsed = (time.time()-start)*1000
+                    if all_results:
+                        st.markdown("---")
+                        st.markdown("## 📊 Results")
+                        col1,col2,col3=st.columns(3)
+                        with col1: st.metric("⏱️ Time",f"{elapsed:.0f} ms")
+                        with col2: st.metric("📄 Docs",sum(len(r["results"]) for r in all_results))
+                        with col3: st.metric("🎯 Mode",f"Hybrid Parallel ({fusion_method})")
+                        
+                        if refinement_info:
+                            st.markdown("---")
+                            st.markdown("### ✨ Query Refinement Applied")
+                            
+                            original_query = refinement_info.get('original_query', '')
+                            corrections = refinement_info.get('corrections', {})
+                            corrected_query = original_query.lower()
+                            for wrong, correct in corrections.items():
+                                corrected_query = corrected_query.replace(wrong, correct)
+                            
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.markdown(f"**Original:** `{original_query}`")
+                            with col2:
+                                st.markdown(f"**Corrected:** `{corrected_query}`")
+                            
+                            improvements = []
+                            if refinement_info.get('corrections'):
+                                improvements.append(f"🔤 Spelling: {len(refinement_info['corrections'])}")
+                            if refinement_info.get('synonyms_added'):
+                                total_syns = sum(len(v) for v in refinement_info['synonyms_added'].values())
+                                improvements.append(f"📚 WordNet: {total_syns}")
+                            if refinement_info.get('history_terms_added'):
+                                improvements.append(f"🧠 Semantic: {len(refinement_info['history_terms_added'])}")
+                            
+                            if improvements:
+                                st.caption(" | ".join(improvements))
+                        
+                        if fusion_method == "Weighted Average":
+                            st.markdown("---")
+                            st.markdown("### ⚖️ Weights Used")
+                            weight_cols = st.columns(len(weights))
+                            for idx, (model, weight) in enumerate(weights.items()):
+                                with weight_cols[idx]:
+                                    st.metric(model.upper(), f"{weight:.2f}", f"{weight*100:.0f}%")
+                        
+                        st.markdown("---")
+                        if enable_rag:
+                            st.markdown("### 🤖 AI Answer")
+                            st.markdown("<div class='info-box'><b>RAG Preview:</b> AI-generated answers will appear here using Flan-T5.</div>", unsafe_allow_html=True)
+                            st.markdown("---")
+                        for mr in all_results:
+                            st.markdown(f"### 📊 {mr['model'].upper().replace('_', ' ')} ({len(mr['results'])} docs)")
+                            for idx,doc in enumerate(mr['results'],1):
+                                render_result_card(doc,idx)
+                            st.markdown("---")
+                    else:
+                        st.markdown("<div class='error-box'>❌ No results</div>", unsafe_allow_html=True)
+        
+        else:
+            start = time.time()
+            with st.spinner("🔄 Searching..."):
+                all_results = []
+                
+                for model in selected_models:
+                    if model == "tfidf":
+                        top_k = tfidf_k
+                        display_k = tfidf_disp
+                    elif model == "embedding":
+                        top_k = emb_k
+                        display_k = emb_disp
+                    elif model == "bm25":
+                        top_k = bm25_k
+                        display_k = bm25_disp
+                    else:
+                        continue
+                    
+                    req_data = {
+                        "query_text": query_to_execute,
+                        "query_tokens": query_to_execute.lower().split(),
+                        "model": model,
+                        "top_k": top_k,
+                        "include_text": True
+                    }
+                    
+                    if model == "bm25":
+                        req_data["bm25_k1"] = bm25_k1
+                        req_data["bm25_b"] = bm25_b
+                    
+                    res = safe_request("POST", f"{RETRIEVAL_URL}/retrieve/{model}", json=req_data)
+                    if res:
+                        all_results.append({"model": model, "results": res.get("results", [])[:display_k]})
+                
+                elapsed = (time.time()-start)*1000
+                if all_results:
+                    st.markdown("---")
+                    st.markdown("## 📊 Results")
+                    col1,col2,col3=st.columns(3)
+                    with col1: st.metric("⏱️ Time",f"{elapsed:.0f} ms")
+                    with col2: st.metric("📄 Docs",sum(len(r["results"]) for r in all_results))
+                    with col3: st.metric("🎯 Models",len(all_results))
+                    
+                    if refinement_info:
+                        st.markdown("---")
+                        st.markdown("### ✨ Query Refinement Applied")
+                        
+                        original_query = refinement_info.get('original_query', '')
+                        corrections = refinement_info.get('corrections', {})
+                        corrected_query = original_query.lower()
+                        for wrong, correct in corrections.items():
+                            corrected_query = corrected_query.replace(wrong, correct)
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown(f"**Original:** `{original_query}`")
+                        with col2:
+                            st.markdown(f"**Corrected:** `{corrected_query}`")
+                        
+                        improvements = []
+                        if refinement_info.get('corrections'):
+                            improvements.append(f"🔤 Spelling: {len(refinement_info['corrections'])}")
+                        if refinement_info.get('synonyms_added'):
+                            total_syns = sum(len(v) for v in refinement_info['synonyms_added'].values())
+                            improvements.append(f"📚 WordNet: {total_syns}")
+                        if refinement_info.get('history_terms_added'):
+                            improvements.append(f"🧠 Semantic: {len(refinement_info['history_terms_added'])}")
+                        
+                        if improvements:
+                            st.caption(" | ".join(improvements))
+                    
+                    st.markdown("---")
+                    if enable_rag:
+                        st.markdown("### 🤖 AI Answer")
+                        st.markdown("<div class='info-box'><b>RAG Preview:</b> AI-generated answers will appear here using Flan-T5.</div>", unsafe_allow_html=True)
+                        st.markdown("---")
+                    for mr in all_results:
+                        st.markdown(f"### 📊 {mr['model'].upper().replace('_', ' ')} ({len(mr['results'])} docs)")
+                        for idx,doc in enumerate(mr['results'],1):
+                            render_result_card(doc,idx)
+                        st.markdown("---")
+                else:
+                    st.markdown("<div class='error-box'>❌ No results</div>", unsafe_allow_html=True)
 
 st.markdown("---")
 with st.expander("📈 Statistics"):
@@ -519,3 +750,4 @@ with st.expander("📈 Statistics"):
     with col2: st.metric("Vocab",f"{get_tfidf_status().get('vocab_size',0):,}" if get_tfidf_status() else "0")
     with col3: st.metric("Test Queries","10,000")
     with col4: st.metric("Qrels","15,675")
+
