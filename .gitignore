@@ -20,6 +20,9 @@ data/processed/
 data/indices/
 data/.ir_datasets/
 
+# models
+models/
+
 # Logs
 logs/
 

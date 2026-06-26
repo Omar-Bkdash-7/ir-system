@@ -13,3 +13,7 @@ RUN mkdir -p /root/nltk_data && \
     nltk.download('omw-1.4', download_dir='/root/nltk_data', quiet=False); \
     nltk.download('punkt', download_dir='/root/nltk_data', quiet=False); \
     print('NLTK data downloaded successfully')"
+
+COPY models /app/models
+
+ENV SENTENCE_TRANSFORMERS_HOME=/app/models

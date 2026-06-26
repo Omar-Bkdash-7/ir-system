@@ -24,11 +24,11 @@ class EmbeddingIndexer:
 
     def _load_model(self):
         if self.model is None:
-            model_name = get_config("models.embedding.model_name", "all-MiniLM-L6-v2")
+            model_name = get_config("models.embedding.model_name", "models/all-MiniLM-L6-v2")
             logger.info(f"Loading embedding model: {model_name} on {self.device}")
 
             try:
-                self.model = SentenceTransformer(model_name, device=self.device)
+                self.model = SentenceTransformer(model_name, device=self.device, trust_remote_code=False)
             except Exception as e:
                 raise ModelLoadError(
                     f"Failed to load the model '{model_name}'. "

@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 
 
 class SemanticRefinementEngine:
-    def __init__(self, model_name: str = 'all-MiniLM-L6-v2'):
-        self.model = SentenceTransformer(model_name)
+    def __init__(self, model_name: str = 'models/all-MiniLM-L6-v2'):
+        self.model = SentenceTransformer(model_name, trust_remote_code=False)
         self._embedding_cache = {}
         self._cache_max_size = 1000
         logger.info(f"Loaded semantic model: {model_name}")

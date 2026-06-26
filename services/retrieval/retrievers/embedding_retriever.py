@@ -42,11 +42,11 @@ class EmbeddingRetriever:
                 f"Mismatch: {len(self.doc_ids)} doc_ids but {self.embeddings.shape[0]} embeddings"
             )
 
-        model_name = get_config("models.embedding.model_name", "all-MiniLM-L6-v2")
+        model_name = get_config("models.embedding.model_name", "models/all-MiniLM-L6-v2")
         logger.info(f"Loading embedding model: {model_name} on {self.device}")
 
         try:
-            self.model = SentenceTransformer(model_name, device=self.device)
+            self.model = SentenceTransformer(model_name, device=self.device, trust_remote_code=False)
         except Exception as e:
             raise ModelLoadError(
                 f"Failed to load the model '{model_name}'. "
@@ -139,7 +139,7 @@ class EmbeddingRetriever:
             "embedding_dimension": self.embeddings.shape[1],
             "memory_mb": self.embeddings.nbytes / (1024**2),
             "device": self.device,
-            "model": get_config("models.embedding.model_name", "all-MiniLM-L6-v2")
+            "model": get_config("models.embedding.model_name", "models/all-MiniLM-L6-v2")
         }
     
     def score_documents(self, query_text: str, doc_ids: list[str]) -> dict[str, float]:
