@@ -14,14 +14,17 @@ venv/
 .venv/
 env/
 
-# Data 
-data/raw/
+# Data - managed by Docker volumes
+data/datasets/*
+!data/datasets/.gitkeep
+!data/datasets/raw/
+data/indices/*
+!data/indices/.gitkeep
+data/cache/
+data/evaluation/*
+!data/evaluation/.gitkeep
+data/models/
 data/processed/
-data/indices/
-data/.ir_datasets/
-
-# models
-models/
 
 # Logs
 logs/
