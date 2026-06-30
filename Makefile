@@ -194,6 +194,14 @@ build-embeddings: ## Build embedding index only
 # -----------------------------------------------------------------------------
 # Data Management
 # -----------------------------------------------------------------------------
+init-db: ## Initialize database schema (run once)
+	@echo "$(BLUE)Initializing database schema...$(NC)"
+	docker compose -f docker-compose.yml -f docker-compose.tools.yml run --rm init_db
+
+check-data: ## Check status of datasets, indices, and database
+	@echo "$(BLUE)Checking data status...$(NC)"
+	docker compose -f docker-compose.yml -f docker-compose.tools.yml run --rm check_data
+
 download-dataset: ## Download dataset using ir-datasets
 	@echo "$(BLUE)Downloading dataset...$(NC)"
 	docker compose -f docker-compose.yml -f docker-compose.tools.yml run --rm download_dataset

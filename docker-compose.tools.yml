@@ -9,6 +9,63 @@ version: '3.9'
 services:
 
   # ---------------------------------------------------------------------------
+  # Tool: Initialize Database Schema
+  # ---------------------------------------------------------------------------
+  init_db:
+    build:
+      context: .
+      dockerfile: docker/base.Dockerfile
+    image: ir-db-tools:latest
+    container_name: ir_init_db
+    profiles:
+      - tools
+    command: python scripts/init_db.py
+    volumes:
+      - logs:/app/logs
+    networks:
+      - backend_net
+      - database_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ir_user}:${POSTGRES_PASSWORD:-ir_pass}@postgres:5432/${POSTGRES_DB:-ir_db}
+      LOG_LEVEL: INFO
+      SERVICE_NAME: init_db
+
+  # ---------------------------------------------------------------------------
+  # Tool: Check Data Status
+  # ---------------------------------------------------------------------------
+  check_data:
+    build:
+      context: .
+      dockerfile: docker/base.Dockerfile
+    image: ir-db-tools:latest
+    container_name: ir_check_data
+    profiles:
+      - tools
+    command: python scripts/check_data.py
+    volumes:
+      - datasets:/app/data/datasets
+      - processed_data:/app/data/processed
+      - indices:/app/data/indices
+      - logs:/app/logs
+    networks:
+      - backend_net
+      - database_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ir_user}:${POSTGRES_PASSWORD:-ir_pass}@postgres:5432/${POSTGRES_DB:-ir_db}
+      LOG_LEVEL: INFO
+      SERVICE_NAME: check_data
+
+  # ---------------------------------------------------------------------------
   # Tool: Download Dataset
   # ---------------------------------------------------------------------------
   download_dataset:
