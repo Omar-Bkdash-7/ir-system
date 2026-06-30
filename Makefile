@@ -192,6 +192,13 @@ build-embeddings: ## Build embedding index only
 	docker compose -f docker-compose.yml -f docker-compose.tools.yml run --rm build_embeddings
 
 # -----------------------------------------------------------------------------
+# Database Management
+# -----------------------------------------------------------------------------
+refresh-views: ## Refresh materialized views
+	@echo "$(BLUE)Refreshing materialized views...$(NC)"
+	docker compose -f docker-compose.yml -f docker-compose.tools.yml run --rm refresh_views
+
+# -----------------------------------------------------------------------------
 # Cache Management
 # -----------------------------------------------------------------------------
 clear-cache: ## Clear all Redis cache

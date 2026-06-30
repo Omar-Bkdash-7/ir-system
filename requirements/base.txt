@@ -8,6 +8,9 @@ pydantic==2.7.1
 numpy==1.26.4
 pandas==2.2.2
 
+# System monitoring
+psutil==5.9.8
+
 # Utilities
 pyyaml==6.0.1
 jsonlines==4.0.0

@@ -11,6 +11,8 @@ from typing import Dict, Any, Optional
 import time
 import os
 
+from common.monitoring import get_monitor
+
 router = APIRouter(tags=["health"])
 
 # Service startup time
@@ -68,6 +70,22 @@ async def health_check(response: Response) -> HealthResponse:
             timestamp=time.time(),
             details={"error": str(e)}
         )
+
+
+@router.get("/metrics", status_code=status.HTTP_200_OK)
+async def metrics_endpoint() -> Dict[str, Any]:
+    """
+    Service metrics endpoint for monitoring.
+    
+    Returns detailed metrics including:
+    - Request count and error rate
+    - CPU and memory usage
+    - Response times
+    """
+    service_name = os.getenv("SERVICE_NAME", "unknown-service")
+    monitor = get_monitor(service_name)
+    
+    return monitor.get_metrics()
 
 
 @router.get("/readiness", status_code=status.HTTP_200_OK)
