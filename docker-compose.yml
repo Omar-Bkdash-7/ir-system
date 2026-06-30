@@ -34,6 +34,10 @@ volumes:
     name: ir_datasets
   indices:
     name: ir_indices
+  models:
+    name: ir_models
+  cache:
+    name: ir_cache
   processed_data:
     name: ir_processed_data
   evaluation_results:
@@ -52,6 +56,9 @@ x-common-environment: &common-env
   ENVIRONMENT: ${ENVIRONMENT:-production}
   DATABASE_URL: postgresql://${POSTGRES_USER:-ir_user}:${POSTGRES_PASSWORD:-ir_pass}@postgres:5432/${POSTGRES_DB:-ir_db}
   IR_DATASETS_HOME: /app/data/datasets
+  SENTENCE_TRANSFORMERS_HOME: /app/data/models/sentence-transformers
+  TORCH_HOME: /app/data/cache/torch
+  TRANSFORMERS_CACHE: /app/data/cache/transformers
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
 x-common-service: &common-service
@@ -62,6 +69,8 @@ x-common-service: &common-service
     - logs:/app/logs
     - datasets:/app/data/datasets
     - indices:/app/data/indices
+    - models:/app/data/models
+    - cache:/app/data/cache
     - processed_data:/app/data/processed
     - evaluation_results:/app/data/evaluation
   environment:

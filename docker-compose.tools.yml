@@ -51,6 +51,9 @@ services:
       - datasets:/app/data/datasets
       - processed_data:/app/data/processed
       - indices:/app/data/indices
+      - models:/app/data/models
+      - cache:/app/data/cache
+      - evaluation_results:/app/data/evaluation
       - logs:/app/logs
     networks:
       - backend_net
