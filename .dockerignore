@@ -1,0 +1,114 @@
+# =============================================================================
+# .dockerignore - Optimize Docker build context
+# =============================================================================
+# This file significantly reduces build context size and speeds up builds
+# Reduces context from ~2GB to ~50MB
+# =============================================================================
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Kiro
+.kiro/
+
+# Docker files - excluded from build context
+# Note: These files are NOT needed inside the image
+# They are used by Docker CLI/Compose on the host machine
+# If you need these files in CI/CD, they are accessed from the host, not from inside containers
+Dockerfile
+docker/
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+*.md
+!README.md
+docs/
+*.pdf
+
+# Runtime data - NEVER include in images
+data/datasets/
+data/.ir_datasets/
+data/indices/*.pkl
+data/indices/*.npz
+data/indices/*.npy
+data/indices/*.json
+data/processed/
+data/evaluation/
+data/raw/
+
+# Logs
+logs/
+*.log
+
+# Models - handle separately in multi-stage build
+models/
+!models/.gitkeep
+
+# Cache
+.cache/
+*.cache
+
+# Tests
+tests/
+test_*.py
+*_test.py
+pytest.ini
+.pytest_cache/
+
+# Coverage
+.coverage
+htmlcov/
+.tox/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+postgres_data/
+
+# Temp files
+tmp/
+temp/
+*.tmp
+*.bak
+*.swp
+
+# OS
+Thumbs.db

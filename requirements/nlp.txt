@@ -1,0 +1,6 @@
+# Natural Language Processing
+-r base.txt
+
+nltk==3.8.1
+spacy==3.8.3
+pyspellchecker==0.8.1
