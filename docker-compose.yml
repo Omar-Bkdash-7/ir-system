@@ -226,6 +226,14 @@ services:
       <<: *common-env
       SERVICE_NAME: preprocessing
       SERVICE_VERSION: "1.0.0"
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   # ---------------------------------------------------------------------------
   # Indexing Service - Build and manage indices
@@ -253,6 +261,14 @@ services:
       SERVICE_NAME: indexing
       SERVICE_VERSION: "1.0.0"
       PREPROCESSING_URL: http://preprocessing:8001
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
 
   # ---------------------------------------------------------------------------
   # Retrieval Service - Document retrieval
@@ -280,6 +296,14 @@ services:
       SERVICE_NAME: retrieval
       SERVICE_VERSION: "1.0.0"
       INDEXING_URL: http://indexing:8002
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
 
   # ---------------------------------------------------------------------------
   # Ranking Service - Result ranking and scoring
