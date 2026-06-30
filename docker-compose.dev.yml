@@ -1,0 +1,132 @@
+# =============================================================================
+# Docker Compose - Development Overrides
+# =============================================================================
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+# =============================================================================
+
+version: '3.9'
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Development overrides for all services
+  # ---------------------------------------------------------------------------
+  
+  api_gateway:
+    build:
+      context: .
+      dockerfile: docker/base.Dockerfile
+      target: runtime
+    command: python -m uvicorn services.api_gateway.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./services/api_gateway:/app/services/api_gateway:ro
+      - ./common:/app/common:ro
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+      RELOAD: "true"
+
+  preprocessing:
+    build:
+      context: .
+      dockerfile: docker/service-nlp.Dockerfile
+      target: runtime
+    command: python -m uvicorn services.preprocessing.main:app --host 0.0.0.0 --port 8001 --reload
+    volumes:
+      - ./services/preprocessing:/app/services/preprocessing:ro
+      - ./common:/app/common:ro
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+      RELOAD: "true"
+
+  indexing:
+    build:
+      context: .
+      dockerfile: docker/ml.Dockerfile
+      target: runtime
+    command: python -m uvicorn services.indexing.main:app --host 0.0.0.0 --port 8002 --reload
+    volumes:
+      - ./services/indexing:/app/services/indexing:ro
+      - ./common:/app/common:ro
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+      RELOAD: "true"
+
+  retrieval:
+    build:
+      context: .
+      dockerfile: docker/ml.Dockerfile
+      target: runtime
+    command: python -m uvicorn services.retrieval.main:app --host 0.0.0.0 --port 8003 --reload
+    volumes:
+      - ./services/retrieval:/app/services/retrieval:ro
+      - ./common:/app/common:ro
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+      RELOAD: "true"
+
+  ranking:
+    build:
+      context: .
+      dockerfile: docker/ml.Dockerfile
+      target: runtime
+    command: python -m uvicorn services.ranking.main:app --host 0.0.0.0 --port 8004 --reload
+    volumes:
+      - ./services/ranking:/app/services/ranking:ro
+      - ./common:/app/common:ro
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+      RELOAD: "true"
+
+  query_refinement:
+    build:
+      context: .
+      dockerfile: docker/service-nlp.Dockerfile
+      target: runtime
+    command: python -m uvicorn services.query_refinement.main:app --host 0.0.0.0 --port 8005 --reload
+    volumes:
+      - ./services/query_refinement:/app/services/query_refinement:ro
+      - ./common:/app/common:ro
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+      RELOAD: "true"
+
+  evaluation:
+    build:
+      context: .
+      dockerfile: docker/ml.Dockerfile
+      target: runtime
+    command: python -m uvicorn services.evaluation.main:app --host 0.0.0.0 --port 8006 --reload
+    volumes:
+      - ./services/evaluation:/app/services/evaluation:ro
+      - ./common:/app/common:ro
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+      RELOAD: "true"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      target: runtime
+    command: streamlit run frontend/app.py --server.fileWatcherType=poll
+    volumes:
+      - ./frontend:/app/frontend:ro
+      - ./common:/app/common:ro
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG

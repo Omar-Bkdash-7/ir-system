@@ -81,6 +81,15 @@ restart: ## Restart all services
 	@echo "$(YELLOW)Restarting all services...$(NC)"
 	docker compose restart
 
+ps: ## Show running services
+	docker compose ps
+
+stop: ## Stop all services (without removing)
+	docker compose stop
+
+start: ## Start stopped services
+	docker compose start
+
 # -----------------------------------------------------------------------------
 # Development Commands
 # -----------------------------------------------------------------------------
@@ -118,6 +127,10 @@ stop: ## Stop all services (without removing)
 
 start: ## Start stopped services
 	docker compose start
+
+health: ## Check health status of all services
+	@echo "$(BLUE)Service Health Status:$(NC)"
+	@docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}"
 
 # -----------------------------------------------------------------------------
 # Database Commands
@@ -164,41 +177,41 @@ test-integration: ## Run integration tests
 # -----------------------------------------------------------------------------
 build-indices: ## Build all indices
 	@echo "$(BLUE)Building indices...$(NC)"
-	docker compose run --rm build_indices
+	docker compose -f docker-compose.yml -f docker-compose.tools.yml run --rm build_indices
 
 build-tfidf: ## Build TF-IDF index only
 	@echo "$(BLUE)Building TF-IDF index...$(NC)"
-	docker compose run --rm build_indices python scripts/build_tfidf_index.py
+	docker compose -f docker-compose.yml -f docker-compose.tools.yml run --rm build_tfidf
 
 build-bm25: ## Build BM25 index only
 	@echo "$(BLUE)Building BM25 index...$(NC)"
-	docker compose run --rm build_indices python scripts/build_bm25_index.py
+	docker compose -f docker-compose.yml -f docker-compose.tools.yml run --rm build_bm25
 
 build-embeddings: ## Build embedding index only
 	@echo "$(BLUE)Building embedding index...$(NC)"
-	docker compose run --rm build_indices python scripts/build_embedding_index.py
+	docker compose -f docker-compose.yml -f docker-compose.tools.yml run --rm build_embeddings
 
 # -----------------------------------------------------------------------------
 # Data Management
 # -----------------------------------------------------------------------------
 download-dataset: ## Download dataset using ir-datasets
 	@echo "$(BLUE)Downloading dataset...$(NC)"
-	docker compose run --rm build_indices python scripts/download_dataset.py
+	docker compose -f docker-compose.yml -f docker-compose.tools.yml run --rm download_dataset
 
 preprocess-data: ## Preprocess downloaded dataset
 	@echo "$(BLUE)Preprocessing dataset...$(NC)"
-	docker compose run --rm build_indices python scripts/preprocess_dataset.py
+	docker compose -f docker-compose.yml -f docker-compose.tools.yml run --rm preprocess_dataset
 
 load-to-db: ## Load processed data to database
 	@echo "$(BLUE)Loading data to database...$(NC)"
-	docker compose run --rm build_indices python scripts/load_documents_to_db.py
+	docker compose -f docker-compose.yml -f docker-compose.tools.yml run --rm load_to_db
 
 # -----------------------------------------------------------------------------
 # Evaluation Commands
 # -----------------------------------------------------------------------------
 evaluate: ## Run full evaluation
 	@echo "$(BLUE)Running evaluation...$(NC)"
-	docker compose run --rm build_indices python scripts/evaluate_retrieval.py
+	docker compose -f docker-compose.yml -f docker-compose.tools.yml run --rm run_evaluation
 
 # -----------------------------------------------------------------------------
 # Cleanup Commands
@@ -229,16 +242,16 @@ stats: ## Show container resource usage
 
 inspect: ## Show detailed system information
 	@echo "$(BLUE)Docker Images:$(NC)"
-	@docker images | grep ir
+	@docker images | grep ir || true
 	@echo ""
 	@echo "$(BLUE)Running Containers:$(NC)"
 	@docker compose ps
 	@echo ""
 	@echo "$(BLUE)Volumes:$(NC)"
-	@docker volume ls | grep ir
+	@docker volume ls | grep ir || true
 	@echo ""
 	@echo "$(BLUE)Networks:$(NC)"
-	@docker network ls | grep ir
+	@docker network ls | grep ir || true
 
 health: ## Check health status of all services
 	@echo "$(BLUE)Service Health Status:$(NC)"

@@ -1,0 +1,238 @@
+# =============================================================================
+# Docker Compose - Tools and Scripts
+# =============================================================================
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.tools.yml run <tool>
+# =============================================================================
+
+version: '3.9'
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # Tool: Download Dataset
+  # ---------------------------------------------------------------------------
+  download_dataset:
+    build:
+      context: .
+      dockerfile: docker/ml.Dockerfile
+    image: ir-tools:latest
+    container_name: ir_download_dataset
+    profiles:
+      - tools
+    command: python scripts/download_dataset.py
+    volumes:
+      - datasets:/app/data/datasets
+      - logs:/app/logs
+    networks:
+      - backend_net
+    environment:
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: "1"
+      IR_DATASETS_HOME: /app/data/datasets
+      LOG_LEVEL: INFO
+      SERVICE_NAME: download_dataset
+
+  # ---------------------------------------------------------------------------
+  # Tool: Preprocess Dataset
+  # ---------------------------------------------------------------------------
+  preprocess_dataset:
+    build:
+      context: .
+      dockerfile: docker/service-nlp.Dockerfile
+    image: ir-preprocessing-tools:latest
+    container_name: ir_preprocess_dataset
+    profiles:
+      - tools
+    command: python scripts/preprocess_dataset.py
+    volumes:
+      - datasets:/app/data/datasets
+      - processed_data:/app/data/processed
+      - logs:/app/logs
+    networks:
+      - backend_net
+      - database_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: "1"
+      IR_DATASETS_HOME: /app/data/datasets
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ir_user}:${POSTGRES_PASSWORD:-ir_pass}@postgres:5432/${POSTGRES_DB:-ir_db}
+      LOG_LEVEL: INFO
+      SERVICE_NAME: preprocess_dataset
+
+  # ---------------------------------------------------------------------------
+  # Tool: Load Documents to Database
+  # ---------------------------------------------------------------------------
+  load_to_db:
+    build:
+      context: .
+      dockerfile: docker/base.Dockerfile
+    image: ir-db-tools:latest
+    container_name: ir_load_to_db
+    profiles:
+      - tools
+    command: python scripts/load_documents_to_db.py
+    volumes:
+      - processed_data:/app/data/processed
+      - logs:/app/logs
+    networks:
+      - backend_net
+      - database_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ir_user}:${POSTGRES_PASSWORD:-ir_pass}@postgres:5432/${POSTGRES_DB:-ir_db}
+      LOG_LEVEL: INFO
+      SERVICE_NAME: load_to_db
+
+  # ---------------------------------------------------------------------------
+  # Tool: Build All Indices
+  # ---------------------------------------------------------------------------
+  build_indices:
+    build:
+      context: .
+      dockerfile: docker/ml.Dockerfile
+    image: ir-tools:latest
+    container_name: ir_build_indices
+    profiles:
+      - tools
+    command: python scripts/build_indices.py
+    volumes:
+      - datasets:/app/data/datasets
+      - indices:/app/data/indices
+      - processed_data:/app/data/processed
+      - logs:/app/logs
+    networks:
+      - backend_net
+      - database_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: "1"
+      IR_DATASETS_HOME: /app/data/datasets
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ir_user}:${POSTGRES_PASSWORD:-ir_pass}@postgres:5432/${POSTGRES_DB:-ir_db}
+      LOG_LEVEL: INFO
+      SERVICE_NAME: build_indices
+
+  # ---------------------------------------------------------------------------
+  # Tool: Build TF-IDF Index
+  # ---------------------------------------------------------------------------
+  build_tfidf:
+    build:
+      context: .
+      dockerfile: docker/ml.Dockerfile
+    image: ir-tools:latest
+    container_name: ir_build_tfidf
+    profiles:
+      - tools
+    command: python scripts/build_tfidf_index.py
+    volumes:
+      - indices:/app/data/indices
+      - processed_data:/app/data/processed
+      - logs:/app/logs
+    networks:
+      - backend_net
+      - database_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ir_user}:${POSTGRES_PASSWORD:-ir_pass}@postgres:5432/${POSTGRES_DB:-ir_db}
+      LOG_LEVEL: INFO
+      SERVICE_NAME: build_tfidf
+
+  # ---------------------------------------------------------------------------
+  # Tool: Build BM25 Index
+  # ---------------------------------------------------------------------------
+  build_bm25:
+    build:
+      context: .
+      dockerfile: docker/ml.Dockerfile
+    image: ir-tools:latest
+    container_name: ir_build_bm25
+    profiles:
+      - tools
+    command: python scripts/build_bm25_index.py
+    volumes:
+      - indices:/app/data/indices
+      - processed_data:/app/data/processed
+      - logs:/app/logs
+    networks:
+      - backend_net
+      - database_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ir_user}:${POSTGRES_PASSWORD:-ir_pass}@postgres:5432/${POSTGRES_DB:-ir_db}
+      LOG_LEVEL: INFO
+      SERVICE_NAME: build_bm25
+
+  # ---------------------------------------------------------------------------
+  # Tool: Build Embedding Index
+  # ---------------------------------------------------------------------------
+  build_embeddings:
+    build:
+      context: .
+      dockerfile: docker/ml.Dockerfile
+    image: ir-tools:latest
+    container_name: ir_build_embeddings
+    profiles:
+      - tools
+    command: python scripts/build_embedding_index.py
+    volumes:
+      - indices:/app/data/indices
+      - processed_data:/app/data/processed
+      - logs:/app/logs
+    networks:
+      - backend_net
+      - database_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ir_user}:${POSTGRES_PASSWORD:-ir_pass}@postgres:5432/${POSTGRES_DB:-ir_db}
+      LOG_LEVEL: INFO
+      SERVICE_NAME: build_embeddings
+
+  # ---------------------------------------------------------------------------
+  # Tool: Run Evaluation
+  # ---------------------------------------------------------------------------
+  run_evaluation:
+    build:
+      context: .
+      dockerfile: docker/ml.Dockerfile
+    image: ir-tools:latest
+    container_name: ir_run_evaluation
+    profiles:
+      - tools
+    command: python scripts/evaluate_retrieval.py
+    volumes:
+      - indices:/app/data/indices
+      - evaluation_results:/app/data/evaluation
+      - logs:/app/logs
+    networks:
+      - backend_net
+      - database_net
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: "1"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ir_user}:${POSTGRES_PASSWORD:-ir_pass}@postgres:5432/${POSTGRES_DB:-ir_db}
+      LOG_LEVEL: INFO
+      SERVICE_NAME: run_evaluation
