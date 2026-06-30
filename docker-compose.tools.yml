@@ -69,6 +69,58 @@ services:
       SERVICE_NAME: check_data
 
   # ---------------------------------------------------------------------------
+  # Tool: Clear Cache
+  # ---------------------------------------------------------------------------
+  clear_cache:
+    build:
+      context: .
+      dockerfile: docker/base.Dockerfile
+    image: ir-db-tools:latest
+    container_name: ir_clear_cache
+    profiles:
+      - tools
+    command: python scripts/clear_cache.py --all
+    volumes:
+      - logs:/app/logs
+    networks:
+      - backend_net
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: "1"
+      REDIS_URL: redis://redis:6379/0
+      LOG_LEVEL: INFO
+      SERVICE_NAME: clear_cache
+
+  # ---------------------------------------------------------------------------
+  # Tool: Cache Stats
+  # ---------------------------------------------------------------------------
+  cache_stats:
+    build:
+      context: .
+      dockerfile: docker/base.Dockerfile
+    image: ir-db-tools:latest
+    container_name: ir_cache_stats
+    profiles:
+      - tools
+    command: python scripts/clear_cache.py --stats
+    volumes:
+      - logs:/app/logs
+    networks:
+      - backend_net
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      PYTHONUNBUFFERED: "1"
+      REDIS_URL: redis://redis:6379/0
+      LOG_LEVEL: INFO
+      SERVICE_NAME: cache_stats
+
+  # ---------------------------------------------------------------------------
   # Tool: Download Dataset
   # ---------------------------------------------------------------------------
   download_dataset:

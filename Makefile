@@ -192,6 +192,17 @@ build-embeddings: ## Build embedding index only
 	docker compose -f docker-compose.yml -f docker-compose.tools.yml run --rm build_embeddings
 
 # -----------------------------------------------------------------------------
+# Cache Management
+# -----------------------------------------------------------------------------
+clear-cache: ## Clear all Redis cache
+	@echo "$(RED)Clearing all cache...$(NC)"
+	docker compose -f docker-compose.yml -f docker-compose.tools.yml run --rm clear_cache
+
+cache-stats: ## Show cache statistics
+	@echo "$(BLUE)Cache statistics:$(NC)"
+	docker compose -f docker-compose.yml -f docker-compose.tools.yml run --rm cache_stats
+
+# -----------------------------------------------------------------------------
 # Data Management
 # -----------------------------------------------------------------------------
 init-db: ## Initialize database schema (run once)
