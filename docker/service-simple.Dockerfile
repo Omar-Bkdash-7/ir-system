@@ -6,26 +6,33 @@
 # Size: ~250MB
 # =============================================================================
 
-FROM ir-python-base:latest as base
+FROM ir-python-base:latest AS base
 
 # =============================================================================
 # Builder Stage
 # =============================================================================
-FROM base as builder
+FROM base AS builder
 
 # Accept build argument for specific requirements
 ARG REQUIREMENTS_FILE=base.txt
 
 COPY requirements/${REQUIREMENTS_FILE} /tmp/requirements.txt
-RUN pip install --user --no-warn-script-location -r /tmp/requirements.txt
+RUN pip install --user --no-warn-script-location --no-cache-dir -r /tmp/requirements.txt
 
 # =============================================================================
 # Runtime Stage
 # =============================================================================
-FROM base as runtime
+FROM base AS runtime
 
 COPY --from=builder /root/.local /home/appuser/.local
 COPY --chown=appuser:appuser common/ /app/common/
+
+# Copy configuration files
+COPY --chown=appuser:appuser configs/ /app/configs/
+
+# Copy services and scripts
+COPY --chown=appuser:appuser services/ /app/services/
+COPY --chown=appuser:appuser scripts/ /app/scripts/
 
 # Create necessary directories
 RUN mkdir -p /app/logs && chown -R appuser:appuser /app/logs

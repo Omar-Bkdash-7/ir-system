@@ -23,8 +23,26 @@ def get_redis_client():
     if _redis_client is None:
         try:
             import redis
-            redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
-            _redis_client = redis.from_url(redis_url, decode_responses=True)
+            redis_url = os.getenv("REDIS_URL")
+            
+            if redis_url:
+                # Use REDIS_URL if provided (includes password)
+                _redis_client = redis.from_url(redis_url, decode_responses=True)
+            else:
+                # Fall back to individual components
+                redis_host = os.getenv("REDIS_HOST", "redis")
+                redis_port = int(os.getenv("REDIS_PORT", "6379"))
+                redis_db = int(os.getenv("REDIS_DB", "0"))
+                redis_password = os.getenv("REDIS_PASSWORD")
+                
+                _redis_client = redis.Redis(
+                    host=redis_host,
+                    port=redis_port,
+                    db=redis_db,
+                    password=redis_password if redis_password else None,
+                    decode_responses=True
+                )
+            
             # Test connection
             _redis_client.ping()
             logger.info("Redis connection established")

@@ -2,10 +2,12 @@ import psycopg2
 from psycopg2.extras import execute_batch
 from common.config import get_config
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
 def get_connection():
+    """Legacy function - use get_db_connection instead."""
     return psycopg2.connect(
         host=get_config("database.host", "postgres"),
         port=get_config("database.port", 5432),
@@ -13,6 +15,39 @@ def get_connection():
         password=get_config("database.password", "ir_pass"),
         database=get_config("database.database", "ir_db")
     )
+
+def get_db_connection():
+    """
+    Get database connection using DATABASE_URL from environment.
+    Falls back to config if DATABASE_URL is not set.
+    """
+    database_url = os.getenv("DATABASE_URL")
+    
+    if database_url:
+        # Use DATABASE_URL from environment (Docker)
+        return psycopg2.connect(database_url)
+    else:
+        # Fall back to config (local development)
+        return get_connection()
+
+def execute_query(conn, query: str, params=None):
+    """
+    Execute a SQL query (INSERT, UPDATE, DELETE, CREATE, etc.).
+    Does not return results - use for non-SELECT queries.
+    """
+    cursor = conn.cursor()
+    try:
+        if params:
+            cursor.execute(query, params)
+        else:
+            cursor.execute(query)
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Query execution failed: {e}")
+        raise
+    finally:
+        cursor.close()
 
 def init_db():
     conn = get_connection()

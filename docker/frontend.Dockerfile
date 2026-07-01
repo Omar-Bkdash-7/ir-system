@@ -5,26 +5,38 @@
 # Size: ~500MB
 # =============================================================================
 
-FROM ir-python-base:latest as base
+FROM ir-python-base:latest AS base
 
 # =============================================================================
 # Builder Stage
 # =============================================================================
-FROM base as builder
+FROM base AS builder
 
-COPY requirements/frontend.txt /tmp/requirements.txt
-RUN pip install --user --no-warn-script-location -r /tmp/requirements.txt
+COPY requirements/base.txt requirements/frontend.txt /tmp/
+RUN pip install --user --no-warn-script-location --no-cache-dir -r /tmp/frontend.txt
 
 # =============================================================================
 # Runtime Stage
 # =============================================================================
-FROM base as runtime
+FROM base AS runtime
 
 # Copy dependencies
 COPY --from=builder /root/.local /home/appuser/.local
 
 # Copy common code
 COPY --chown=appuser:appuser common/ /app/common/
+
+# Copy configuration files
+COPY --chown=appuser:appuser configs/ /app/configs/
+
+# Copy .streamlit config
+COPY --chown=appuser:appuser .streamlit/ /app/.streamlit/
+
+# Copy services code
+COPY --chown=appuser:appuser services/ /app/services/
+
+# Copy scripts
+COPY --chown=appuser:appuser scripts/ /app/scripts/
 
 # Copy frontend code
 COPY --chown=appuser:appuser frontend/ /app/frontend/

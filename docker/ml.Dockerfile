@@ -5,7 +5,7 @@
 # Use case: Retrieval, Ranking, Query Refinement services
 # =============================================================================
 
-FROM ir-python-base:latest as base
+FROM ir-python-base:latest AS base
 
 # Set ML-specific environment variables
 ENV TORCH_HOME=/app/.cache/torch \
@@ -17,13 +17,13 @@ ENV TORCH_HOME=/app/.cache/torch \
 # =============================================================================
 # Dependencies Builder Stage
 # =============================================================================
-FROM base as deps-builder
+FROM base AS deps-builder
 
 # Copy requirements
 COPY requirements/base.txt requirements/ml.txt requirements/nlp.txt requirements/ir.txt /tmp/
 
-# Install Python dependencies
-RUN pip install --user --no-warn-script-location \
+# Install Python dependencies (disable hash checking for CPU wheels)
+RUN pip install --user --no-warn-script-location --no-cache-dir \
     -r /tmp/base.txt \
     -r /tmp/ml.txt \
     -r /tmp/nlp.txt \
@@ -32,11 +32,12 @@ RUN pip install --user --no-warn-script-location \
 # =============================================================================
 # Models Download Stage - Download and cache models
 # =============================================================================
-FROM base as models-downloader
+FROM base AS models-downloader
 
 # Copy dependencies from builder
 COPY --from=deps-builder /root/.local /root/.local
-ENV PATH=/root/.local/bin:$PATH
+ENV PATH=/root/.local/bin:$PATH \
+    CUDA_VISIBLE_DEVICES=-1
 
 # Create cache directories
 RUN mkdir -p /app/.cache/sentence-transformers \
@@ -45,44 +46,40 @@ RUN mkdir -p /app/.cache/sentence-transformers \
     /app/.cache/transformers \
     /app/.cache/torch
 
-# Download spaCy model
-RUN python -m spacy download en_core_web_sm && \
-    mv /root/.local/lib/python3.11/site-packages/en_core_web_sm* /app/.cache/spacy_data/
+# Download spaCy model (it installs to site-packages, not user directory)
+RUN python -m spacy download en_core_web_sm
 
 # Download NLTK data
-RUN python -c " \
-import nltk; \
-nltk.download('wordnet', download_dir='/app/.cache/nltk_data', quiet=True); \
-nltk.download('stopwords', download_dir='/app/.cache/nltk_data', quiet=True); \
-nltk.download('omw-1.4', download_dir='/app/.cache/nltk_data', quiet=True); \
-nltk.download('punkt', download_dir='/app/.cache/nltk_data', quiet=True); \
-nltk.download('punkt_tab', download_dir='/app/.cache/nltk_data', quiet=True); \
-print('NLTK data downloaded successfully') \
-"
+RUN python -c "import nltk; nltk.download('wordnet', download_dir='/app/.cache/nltk_data', quiet=True); nltk.download('stopwords', download_dir='/app/.cache/nltk_data', quiet=True); nltk.download('omw-1.4', download_dir='/app/.cache/nltk_data', quiet=True); nltk.download('punkt', download_dir='/app/.cache/nltk_data', quiet=True); nltk.download('punkt_tab', download_dir='/app/.cache/nltk_data', quiet=True); print('NLTK data downloaded successfully')"
 
-# Download SentenceTransformer model
-# This downloads the model into SENTENCE_TRANSFORMERS_HOME
-RUN python -c " \
-from sentence_transformers import SentenceTransformer; \
-import os; \
-os.environ['SENTENCE_TRANSFORMERS_HOME'] = '/app/.cache/sentence-transformers'; \
-model = SentenceTransformer('all-MiniLM-L6-v2'); \
-print(f'Model cached at: {os.environ[\"SENTENCE_TRANSFORMERS_HOME\"]}') \
-"
+# Download SentenceTransformer model (force CPU during build)
+RUN python -c "import os; os.environ['CUDA_VISIBLE_DEVICES'] = '-1'; from sentence_transformers import SentenceTransformer; model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu', trust_remote_code=False); print(f'Model cached successfully')"
 
 # =============================================================================
 # Runtime Stage - Final optimized image
 # =============================================================================
-FROM base as runtime
+FROM base AS runtime
 
-# Copy Python dependencies
+# Copy Python dependencies (includes spaCy model in site-packages)
 COPY --from=deps-builder /root/.local /home/appuser/.local
+# Copy spaCy model from system site-packages to user directory with correct ownership
+COPY --from=models-downloader --chown=appuser:appuser /usr/local/lib/python3.11/site-packages/en_core_web_sm /home/appuser/.local/lib/python3.11/site-packages/en_core_web_sm
+COPY --from=models-downloader --chown=appuser:appuser /usr/local/lib/python3.11/site-packages/en_core_web_sm-*.dist-info /home/appuser/.local/lib/python3.11/site-packages/
 
 # Copy downloaded models and data
 COPY --from=models-downloader --chown=appuser:appuser /app/.cache /app/.cache
 
 # Copy common code
 COPY --chown=appuser:appuser common/ /app/common/
+
+# Copy configuration files
+COPY --chown=appuser:appuser configs/ /app/configs/
+
+# Copy services code
+COPY --chown=appuser:appuser services/ /app/services/
+
+# Copy scripts (for tools)
+COPY --chown=appuser:appuser scripts/ /app/scripts/
 
 # Create directories for runtime data (these will be mounted as volumes)
 RUN mkdir -p /app/data/indices \
@@ -92,14 +89,15 @@ RUN mkdir -p /app/data/indices \
     /app/logs && \
     chown -R appuser:appuser /app/data /app/logs
 
-# Set PATH
-ENV PATH=/home/appuser/.local/bin:$PATH
+# Set PATH and disable CUDA at runtime
+ENV PATH=/home/appuser/.local/bin:$PATH \
+    CUDA_VISIBLE_DEVICES=-1
 
 # Switch to non-root user
 USER appuser
 
-# Verify installations
-RUN python -c "import torch; print(f'PyTorch version: {torch.__version__}')" && \
+# Verify installations (CPU-only)
+RUN python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}')" && \
     python -c "import transformers; print(f'Transformers version: {transformers.__version__}')" && \
     python -c "import sentence_transformers; print('SentenceTransformers OK')" && \
     python -c "import nltk; print('NLTK OK')" && \
