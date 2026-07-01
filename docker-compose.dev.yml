@@ -4,14 +4,12 @@
 # Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
 # =============================================================================
 
-version: '3.9'
-
 services:
 
   # ---------------------------------------------------------------------------
   # Development overrides for all services
   # ---------------------------------------------------------------------------
-  
+
   api_gateway:
     build:
       context: .
@@ -32,7 +30,7 @@ services:
       context: .
       dockerfile: docker/service-nlp.Dockerfile
       target: runtime
-    command: python -m uvicorn services.preprocessing.main:app --host 0.0.0.0 --port 8001 --reload
+    command: python -m uvicorn services.preprocessing.api.main:app --host 0.0.0.0 --port 8001 --reload
     volumes:
       - ./services/preprocessing:/app/services/preprocessing:ro
       - ./common:/app/common:ro

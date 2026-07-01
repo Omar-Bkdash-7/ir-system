@@ -5,8 +5,6 @@
 # For tools, use: docker-compose --profile tools up
 # =============================================================================
 
-version: '3.9'
-
 # =============================================================================
 # Networks - Isolated network segments for security
 # =============================================================================
@@ -59,14 +57,16 @@ x-common-environment: &common-env
   PYTHONUNBUFFERED: "1"
   ENVIRONMENT: ${ENVIRONMENT:-production}
   DATABASE_URL: postgresql://${POSTGRES_USER:-ir_user}:${POSTGRES_PASSWORD:-ir_pass}@postgres:5432/${POSTGRES_DB:-ir_db}
-  REDIS_URL: redis://redis:6379/0
+  REDIS_URL: redis://:${REDIS_PASSWORD:-redis_change_me_in_production}@redis:6379/0
   REDIS_HOST: redis
   REDIS_PORT: 6379
+  REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_change_me_in_production}
   CACHE_TTL: ${CACHE_TTL:-3600}
   IR_DATASETS_HOME: /app/data/datasets
   SENTENCE_TRANSFORMERS_HOME: /app/data/models/sentence-transformers
   TORCH_HOME: /app/data/cache/torch
   TRANSFORMERS_CACHE: /app/data/cache/transformers
+  TORCH_DEVICE: cpu
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
 x-common-service: &common-service
@@ -130,6 +130,14 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   # ---------------------------------------------------------------------------
   # Redis - Caching Layer
@@ -137,7 +145,14 @@ services:
   redis:
     image: redis:7-alpine
     container_name: ir_redis
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --requirepass ${REDIS_PASSWORD:-redis_change_me_in_production}
+      --bind 0.0.0.0
+      --protected-mode yes
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
@@ -146,7 +161,7 @@ services:
       - backend_net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:-redis_change_me_in_production}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -156,6 +171,14 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   # ---------------------------------------------------------------------------
   # API Gateway - Entry point for all requests
@@ -175,6 +198,8 @@ services:
       - backend_net
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       preprocessing:
         condition: service_started
@@ -202,6 +227,14 @@ services:
       RANKING_URL: http://ranking:8004
       QUERY_REFINEMENT_URL: http://query_refinement:8005
       EVALUATION_URL: http://evaluation:8006
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
   # ---------------------------------------------------------------------------
   # Preprocessing Service - NLP preprocessing
@@ -213,7 +246,7 @@ services:
       dockerfile: docker/service-nlp.Dockerfile
     image: ir-preprocessing:latest
     container_name: ir_preprocessing
-    command: python -m uvicorn services.preprocessing.main:app --host 0.0.0.0 --port 8001
+    command: python -m uvicorn services.preprocessing.api.main:app --host 0.0.0.0 --port 8001
     ports:
       - "${PREPROCESSING_PORT:-8001}:8001"
     depends_on:
@@ -328,6 +361,14 @@ services:
       <<: *common-env
       SERVICE_NAME: ranking
       SERVICE_VERSION: "1.0.0"
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   # ---------------------------------------------------------------------------
   # Query Refinement Service - Query enhancement
@@ -336,7 +377,7 @@ services:
     <<: *common-service
     build:
       context: .
-      dockerfile: docker/service-nlp.Dockerfile
+      dockerfile: docker/ml.Dockerfile
     image: ir-query-refinement:latest
     container_name: ir_query_refinement
     command: python -m uvicorn services.query_refinement.main:app --host 0.0.0.0 --port 8005
@@ -352,6 +393,14 @@ services:
       <<: *common-env
       SERVICE_NAME: query_refinement
       SERVICE_VERSION: "1.0.0"
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   # ---------------------------------------------------------------------------
   # Evaluation Service - Performance metrics
@@ -376,6 +425,14 @@ services:
       <<: *common-env
       SERVICE_NAME: evaluation
       SERVICE_VERSION: "1.0.0"
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   # ---------------------------------------------------------------------------
   # Frontend - Streamlit Web UI
@@ -409,3 +466,11 @@ services:
       RANKING_URL: http://ranking:8004
       QUERY_REFINEMENT_URL: http://query_refinement:8005
       EVALUATION_URL: http://evaluation:8006
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M

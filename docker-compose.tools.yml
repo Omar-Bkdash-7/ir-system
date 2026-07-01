@@ -4,8 +4,6 @@
 # Usage: docker-compose -f docker-compose.yml -f docker-compose.tools.yml run <tool>
 # =============================================================================
 
-version: '3.9'
-
 services:
 
   # ---------------------------------------------------------------------------
@@ -117,7 +115,8 @@ services:
     environment:
       PYTHONPATH: /app
       PYTHONUNBUFFERED: "1"
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_change_me_in_production}@redis:6379/0
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_change_me_in_production}
       LOG_LEVEL: INFO
       SERVICE_NAME: clear_cache
 
@@ -143,7 +142,8 @@ services:
     environment:
       PYTHONPATH: /app
       PYTHONUNBUFFERED: "1"
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_change_me_in_production}@redis:6379/0
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_change_me_in_production}
       LOG_LEVEL: INFO
       SERVICE_NAME: cache_stats
 
