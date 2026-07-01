@@ -4,9 +4,9 @@ import jsonlines
 from pathlib import Path
 from sentence_transformers import SentenceTransformer
 from common.config import get_config
+from common.device import get_torch_device
 from common.exceptions import IndexNotFoundError, ModelLoadError
 import logging
-import torch
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,7 @@ class EmbeddingIndexer:
         self.embeddings_path = Path(get_config("indices.embeddings", "data/indices/embeddings.npy"))
         self.doc_id_map_path = Path(get_config("indices.doc_id_map", "data/indices/doc_id_map.json"))
 
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = get_torch_device()
 
     def _load_model(self):
         if self.model is None:

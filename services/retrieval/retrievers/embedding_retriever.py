@@ -3,9 +3,9 @@ import json
 from pathlib import Path
 from sentence_transformers import SentenceTransformer
 from common.config import get_config
+from common.device import get_torch_device
 from common.exceptions import IndexNotFoundError, InvalidQueryError, ModelLoadError
 import logging
-import torch
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ class EmbeddingRetriever:
         self.embeddings = None
         self.doc_ids = []
         self.loaded = False
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = get_torch_device()
 
     def load(self):
         if self.loaded:

@@ -4,16 +4,18 @@ import numpy as np
 import logging
 from typing import List, Set
 from collections import Counter
+from common.device import get_torch_device
 
 logger = logging.getLogger(__name__)
 
 
 class SemanticRefinementEngine:
     def __init__(self, model_name: str = 'models/all-MiniLM-L6-v2'):
-        self.model = SentenceTransformer(model_name, trust_remote_code=False)
+        device = get_torch_device()
+        self.model = SentenceTransformer(model_name, device=device, trust_remote_code=False)
         self._embedding_cache = {}
         self._cache_max_size = 1000
-        logger.info(f"Loaded semantic model: {model_name}")
+        logger.info(f"Loaded semantic model: {model_name} on {device}")
     
     def compute_similarity(self, query: str, history: List[str]) -> float:
         if not query or not query.strip() or not history:
