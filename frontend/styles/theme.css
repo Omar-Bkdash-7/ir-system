@@ -49,6 +49,23 @@
 #MainMenu, footer, [data-testid="stToolbar"], [data-testid="stDecoration"] { visibility: hidden; height: 0; }
 header[data-testid="stHeader"] { background: transparent; height: 0.5rem; }
 
+/* ---- Hide sidebar collapse/close button ---- */
+[data-testid="stSidebarCollapseButton"],
+[data-testid="collapsedControl"],
+button[data-testid="stSidebarNavCollapseIcon"],
+section[data-testid="stSidebar"] > div > div > div > button:first-child { display: none !important; }
+
+/* ---- Sidebar: remove top padding so brand sits at top ---- */
+section[data-testid="stSidebar"] > div:first-child { padding-top: 0.6rem !important; }
+section[data-testid="stSidebar"] { padding-top: 0 !important; }
+
+/* ---- Navigation active button ---- */
+.nav-btn-active > button, .nav-btn-active button {
+  background: var(--ctp-blue) !important;
+  color: var(--ctp-crust) !important;
+  font-weight: 700 !important;
+}
+
 /* ---- Typography ---- */
 h1, h2, h3, h4, h5, h6 { font-family: var(--font-display); font-weight: 700; color: var(--ctp-text); letter-spacing: -0.01em; }
 p, li, label, span, div { color: var(--ctp-text); }

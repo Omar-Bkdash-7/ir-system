@@ -1,6 +1,5 @@
 """
 Sidebar component — always visible.
-Renders: navigation, service health badges, index status, dataset info.
 """
 from __future__ import annotations
 
@@ -18,7 +17,6 @@ from constants import (
     SS_AUTO_REFRESH_INTERVAL,
     SS_LAST_REFRESH_TIME,
     SS_SELECTED_PAGE,
-    SS_SERVICE_HEALTH,
 )
 
 _PAGES = [
@@ -39,41 +37,40 @@ def _health_dot(ok: Optional[bool]) -> str:
     return '<span class="ir-dot ir-dot--yellow"></span>'
 
 
-def render_sidebar() -> str:
-    """
-    Renders the full sidebar.
-    Returns the currently selected page key (str).
-    """
+def render_sidebar() -> None:
+    """Renders the full sidebar. Navigation state lives in session_state[SS_SELECTED_PAGE]."""
     with st.sidebar:
-        # ── Brand ────────────────────────────────────────────────────────
+        # ── Brand ──────────────────────────────────────────────────────
         st.markdown(
-            '<h1 style="font-size:1.3rem;margin-bottom:0">🔍 IR System</h1>'
-            '<p style="color:var(--ctp-subtext0);font-size:0.8rem;margin-top:2px">'
-            'Information Retrieval · beir/quora</p>',
+            '<div style="padding:0.5rem 0 0.2rem 0">'
+            '<span style="font-size:1.4rem;font-weight:800;color:var(--ctp-blue)">🔍 IR System</span><br>'
+            '<span style="color:var(--ctp-subtext0);font-size:0.75rem">Information Retrieval · beir/quora</span>'
+            '</div>',
             unsafe_allow_html=True,
         )
         st.divider()
 
-        # ── Navigation ────────────────────────────────────────────────────
+        # ── Navigation ────────────────────────────────────────────────
         st.markdown('<div class="ir-eyebrow">Navigation</div>', unsafe_allow_html=True)
         current_page = st.session_state.get(SS_SELECTED_PAGE, "search")
+
         for key, label in _PAGES:
             is_active = key == current_page
-            style = (
-                "background:var(--ctp-blue);color:var(--ctp-crust);"
-                "border-radius:6px;padding:6px 12px;margin:2px 0;"
-                "font-weight:700;cursor:default"
-                if is_active
-                else "padding:6px 12px;margin:2px 0;color:var(--ctp-text);"
-                "cursor:pointer;border-radius:6px"
+            # Active page: show with bullet prefix + bold; inactive: normal
+            display_label = f"▶ {label}" if is_active else f"   {label}"
+            clicked = st.button(
+                display_label,
+                key=f"nav_{key}",
+                use_container_width=True,
+                type="primary" if is_active else "secondary",
             )
-            if st.button(label, key=f"nav_{key}", use_container_width=True):
+            if clicked:
                 st.session_state[SS_SELECTED_PAGE] = key
                 st.rerun()
 
         st.divider()
 
-        # ── Dataset Info ──────────────────────────────────────────────────
+        # ── Dataset Info ───────────────────────────────────────────────
         st.markdown('<div class="ir-eyebrow">Dataset</div>', unsafe_allow_html=True)
         info = gateway.get_dataset_info_cached()
         if info:
@@ -81,7 +78,7 @@ def render_sidebar() -> str:
             doc_count = info.get("doc_count", config.DATASET_DOC_COUNT)
             st.markdown(
                 f'<div class="ir-badge"><span class="ir-dot ir-dot--green"></span>'
-                f'<span style="color:var(--ctp-green)">{name}</span></div>',
+                f'<span style="color:var(--ctp-green);font-size:0.85em">{name}</span></div>',
                 unsafe_allow_html=True,
             )
             c1, c2 = st.columns(2)
@@ -93,42 +90,42 @@ def render_sidebar() -> str:
         else:
             st.markdown(
                 '<div class="ir-badge"><span class="ir-dot ir-dot--red"></span>'
-                '<span style="color:var(--ctp-subtext0)">Not loaded</span></div>',
+                '<span style="color:var(--ctp-subtext0);font-size:0.85em">Not loaded</span></div>',
                 unsafe_allow_html=True,
             )
 
         st.divider()
 
-        # ── Index Status ──────────────────────────────────────────────────
+        # ── Index Status ───────────────────────────────────────────────
         st.markdown('<div class="ir-eyebrow">Indices</div>', unsafe_allow_html=True)
         idx_summary = indexing_api.get_all_index_status_cached()
         from components.index_status_badge import render_index_badge_compact
         for itype in ("tfidf", "bm25", "embedding"):
             render_index_badge_compact(itype, idx_summary.get(itype, {}))
 
-        if st.button("🔄 Refresh indices", key="sb_refresh_idx", use_container_width=True):
+        if st.button("🔄 Refresh", key="sb_refresh_idx", use_container_width=True):
             indexing_api.clear_index_status_cache()
             st.rerun()
 
         st.divider()
 
-        # ── Service Health (compact) ──────────────────────────────────────
+        # ── Service Health (compact) ────────────────────────────────────
         st.markdown('<div class="ir-eyebrow">Services</div>', unsafe_allow_html=True)
         health_data = health_api.check_all_services()
         for svc_name, result in health_data.items():
             dot = _health_dot(result.get("ok"))
             ms = result.get("elapsed_ms", 0.0)
             st.markdown(
-                f'<div class="ir-badge">{dot}'
-                f'<span style="font-size:0.82em">{svc_name}</span>'
-                f'<span class="ir-mono" style="color:var(--ctp-subtext0);font-size:0.78em">'
+                f'<div class="ir-badge" style="margin:2px 0">{dot}'
+                f'<span style="font-size:0.80em;flex:1">{svc_name}</span>'
+                f'<span class="ir-mono" style="color:var(--ctp-subtext0);font-size:0.72em">'
                 f'{ms:.0f}ms</span></div>',
                 unsafe_allow_html=True,
             )
 
         st.divider()
 
-        # ── Auto-refresh toggle ───────────────────────────────────────────
+        # ── Auto-refresh ────────────────────────────────────────────────
         auto = st.toggle(
             "Auto-refresh",
             value=st.session_state.get(SS_AUTO_REFRESH, False),
@@ -151,5 +148,3 @@ def render_sidebar() -> str:
                 indexing_api.clear_index_status_cache()
                 st.session_state[SS_LAST_REFRESH_TIME] = time.time()
                 st.rerun()
-
-        return st.session_state.get(SS_SELECTED_PAGE, "search")
