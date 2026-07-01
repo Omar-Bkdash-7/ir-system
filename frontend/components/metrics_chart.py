@@ -1,0 +1,215 @@
+"""
+Evaluation metrics visualizations.
+All charts use Plotly (already available via streamlit).
+"""
+from __future__ import annotations
+
+from typing import Dict, List, Optional
+
+import streamlit as st
+
+try:
+    import plotly.graph_objects as go
+    import plotly.express as px
+    _PLOTLY = True
+except ImportError:
+    _PLOTLY = False
+
+# Catppuccin Mocha palette for charts
+_COLORS = ["#89b4fa", "#a6e3a1", "#f9e2af", "#cba6f7", "#fab387", "#94e2d5", "#f38ba8"]
+_BG = "#1e1e2e"
+_PAPER_BG = "#181825"
+_GRID = "#313244"
+_TEXT = "#cdd6f4"
+
+_METRIC_LABELS = {
+    "map": "MAP",
+    "recall": "Recall@100",
+    "precision_at_10": "P@10",
+    "ndcg_at_10": "nDCG@10",
+}
+
+
+def _base_layout(**kwargs) -> dict:
+    return dict(
+        plot_bgcolor=_BG,
+        paper_bgcolor=_PAPER_BG,
+        font=dict(color=_TEXT, family="Inter, sans-serif"),
+        xaxis=dict(gridcolor=_GRID, linecolor=_GRID),
+        yaxis=dict(gridcolor=_GRID, linecolor=_GRID),
+        margin=dict(l=40, r=20, t=40, b=40),
+        **kwargs,
+    )
+
+
+def _no_plotly() -> None:
+    st.warning("Plotly is not installed. Run `pip install plotly` to enable charts.")
+
+
+def render_metrics_bar_chart(metrics: Dict[str, Dict[str, float]]) -> None:
+    """
+    Grouped bar chart: x = metric name, groups = models.
+    metrics: {"TF-IDF": {"map": 0.72, "recall": 0.85, ...}, "BM25": {...}}
+    """
+    if not _PLOTLY:
+        return _no_plotly()
+    if not metrics:
+        st.info("No metrics available.")
+        return
+
+    metric_keys = list(_METRIC_LABELS.keys())
+    fig = go.Figure()
+    for idx, (model_name, vals) in enumerate(metrics.items()):
+        fig.add_trace(
+            go.Bar(
+                name=model_name,
+                x=[_METRIC_LABELS.get(k, k) for k in metric_keys],
+                y=[vals.get(k, 0.0) for k in metric_keys],
+                marker_color=_COLORS[idx % len(_COLORS)],
+            )
+        )
+    fig.update_layout(
+        barmode="group",
+        title="Model Comparison — IR Metrics",
+        yaxis_range=[0, 1],
+        **_base_layout(),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_radar_chart(metrics: Dict[str, Dict[str, float]]) -> None:
+    """Spider/radar chart: one trace per model."""
+    if not _PLOTLY:
+        return _no_plotly()
+    if not metrics:
+        return
+
+    categories = [_METRIC_LABELS.get(k, k) for k in _METRIC_LABELS]
+    fig = go.Figure()
+    for idx, (model_name, vals) in enumerate(metrics.items()):
+        values = [vals.get(k, 0.0) for k in _METRIC_LABELS]
+        values.append(values[0])  # close the polygon
+        fig.add_trace(
+            go.Scatterpolar(
+                r=values,
+                theta=categories + [categories[0]],
+                fill="toself",
+                name=model_name,
+                line_color=_COLORS[idx % len(_COLORS)],
+                fillcolor=_COLORS[idx % len(_COLORS)].replace("#", "rgba(") + ",0.15)",
+            )
+        )
+    fig.update_layout(
+        polar=dict(
+            bgcolor=_BG,
+            radialaxis=dict(visible=True, range=[0, 1], gridcolor=_GRID, color=_TEXT),
+            angularaxis=dict(gridcolor=_GRID, color=_TEXT),
+        ),
+        title="Metric Radar",
+        paper_bgcolor=_PAPER_BG,
+        font=dict(color=_TEXT, family="Inter, sans-serif"),
+        margin=dict(l=40, r=40, t=50, b=40),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_precision_at_k_curve(
+    pk_data: Dict[str, Dict[int, float]],
+    k_values: Optional[List[int]] = None,
+) -> None:
+    """
+    Line chart: Precision@K for each model.
+    pk_data: {"TF-IDF": {1: 0.9, 3: 0.8, 5: 0.75, 10: 0.6, ...}, ...}
+    """
+    if not _PLOTLY:
+        return _no_plotly()
+    if not pk_data:
+        return
+
+    k_values = k_values or [1, 3, 5, 10, 20, 50, 100]
+    fig = go.Figure()
+    for idx, (model_name, pk_vals) in enumerate(pk_data.items()):
+        fig.add_trace(
+            go.Scatter(
+                x=k_values,
+                y=[pk_vals.get(k, None) for k in k_values],
+                mode="lines+markers",
+                name=model_name,
+                line=dict(color=_COLORS[idx % len(_COLORS)], width=2),
+                marker=dict(size=7),
+                connectgaps=True,
+            )
+        )
+    fig.update_layout(
+        title="Precision@K Curve",
+        xaxis_title="K",
+        yaxis_title="Precision",
+        yaxis_range=[0, 1],
+        **_base_layout(),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_score_distribution(
+    scores_by_model: Dict[str, List[float]],
+) -> None:
+    """Histogram overlay: retrieval score distribution per model."""
+    if not _PLOTLY:
+        return _no_plotly()
+    if not scores_by_model:
+        return
+
+    fig = go.Figure()
+    for idx, (model_name, scores) in enumerate(scores_by_model.items()):
+        fig.add_trace(
+            go.Histogram(
+                x=scores,
+                name=model_name,
+                nbinsx=40,
+                opacity=0.7,
+                marker_color=_COLORS[idx % len(_COLORS)],
+            )
+        )
+    fig.update_layout(
+        barmode="overlay",
+        title="Retrieval Score Distribution",
+        xaxis_title="Score",
+        yaxis_title="Count",
+        **_base_layout(),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_refinement_comparison_chart(
+    before: Dict[str, float],
+    after: Dict[str, float],
+) -> None:
+    """Grouped bars: metrics before vs after query refinement for one model."""
+    if not _PLOTLY:
+        return _no_plotly()
+
+    metric_keys = list(_METRIC_LABELS.keys())
+    labels = [_METRIC_LABELS.get(k, k) for k in metric_keys]
+    fig = go.Figure(
+        data=[
+            go.Bar(
+                name="Before Refinement",
+                x=labels,
+                y=[before.get(k, 0.0) for k in metric_keys],
+                marker_color=_COLORS[1],
+            ),
+            go.Bar(
+                name="After Refinement",
+                x=labels,
+                y=[after.get(k, 0.0) for k in metric_keys],
+                marker_color=_COLORS[0],
+            ),
+        ]
+    )
+    fig.update_layout(
+        barmode="group",
+        title="Impact of Query Refinement on Retrieval Quality",
+        yaxis_range=[0, 1],
+        **_base_layout(),
+    )
+    st.plotly_chart(fig, use_container_width=True)

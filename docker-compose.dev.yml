@@ -120,7 +120,7 @@ services:
       context: .
       dockerfile: docker/frontend.Dockerfile
       target: runtime
-    command: streamlit run frontend/app.py --server.fileWatcherType=poll
+    command: streamlit run frontend/app_new.py --server.fileWatcherType=poll
     volumes:
       - ./frontend:/app/frontend:ro
       - ./common:/app/common:ro

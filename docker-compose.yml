@@ -444,7 +444,7 @@ services:
       dockerfile: docker/frontend.Dockerfile
     image: ir-frontend:latest
     container_name: ir_frontend
-    command: streamlit run frontend/app.py
+    command: streamlit run frontend/app_new.py
     ports:
       - "${FRONTEND_PORT:-8501}:8501"
     networks:
