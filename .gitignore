@@ -14,18 +14,15 @@ venv/
 .venv/
 env/
 
-# Data - managed by Docker volumes
+# Data - managed by Docker volumes and ir_datasets
+# All downloaded datasets are stored in data/datasets/.ir_datasets/
+data/datasets/.ir_datasets/*
+!data/datasets/.ir_datasets/.gitkeep
+
+# Keep placeholder files
 data/datasets/*
 !data/datasets/.gitkeep
 !data/datasets/.ir_datasets/
-data/datasets/.ir_datasets/*
-!data/datasets/.ir_datasets/beir/
-data/datasets/.ir_datasets/beir/*
-!data/datasets/.ir_datasets/beir/quora/
-data/datasets/.ir_datasets/beir/quora/*
-!data/datasets/.ir_datasets/beir/quora/queries.json
-!data/datasets/.ir_datasets/beir/quora/test.qrels
-!data/datasets/.ir_datasets/beir/quora/irds_version.txt
 
 data/indices/*
 !data/indices/.gitkeep
@@ -33,14 +30,15 @@ data/cache/*
 !data/cache/.gitkeep
 data/evaluation/*
 !data/evaluation/.gitkeep
-data/models/
-data/processed/
+data/models/*
+!data/models/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
 
-# IR datasets library cache (large binary files)
-data/datasets/.ir_datasets/*/docs.pklz4/
-data/datasets/.ir_datasets/*/source.zip
+# Raw datasets (if any)
 data/datasets/raw/*.jsonl
 data/datasets/raw/*.json
+!data/datasets/raw/.gitkeep
 
 # Logs
 logs/
@@ -72,7 +70,5 @@ docker-compose.override.yml
 *.swp
 *~
 
-# Documentation (keep only project specs)
-# docs/ is excluded by default but we keep docs/ir.md
-docs/*
-!docs/ir.md
+# Documentation
+docs/
