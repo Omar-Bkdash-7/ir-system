@@ -17,7 +17,7 @@ from typing import Dict, List, Optional
 import streamlit as st
 
 import config
-from api import gateway
+import api.gateway as gateway
 from api.client import APIResponse
 from components.bm25_params import render_bm25_params
 from components.preprocessing_config import (

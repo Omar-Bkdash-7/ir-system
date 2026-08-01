@@ -17,35 +17,62 @@ env/
 # Data - managed by Docker volumes
 data/datasets/*
 !data/datasets/.gitkeep
-!data/datasets/raw/
+!data/datasets/.ir_datasets/
+data/datasets/.ir_datasets/*
+!data/datasets/.ir_datasets/beir/
+data/datasets/.ir_datasets/beir/*
+!data/datasets/.ir_datasets/beir/quora/
+data/datasets/.ir_datasets/beir/quora/*
+!data/datasets/.ir_datasets/beir/quora/queries.json
+!data/datasets/.ir_datasets/beir/quora/test.qrels
+!data/datasets/.ir_datasets/beir/quora/irds_version.txt
+
 data/indices/*
 !data/indices/.gitkeep
-data/cache/
+data/cache/*
+!data/cache/.gitkeep
 data/evaluation/*
 !data/evaluation/.gitkeep
 data/models/
 data/processed/
 
+# IR datasets library cache (large binary files)
+data/datasets/.ir_datasets/*/docs.pklz4/
+data/datasets/.ir_datasets/*/source.zip
+data/datasets/raw/*.jsonl
+data/datasets/raw/*.json
+
 # Logs
 logs/
+*.log
 
 # Environment variables
 .env
-.env.*
+.env.local
+.env.*.local
 
 # Config overrides
-# configs/config.local.yaml
+configs/config.local.yaml
 
 # IDE
 .vscode/
 .idea/
+.kiro/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Docker
-*.log
+# Docker volumes and temporary files
+docker-compose.override.yml
 
-# docs
-docs/
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# Documentation (keep only project specs)
+# docs/ is excluded by default but we keep docs/ir.md
+docs/*
+!docs/ir.md

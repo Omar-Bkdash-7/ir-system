@@ -8,7 +8,8 @@ import time
 import streamlit as st
 
 import config
-from api import health as health_api, retrieval as retrieval_api
+import api.health as health_api
+import api.retrieval as retrieval_api
 from constants import (
     SS_AUTO_REFRESH,
     SS_AUTO_REFRESH_INTERVAL,

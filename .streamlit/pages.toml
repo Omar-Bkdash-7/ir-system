@@ -1,0 +1,5 @@
+# Disable automatic page discovery
+# This file forces Streamlit to NOT auto-detect pages in the pages/ directory
+# We handle navigation manually through custom sidebar buttons
+
+[pages]

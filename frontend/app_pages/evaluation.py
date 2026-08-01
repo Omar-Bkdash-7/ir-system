@@ -10,7 +10,7 @@ from typing import Dict, Optional
 
 import streamlit as st
 
-from api import evaluation as eval_api
+import api.evaluation as eval_api
 from components.metrics_chart import (
     render_metrics_bar_chart,
     render_precision_at_k_curve,
