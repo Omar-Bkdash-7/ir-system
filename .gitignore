@@ -1,4 +1,6 @@
+# ============================================================================
 # Python
+# ============================================================================
 __pycache__/
 *.py[cod]
 *.pyo
@@ -9,66 +11,63 @@ dist/
 build/
 .eggs/
 
-# Virtual environments
+# ============================================================================
+# Virtual Environments
+# ============================================================================
 venv/
 .venv/
 env/
 
-# Data - managed by Docker volumes and ir_datasets
-# All downloaded datasets are stored in data/datasets/.ir_datasets/
-data/datasets/.ir_datasets/*
-!data/datasets/.ir_datasets/.gitkeep
+# ============================================================================
+# Data (Ignored Completely)
+# ============================================================================
+data/
 
-# Keep placeholder files
-data/datasets/*
-!data/datasets/.gitkeep
-!data/datasets/.ir_datasets/
+# ============================================================================
+# Documentation (Ignored Completely)
+# ============================================================================
+docs/
 
-data/indices/*
-!data/indices/.gitkeep
-data/cache/*
-!data/cache/.gitkeep
-data/evaluation/*
-!data/evaluation/.gitkeep
-data/models/*
-!data/models/.gitkeep
-data/processed/*
-!data/processed/.gitkeep
-
-# Raw datasets (if any)
-data/datasets/raw/*.jsonl
-data/datasets/raw/*.json
-!data/datasets/raw/.gitkeep
-
+# ============================================================================
 # Logs
+# ============================================================================
 logs/
 *.log
 
-# Environment variables
+# ============================================================================
+# Environment Variables
+# ============================================================================
 .env
 .env.local
 .env.*.local
 
-# Config overrides
+# ============================================================================
+# Local Configuration Overrides
+# ============================================================================
 configs/config.local.yaml
 
+# ============================================================================
 # IDE
+# ============================================================================
 .vscode/
 .idea/
 .kiro/
 
-# OS
+# ============================================================================
+# Operating System
+# ============================================================================
 .DS_Store
 Thumbs.db
 
-# Docker volumes and temporary files
+# ============================================================================
+# Docker
+# ============================================================================
 docker-compose.override.yml
 
-# Temporary files
+# ============================================================================
+# Temporary Files
+# ============================================================================
 *.tmp
 *.bak
 *.swp
 *~
-
-# Documentation
-docs/
