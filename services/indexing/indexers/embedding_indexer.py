@@ -12,13 +12,21 @@ logger = logging.getLogger(__name__)
 
 
 class EmbeddingIndexer:
-    def __init__(self):
+    def __init__(self, dataset_name: str = None):
         self.model = None
         self.embeddings = None
         self.doc_ids = []
 
-        self.embeddings_path = Path(get_config("indices.embeddings", "data/indices/embeddings.npy"))
-        self.doc_id_map_path = Path(get_config("indices.doc_id_map", "data/indices/doc_id_map.json"))
+        # Use dataset-specific paths
+        if dataset_name:
+            dataset_slug = dataset_name.replace('/', '_').replace('-', '_')
+            base_path = Path(get_config("indices.base_path", "data/indices")) / dataset_slug / "embedding"
+        else:
+            # Fallback to old behavior
+            base_path = Path(get_config("indices.base_path", "data/indices"))
+        
+        self.embeddings_path = base_path / "embeddings.npy"
+        self.doc_id_map_path = base_path / "doc_id_map.json"
 
         self.device = get_torch_device()
 

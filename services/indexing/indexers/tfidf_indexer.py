@@ -10,14 +10,22 @@ import logging
 logger = logging.getLogger(__name__)
 
 class TFIDFIndexer:
-    def __init__(self):
+    def __init__(self, dataset_name: str = None):
         self.vectorizer = None
         self.matrix = None
         self.doc_ids = []
         
-        self.vectorizer_path = Path(get_config("indices.tfidf_vectorizer", "data/indices/tfidf_vectorizer.pkl"))
-        self.matrix_path = Path(get_config("indices.tfidf_matrix", "data/indices/tfidf_matrix.npz"))
-        self.doc_ids_path = Path(get_config("indices.tfidf_doc_ids", "data/indices/tfidf_doc_ids.json"))
+        # Use dataset-specific paths
+        if dataset_name:
+            dataset_slug = dataset_name.replace('/', '_').replace('-', '_')
+            base_path = Path(get_config("indices.base_path", "data/indices")) / dataset_slug / "tfidf"
+        else:
+            # Fallback to old behavior for backwards compatibility
+            base_path = Path(get_config("indices.base_path", "data/indices"))
+        
+        self.vectorizer_path = base_path / "tfidf_vectorizer.pkl"
+        self.matrix_path = base_path / "tfidf_matrix.npz"
+        self.doc_ids_path = base_path / "tfidf_doc_ids.json"
     
     def build(self, processed_path: str = None):
         if processed_path is None:

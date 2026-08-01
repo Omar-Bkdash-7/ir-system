@@ -1,3 +1,10 @@
+"""
+Indexing service package.
+
+Provides dataset management, indexing, and building functionality
+for information retrieval system.
+"""
+
 from services.indexing.services import (
     get_index_stats,
     get_tfidf_stats,

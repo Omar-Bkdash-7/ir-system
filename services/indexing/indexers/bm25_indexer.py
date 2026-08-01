@@ -15,7 +15,7 @@ class PostingEntry(NamedTuple):
     term_freq: int
 
 class BM25Indexer:
-    def __init__(self):
+    def __init__(self, dataset_name: str = None):
         self.inverted_index: Dict[str, List[PostingEntry]] = {}
         self.doc_frequencies: Dict[str, int] = {}
         self.idf_scores: Dict[str, float] = {}
@@ -24,7 +24,15 @@ class BM25Indexer:
         self.total_docs: int = 0
         self.doc_ids: List[str] = []
         
-        self.index_path = Path(get_config("indices.bm25_index", "data/indices/bm25_index.pkl"))
+        # Use dataset-specific paths
+        if dataset_name:
+            dataset_slug = dataset_name.replace('/', '_').replace('-', '_')
+            base_path = Path(get_config("indices.base_path", "data/indices")) / dataset_slug / "bm25"
+        else:
+            # Fallback to old behavior
+            base_path = Path(get_config("indices.base_path", "data/indices"))
+        
+        self.index_path = base_path / "bm25_index.pkl"
     
     def build(self, processed_path: str = None):
         if processed_path is None:
