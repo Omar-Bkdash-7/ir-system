@@ -36,8 +36,6 @@ volumes:
     name: ir_datasets
   indices:
     name: ir_indices
-  models:
-    name: ir_models
   cache:
     name: ir_cache
   processed_data:
@@ -62,8 +60,8 @@ x-common-environment: &common-env
   REDIS_PORT: 6379
   REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_change_me_in_production}
   CACHE_TTL: ${CACHE_TTL:-3600}
-  IR_DATASETS_HOME: /app/data/datasets
-  SENTENCE_TRANSFORMERS_HOME: /app/data/models/sentence-transformers
+  IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
+  SENTENCE_TRANSFORMERS_HOME: /app/data/models
   TORCH_HOME: /app/data/cache/torch
   TRANSFORMERS_CACHE: /app/data/cache/transformers
   TORCH_DEVICE: cpu
@@ -77,7 +75,6 @@ x-common-service: &common-service
     - logs:/app/logs
     - datasets:/app/data/datasets
     - indices:/app/data/indices
-    - models:/app/data/models
     - cache:/app/data/cache
     - processed_data:/app/data/processed
     - evaluation_results:/app/data/evaluation
@@ -444,11 +441,12 @@ services:
       dockerfile: docker/frontend.Dockerfile
     image: ir-frontend:latest
     container_name: ir_frontend
-    command: streamlit run frontend/app_new.py
+    command: streamlit run frontend/app.py
     ports:
       - "${FRONTEND_PORT:-8501}:8501"
     networks:
       - frontend_net
+      - backend_net
     depends_on:
       api_gateway:
         condition: service_healthy

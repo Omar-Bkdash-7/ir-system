@@ -7,13 +7,21 @@ textColor = "#cdd6f4"
 font = "sans serif"
 
 [server]
-port = 8501
 address = "0.0.0.0"
 headless = true
 enableCORS = false
 enableXsrfProtection = false
+fileWatcherType = "poll"
+runOnSave = true
+allowRunOnSave = true
 
 [browser]
 gatherUsageStats = false
 serverAddress = "localhost"
 serverPort = 8501
+
+[ui]
+hideTopBar = true
+
+[client]
+showSidebarNavigation = false

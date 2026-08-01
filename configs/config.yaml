@@ -28,17 +28,18 @@ paths:
   processed_docs: "data/processed/quora_preprocessed.jsonl"
 
 indices:
-  bm25_index: "data/indices/bm25_index.pkl"
-  inverted_index: "data/indices/bm25_index.pkl"
-  tfidf_vectorizer: "data/indices/tfidf_vectorizer.pkl"
-  tfidf_matrix: "data/indices/tfidf_matrix.npz"
-  tfidf_doc_ids: "data/indices/tfidf_doc_ids.json"
-  embeddings: "data/indices/embeddings.npy"
-  doc_id_map: "data/indices/doc_id_map.json"
+  base_dir: "data/indices"
+  bm25_index: "data/indices/{dataset}/bm25_index.pkl"
+  inverted_index: "data/indices/{dataset}/bm25_index.pkl"
+  tfidf_vectorizer: "data/indices/{dataset}/tfidf_vectorizer.pkl"
+  tfidf_matrix: "data/indices/{dataset}/tfidf_matrix.npz"
+  tfidf_doc_ids: "data/indices/{dataset}/tfidf_doc_ids.json"
+  embeddings: "data/indices/{dataset}/embeddings.npy"
+  doc_id_map: "data/indices/{dataset}/doc_id_map.json"
 
 models:
   embedding:
-    model_name: "models/all-MiniLM-L6-v2"
+    model_name: "data/models/all-MiniLM-L6-v2"
     dimension: 384
     batch_size: 64
     normalize: true

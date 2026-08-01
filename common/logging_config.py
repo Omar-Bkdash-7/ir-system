@@ -31,17 +31,28 @@ def setup_logging(service_name: str, log_to_file: bool = True) -> logging.Logger
 
     if log_to_file:
         logs_dir = Path(get_config("paths.logs", "logs"))
-        logs_dir.mkdir(parents=True, exist_ok=True)
-
-        file_handler = logging.handlers.RotatingFileHandler(
-            logs_dir / f"{service_name}.log",
-            maxBytes=10 * 1024 * 1024,
-            backupCount=5,
-            encoding="utf-8"
-        )
-        file_handler.setFormatter(formatter)
-        file_handler.setLevel(log_level)
-        root_logger.addHandler(file_handler)
+        try:
+            logs_dir.mkdir(parents=True, exist_ok=True)
+            
+            log_file_path = logs_dir / f"{service_name}.log"
+            
+            # Try to create file with proper permissions
+            if not log_file_path.exists():
+                log_file_path.touch(mode=0o666, exist_ok=True)
+            
+            file_handler = logging.handlers.RotatingFileHandler(
+                log_file_path,
+                maxBytes=10 * 1024 * 1024,
+                backupCount=5,
+                encoding="utf-8"
+            )
+            file_handler.setFormatter(formatter)
+            file_handler.setLevel(log_level)
+            root_logger.addHandler(file_handler)
+        except (OSError, PermissionError) as e:
+            # If file logging fails, continue with console logging only
+            console_handler.setLevel(logging.WARNING)
+            root_logger.warning(f"Could not initialize file logging: {e}. Using console only.")
 
     _configure_third_party_loggers()
 

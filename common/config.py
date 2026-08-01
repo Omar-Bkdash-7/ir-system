@@ -22,3 +22,22 @@ def get_config(key_path: str, default: Any = None) -> Any:
         else:
             return default
     return value
+
+def get_dataset_specific_path(key_path: str, dataset_name: str, default: Any = None) -> str:
+    """
+    Get config path with {dataset} placeholder substituted.
+    
+    Args:
+        key_path: Config key path (e.g., 'indices.bm25_index')
+        dataset_name: Dataset name (e.g., 'beir/quora')
+        default: Default value if key not found
+    
+    Returns:
+        Path with {dataset} replaced by dataset slug (e.g., 'beir-quora')
+    """
+    path_template = get_config(key_path, default)
+    if path_template and isinstance(path_template, str):
+        dataset_slug = dataset_name.replace('/', '-').replace('_', '-')
+        return path_template.format(dataset=dataset_slug)
+    return path_template
+

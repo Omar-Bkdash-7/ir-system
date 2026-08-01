@@ -4,6 +4,15 @@
 # Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
 # =============================================================================
 
+# Override named volumes with empty definitions to use bind mounts instead
+volumes:
+  datasets: null
+  indices: null
+  cache: null
+  processed_data: null
+  evaluation_results: null
+  logs: null
+
 services:
 
   # ---------------------------------------------------------------------------
@@ -17,13 +26,21 @@ services:
       target: runtime
     command: python -m uvicorn services.api_gateway.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
-      - ./services/api_gateway:/app/services/api_gateway:ro
-      - ./common:/app/common:ro
+      - ./services/api_gateway:/app/services/api_gateway
+      - ./common:/app/common
+      - ./configs:/app/configs
+      - ./logs:/app/logs
+      - ./data/datasets:/app/data/datasets
+      - ./data/indices:/app/data/indices
+      - ./data/cache:/app/data/cache
+      - ./data/processed:/app/data/processed
+      - ./data/evaluation:/app/data/evaluation
     environment:
       ENVIRONMENT: development
       DEBUG: "true"
       LOG_LEVEL: DEBUG
       RELOAD: "true"
+      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
 
   preprocessing:
     build:
@@ -32,13 +49,21 @@ services:
       target: runtime
     command: python -m uvicorn services.preprocessing.api.main:app --host 0.0.0.0 --port 8001 --reload
     volumes:
-      - ./services/preprocessing:/app/services/preprocessing:ro
-      - ./common:/app/common:ro
+      - ./services/preprocessing:/app/services/preprocessing
+      - ./common:/app/common
+      - ./configs:/app/configs
+      - ./logs:/app/logs
+      - ./data/datasets:/app/data/datasets
+      - ./data/indices:/app/data/indices
+      - ./data/cache:/app/data/cache
+      - ./data/processed:/app/data/processed
+      - ./data/evaluation:/app/data/evaluation
     environment:
       ENVIRONMENT: development
       DEBUG: "true"
       LOG_LEVEL: DEBUG
       RELOAD: "true"
+      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
 
   indexing:
     build:
@@ -47,13 +72,22 @@ services:
       target: runtime
     command: python -m uvicorn services.indexing.main:app --host 0.0.0.0 --port 8002 --reload
     volumes:
-      - ./services/indexing:/app/services/indexing:ro
-      - ./common:/app/common:ro
+      - ./services/indexing:/app/services/indexing
+      - ./common:/app/common
+      - ./configs:/app/configs
+      - ./logs:/app/logs
+      - ./data/datasets:/app/data/datasets
+      - ./data/indices:/app/data/indices
+      - ./data/cache:/app/data/cache
+      - ./data/processed:/app/data/processed
+      - ./data/evaluation:/app/data/evaluation
+      - ./data/metadata.json:/app/data/metadata.json
     environment:
       ENVIRONMENT: development
       DEBUG: "true"
       LOG_LEVEL: DEBUG
       RELOAD: "true"
+      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
 
   retrieval:
     build:
@@ -62,13 +96,21 @@ services:
       target: runtime
     command: python -m uvicorn services.retrieval.main:app --host 0.0.0.0 --port 8003 --reload
     volumes:
-      - ./services/retrieval:/app/services/retrieval:ro
-      - ./common:/app/common:ro
+      - ./services/retrieval:/app/services/retrieval
+      - ./common:/app/common
+      - ./configs:/app/configs
+      - ./logs:/app/logs
+      - ./data/datasets:/app/data/datasets
+      - ./data/indices:/app/data/indices
+      - ./data/cache:/app/data/cache
+      - ./data/processed:/app/data/processed
+      - ./data/evaluation:/app/data/evaluation
     environment:
       ENVIRONMENT: development
       DEBUG: "true"
       LOG_LEVEL: DEBUG
       RELOAD: "true"
+      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
 
   ranking:
     build:
@@ -77,13 +119,21 @@ services:
       target: runtime
     command: python -m uvicorn services.ranking.main:app --host 0.0.0.0 --port 8004 --reload
     volumes:
-      - ./services/ranking:/app/services/ranking:ro
-      - ./common:/app/common:ro
+      - ./services/ranking:/app/services/ranking
+      - ./common:/app/common
+      - ./configs:/app/configs
+      - ./logs:/app/logs
+      - ./data/datasets:/app/data/datasets
+      - ./data/indices:/app/data/indices
+      - ./data/cache:/app/data/cache
+      - ./data/processed:/app/data/processed
+      - ./data/evaluation:/app/data/evaluation
     environment:
       ENVIRONMENT: development
       DEBUG: "true"
       LOG_LEVEL: DEBUG
       RELOAD: "true"
+      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
 
   query_refinement:
     build:
@@ -92,13 +142,21 @@ services:
       target: runtime
     command: python -m uvicorn services.query_refinement.main:app --host 0.0.0.0 --port 8005 --reload
     volumes:
-      - ./services/query_refinement:/app/services/query_refinement:ro
-      - ./common:/app/common:ro
+      - ./services/query_refinement:/app/services/query_refinement
+      - ./common:/app/common
+      - ./configs:/app/configs
+      - ./logs:/app/logs
+      - ./data/datasets:/app/data/datasets
+      - ./data/indices:/app/data/indices
+      - ./data/cache:/app/data/cache
+      - ./data/processed:/app/data/processed
+      - ./data/evaluation:/app/data/evaluation
     environment:
       ENVIRONMENT: development
       DEBUG: "true"
       LOG_LEVEL: DEBUG
       RELOAD: "true"
+      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
 
   evaluation:
     build:
@@ -107,24 +165,38 @@ services:
       target: runtime
     command: python -m uvicorn services.evaluation.main:app --host 0.0.0.0 --port 8006 --reload
     volumes:
-      - ./services/evaluation:/app/services/evaluation:ro
-      - ./common:/app/common:ro
+      - ./services/evaluation:/app/services/evaluation
+      - ./common:/app/common
+      - ./configs:/app/configs
+      - ./logs:/app/logs
+      - ./data/datasets:/app/data/datasets
+      - ./data/indices:/app/data/indices
+      - ./data/cache:/app/data/cache
+      - ./data/processed:/app/data/processed
+      - ./data/evaluation:/app/data/evaluation
     environment:
       ENVIRONMENT: development
       DEBUG: "true"
       LOG_LEVEL: DEBUG
       RELOAD: "true"
+      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
 
   frontend:
     build:
       context: .
       dockerfile: docker/frontend.Dockerfile
       target: runtime
-    command: streamlit run frontend/app_new.py --server.fileWatcherType=poll
+    command: streamlit run frontend/app.py --server.port=8501 --server.fileWatcherType=poll --server.runOnSave=true
     volumes:
-      - ./frontend:/app/frontend:ro
-      - ./common:/app/common:ro
+      - ./frontend:/app/frontend
+      - ./common:/app/common
+      - ./configs:/app/configs
+      - ./.streamlit:/app/.streamlit
+      - ./logs:/app/logs
+      - ./data/metadata.json:/app/data/metadata.json
     environment:
       ENVIRONMENT: development
       DEBUG: "true"
       LOG_LEVEL: DEBUG
+      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
+
