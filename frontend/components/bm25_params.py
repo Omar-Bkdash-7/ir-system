@@ -49,7 +49,6 @@ def render_bm25_params(key_prefix: str = "bm25") -> tuple[float, float]:
             ),
         )
     st.caption(
-        f"Current: **k1 = {k1:.1f}**, **b = {b:.2f}** · "
-        f'Formula: `BM25(q,d) = Σ IDF(t) · tf(t,d)·(k1+1) / [tf(t,d) + k1·(1−b+b·|d|/avgdl)]`'
+        f"Current: **k1 = {k1:.1f}**, **b = {b:.2f}**"
     )
     return k1, b

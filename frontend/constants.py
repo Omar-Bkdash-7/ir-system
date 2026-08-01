@@ -3,7 +3,7 @@ Centralized `st.session_state` keys.
 
 Never write a session-state string literal anywhere else in the codebase --
 import the constant from this module instead. `DEFAULTS` is consumed once by
-`app.py` on startup to seed every key with `st.session_state.setdefault`.
+` ` on startup to seed every key with `st.session_state.setdefault`.
 """
 
 # --- Navigation --------------------------------------------------------

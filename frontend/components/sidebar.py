@@ -20,67 +20,61 @@ from constants import (
 )
 
 _PAGES = [
-    ("search",           "🔍 Search"),
-    ("dataset",          "📊 Dataset & Preprocessing"),
-    ("indexing",         "🗂️ Index Management"),
-    ("evaluation",       "📈 Evaluation"),
-    ("query_refinement", "🔬 Query Refinement Lab"),
-    ("system_status",    "⚙️ System Monitor"),
+    {"key": "search", "label": "Search", "icon": "🔍"},
+    {"key": "dataset", "label": "Dataset", "icon": "📊"},
+    {"key": "indexing", "label": "Indexing", "icon": "🗂️"},
+    {"key": "inverted_index", "label": "Inverted Index", "icon": "🗃️"},
+    {"key": "preprocessing", "label": "Preprocessing", "icon": "⚙️"},
+    {"key": "evaluation", "label": "Evaluation", "icon": "📈"},
+    {"key": "query_refinement", "label": "Query Refinement", "icon": "🔬"},
+    {"key": "system_status", "label": "System Status", "icon": "🖥️"},
 ]
 
-
-def _health_dot(ok: Optional[bool]) -> str:
-    if ok is True:
-        return '<span class="ir-dot ir-dot--green"></span>'
-    if ok is False:
-        return '<span class="ir-dot ir-dot--red"></span>'
-    return '<span class="ir-dot ir-dot--yellow"></span>'
+_STATUS_EMOJI = {True: "🟢", False: "🔴", None: "🟡"}
 
 
 def render_sidebar() -> None:
-    """Renders the full sidebar. Navigation state lives in session_state[SS_SELECTED_PAGE]."""
+    """Renders the full sidebar. Navigation lives in session_state[SS_SELECTED_PAGE]."""
     with st.sidebar:
+
         # ── Brand ──────────────────────────────────────────────────────
-        st.markdown(
-            '<div style="padding:0.5rem 0 0.2rem 0">'
-            '<span style="font-size:1.4rem;font-weight:800;color:var(--ctp-blue)">🔍 IR System</span><br>'
-            '<span style="color:var(--ctp-subtext0);font-size:0.75rem">Information Retrieval · beir/quora</span>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown("### 🔍 IR System")
+        st.caption("Information Retrieval")
         st.divider()
 
         # ── Navigation ────────────────────────────────────────────────
-        st.markdown('<div class="ir-eyebrow">Navigation</div>', unsafe_allow_html=True)
         current_page = st.session_state.get(SS_SELECTED_PAGE, "search")
 
-        for key, label in _PAGES:
+        for page in _PAGES:
+            key = page["key"]
+            label = page["label"]
+            icon = page["icon"]
+            
             is_active = key == current_page
-            # Active page: show with bullet prefix + bold; inactive: normal
-            display_label = f"▶ {label}" if is_active else f"   {label}"
-            clicked = st.button(
-                display_label,
+            
+            # Create a button with key to track clicks
+            if st.button(
+                f"{icon} {label}",
                 key=f"nav_{key}",
                 use_container_width=True,
-                type="primary" if is_active else "secondary",
-            )
-            if clicked:
+                type="primary" if is_active else "secondary"
+            ):
                 st.session_state[SS_SELECTED_PAGE] = key
                 st.rerun()
 
         st.divider()
 
         # ── Dataset Info ───────────────────────────────────────────────
-        st.markdown('<div class="ir-eyebrow">Dataset</div>', unsafe_allow_html=True)
-        info = gateway.get_dataset_info_cached()
-        if info:
+        st.markdown("**Dataset**")
+        try:
+            info = gateway.get_dataset_info_cached()
+        except Exception:
+            info = None
+
+        if info and isinstance(info, dict):
             name = info.get("dataset_name", config.DATASET_NAME)
             doc_count = info.get("doc_count", config.DATASET_DOC_COUNT)
-            st.markdown(
-                f'<div class="ir-badge"><span class="ir-dot ir-dot--green"></span>'
-                f'<span style="color:var(--ctp-green);font-size:0.85em">{name}</span></div>',
-                unsafe_allow_html=True,
-            )
+            st.success(f"✅ {name}")
             c1, c2 = st.columns(2)
             with c1:
                 st.metric("Docs", f"{doc_count:,}")
@@ -88,40 +82,54 @@ def render_sidebar() -> None:
                 q = info.get("query_count", config.DATASET_QUERY_COUNT_APPROX)
                 st.metric("Queries", f"{q:,}")
         else:
-            st.markdown(
-                '<div class="ir-badge"><span class="ir-dot ir-dot--red"></span>'
-                '<span style="color:var(--ctp-subtext0);font-size:0.85em">Not loaded</span></div>',
-                unsafe_allow_html=True,
-            )
+            st.warning("Dataset not loaded")
 
         st.divider()
 
         # ── Index Status ───────────────────────────────────────────────
-        st.markdown('<div class="ir-eyebrow">Indices</div>', unsafe_allow_html=True)
-        idx_summary = indexing_api.get_all_index_status_cached()
-        from components.index_status_badge import render_index_badge_compact
-        for itype in ("tfidf", "bm25", "embedding"):
-            render_index_badge_compact(itype, idx_summary.get(itype, {}))
+        st.markdown("**Indices**")
+        try:
+            idx_summary = indexing_api.get_all_index_status_cached()
+        except Exception:
+            idx_summary = {}
 
-        if st.button("🔄 Refresh", key="sb_refresh_idx", use_container_width=True):
+        _INDEX_ICONS = {"tfidf": "📊 TF-IDF", "bm25": "📈 BM25", "embedding": "🧠 Embedding"}
+        for itype in ("tfidf", "bm25", "embedding"):
+            data = idx_summary.get(itype, {}) if isinstance(idx_summary, dict) else {}
+            status = str(data.get("status", "unknown")).lower() if isinstance(data, dict) else "unknown"
+            ok = status in ("ready", "built", "complete", "healthy")
+            status_icon = "🟢" if ok else "🔴"
+            doc_count = data.get("doc_count") or data.get("document_count") or data.get("total_docs")
+            count_str = f" · {doc_count:,}" if isinstance(doc_count, int) else ""
+            st.caption(f"{status_icon} {_INDEX_ICONS[itype]}{count_str}")
+
+        if st.button("🔄 Refresh indices", key="sb_refresh_idx", use_container_width=True):
             indexing_api.clear_index_status_cache()
             st.rerun()
 
         st.divider()
 
-        # ── Service Health (compact) ────────────────────────────────────
-        st.markdown('<div class="ir-eyebrow">Services</div>', unsafe_allow_html=True)
-        health_data = health_api.check_all_services()
+        # ── Service Health ─────────────────────────────────────────
+        st.markdown("**Services**")
+        try:
+            health_data = health_api.check_all_services()
+        except Exception:
+            health_data = {}
+
+        _SERVICE_ICONS = {
+            "gateway": "🌐",
+            "indexing": "🗂️",
+            "search": "🔍",
+            "evaluation": "📊",
+            "preprocessing": "⚙️",
+        }
+
         for svc_name, result in health_data.items():
-            dot = _health_dot(result.get("ok"))
-            ms = result.get("elapsed_ms", 0.0)
-            st.markdown(
-                f'<div class="ir-badge" style="margin:2px 0">{dot}'
-                f'<span style="font-size:0.80em;flex:1">{svc_name}</span>'
-                f'<span class="ir-mono" style="color:var(--ctp-subtext0);font-size:0.72em">'
-                f'{ms:.0f}ms</span></div>',
-                unsafe_allow_html=True,
-            )
+            ok = result.get("ok") if isinstance(result, dict) else None
+            ms = result.get("elapsed_ms", 0.0) if isinstance(result, dict) else 0.0
+            status_icon = _STATUS_EMOJI.get(ok, "🟡")
+            svc_icon = _SERVICE_ICONS.get(svc_name, "📦")
+            st.caption(f"{status_icon} {svc_icon} {svc_name} · {ms:.0f}ms")
 
         st.divider()
 
@@ -132,6 +140,7 @@ def render_sidebar() -> None:
             key="sb_auto_refresh_toggle",
         )
         st.session_state[SS_AUTO_REFRESH] = auto
+
         if auto:
             interval = st.selectbox(
                 "Interval (s)",

@@ -99,10 +99,10 @@ def get(url: str, *, params: Optional[dict] = None, timeout: Optional[int] = Non
     return _request("GET", url, params=params, timeout=timeout, max_retries=max_retries)
 
 
-def post(url: str, *, json_body: Optional[dict] = None, params: Optional[dict] = None,
+def post(url: str, *, json: Optional[dict] = None, params: Optional[dict] = None,
           timeout: Optional[int] = None, max_retries: Optional[int] = None) -> APIResponse:
     """Perform a POST request through the shared retry/error pipeline."""
-    return _request("POST", url, json=json_body, params=params, timeout=timeout, max_retries=max_retries)
+    return _request("POST", url, json=json, params=params, timeout=timeout, max_retries=max_retries)
 
 
 def health_check(base_url: str) -> APIResponse:

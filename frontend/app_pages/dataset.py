@@ -47,9 +47,6 @@ CATALOGUE = [
     ("msmarco-passage/trec-dl-2019/judged", "MSMARCO – TREC DL 2019",         8_800_000,      43,    9_300, "TREC Deep Learning 2019"),
     ("msmarco-passage/trec-dl-2020/judged", "MSMARCO – TREC DL 2020",         8_800_000,      54,   11_000, "TREC Deep Learning 2020"),
     ("msmarco-document/dev",                "MSMARCO Document / dev",          3_200_000,   5_200,    5_200, "Document ranking"),
-    ("nano-beir/msmarco",                   "Nano-BEIR – MSMARCO (tiny)",         5_000,      50,       50, "Small-scale evaluation"),
-    ("nano-beir/nfcorpus",                  "Nano-BEIR – NFCorpus (tiny)",        3_000,      50,    2_500, "Small-scale evaluation"),
-    ("nano-beir/quora",                     "Nano-BEIR – Quora (tiny)",           5_000,      50,       70, "Small-scale evaluation"),
     ("nfcorpus/test",                       "NFCorpus / test",                    5_400,     325,   16_000, "Medical nutrition IR"),
     ("vaswani",                             "Vaswani",                           11_000,      93,    2_100, "Classic IR collection"),
 ]
@@ -85,6 +82,8 @@ def _trigger_filter():
 
 def _render_browser() -> str | None:
     st.markdown("### Browse Datasets")
+    
+    st.info("💡 **Note:** Showing datasets compatible with ir_datasets 0.5.9. Some newer datasets (like nano-beir variants) may require upgrading ir_datasets.")
 
     c1, c2, c3, c4 = st.columns([3, 2, 2, 2])
     with c1:
@@ -339,27 +338,150 @@ def _render_local_datasets():
 # Section: upload to PostgreSQL
 # ---------------------------------------------------------------------------
 def _render_db_upload():
-    st.markdown("### Upload to PostgreSQL")
+    st.markdown("### Database Management")
 
+    # Show current database status
     db_resp = indexing_api.get_db_info()
+    
     if db_resp.ok and isinstance(db_resp.data, dict):
-        row_count = db_resp.data.get("row_count", 0)
-        table = db_resp.data.get("table", "documents")
-        st.metric("Current rows in DB", f"{row_count:,}", help=f"Table: {table}")
+        total_tables = db_resp.data.get("total_tables", 0)
+        total_docs = db_resp.data.get("total_documents", 0)
+        datasets = db_resp.data.get("datasets", [])
+        
+        # Database summary metrics
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Tables", total_tables)
+        col2.metric("Total Documents", f"{total_docs:,}")
+        col3.metric("Status", db_resp.data.get("status", "unknown").title())
+        
+        # Show datasets in database
+        if datasets:
+            st.markdown("#### Datasets in Database")
+            
+            # CSS for delete buttons
+            st.markdown("""
+                <style>
+                div[data-testid="stButton"] > button.db-delete-btn {
+                    background-color: #dc2626 !important;
+                    color: white !important;
+                    border: 1px solid #dc2626 !important;
+                }
+                div[data-testid="stButton"] > button.db-delete-btn:hover {
+                    background-color: #b91c1c !important;
+                    border-color: #b91c1c !important;
+                }
+                </style>
+            """, unsafe_allow_html=True)
+            
+            # Header row
+            hdr = st.columns([3, 2, 1, 1])
+            for col, lbl in zip(hdr, ["Dataset ID", "Table", "Documents", "Actions"]):
+                col.markdown(f"**{lbl}**")
+            
+            # Dataset rows
+            for ds in datasets:
+                ds_id = ds.get("dataset_id", "—")
+                table_name = ds.get("table_name", "—")
+                doc_count = ds.get("doc_count", 0)
+                size = ds.get("size", "—")
+                
+                cols = st.columns([3, 2, 1, 1])
+                cols[0].write(ds_id)
+                cols[1].write(table_name)
+                cols[2].write(f"{doc_count:,}")
+                
+                confirm_key = f"confirm_db_{ds_id}"
+                
+                with cols[3]:
+                    if st.button("🗑️", key=f"del_db_{ds_id}", help=f"Delete {ds_id} from DB",
+                                 use_container_width=True):
+                        st.session_state[confirm_key] = True
+                
+                if st.session_state.get(confirm_key):
+                    st.warning(
+                        f"⚠️ Are you sure you want to **permanently delete** `{ds_id}` from database? "
+                        f"This will drop the table with **{doc_count:,}** documents and cannot be undone."
+                    )
+                    yes_col, no_col = st.columns(2)
+                    with yes_col:
+                        if st.button("Yes, delete from DB", type="primary", key=f"yes_db_{ds_id}"):
+                            del_resp = indexing_api.delete_dataset_from_db(ds_id)
+                            if del_resp.ok:
+                                st.success(f"Deleted `{ds_id}` from database.")
+                            else:
+                                st.error(f"Delete failed: {del_resp.error}")
+                            st.session_state.pop(confirm_key, None)
+                            st.rerun()
+                    with no_col:
+                        if st.button("Cancel", key=f"no_db_{ds_id}"):
+                            st.session_state.pop(confirm_key, None)
+                            st.rerun()
+            
+            st.caption(f"💾 Total size: {sum(float(ds.get('size', '0').replace(' MB','').replace(' kB','').replace('kB','').replace('MB','')) for ds in datasets if 'size' in ds):.1f} MB")
+        else:
+            st.info("📭 No datasets in database yet.")
     else:
-        st.caption("Could not reach DB info endpoint.")
-
+        st.warning("⚠️ Could not reach database info endpoint.")
+    
+    st.divider()
+    
+    # Upload section
+    st.markdown("#### Upload Dataset to Database")
+    
+    # Get list of local datasets
+    local_resp = indexing_api.list_local_datasets()
+    local_datasets = []
+    if local_resp.ok and isinstance(local_resp.data, dict):
+        datasets = local_resp.data.get("datasets", [])
+        local_datasets = [ds.get("dataset_id") for ds in datasets if ds.get("dataset_id")]
+    
     col_id, col_btn = st.columns([3, 2])
     with col_id:
-        upload_id = st.text_input(
-            "Dataset ID to upload",
-            value=st.session_state.get("dataset_id_input", config.DATASET_NAME),
-            key="upload_ds_id",
-        )
+        if local_datasets:
+            # Dropdown with local datasets
+            default_idx = 0
+            current_input = st.session_state.get("ds_selected_id", config.DATASET_NAME)
+            if current_input in local_datasets:
+                default_idx = local_datasets.index(current_input)
+            
+            upload_id = st.selectbox(
+                "Select dataset to upload",
+                options=local_datasets,
+                index=default_idx,
+                key="upload_ds_id_select",
+                help="Select from locally downloaded datasets"
+            )
+        else:
+            # Fallback to text input if no local datasets
+            upload_id = st.text_input(
+                "Dataset ID to upload",
+                value=config.DATASET_NAME,
+                key="upload_ds_id_text",
+                help="No local datasets found. Download a dataset first."
+            )
+            st.warning("⚠️ No local datasets found. Please download a dataset first using 'Download & Validate' above.")
+    
     with col_btn:
         st.markdown("<div style='margin-top:28px'></div>", unsafe_allow_html=True)
-        do_upload = st.button("⬆️ Upload to DB", type="primary",
-                              use_container_width=True, key="btn_upload_db")
+        
+        # Check if dataset is already in DB
+        is_in_db = False
+        if db_resp.ok and isinstance(db_resp.data, dict):
+            datasets = db_resp.data.get("datasets", [])
+            is_in_db = any(ds.get("dataset_id") == upload_id for ds in datasets)
+        
+        btn_label = "🔄 Re-upload to DB" if is_in_db else "⬆️ Upload to DB"
+        btn_type = "secondary" if is_in_db else "primary"
+        
+        # Disable button if no local datasets
+        btn_disabled = not local_datasets
+        
+        do_upload = st.button(btn_label, type=btn_type,
+                              use_container_width=True, key="btn_upload_db",
+                              disabled=btn_disabled)
+    
+    if is_in_db:
+        st.info(f"ℹ️ Dataset `{upload_id}` is already in database. Re-uploading will drop the old table and create a new one.")
 
     if not do_upload:
         return
@@ -371,8 +493,9 @@ def _render_db_upload():
     if up_resp.ok and isinstance(up_resp.data, dict):
         inserted = up_resp.data.get("inserted", 0)
         skipped  = up_resp.data.get("skipped", 0)
+        table = up_resp.data.get("table", "—")
         s.update(label="✅ Upload complete!", state="complete")
-        st.success(f"Inserted **{inserted:,}** documents, skipped **{skipped:,}**.")
+        st.success(f"Inserted **{inserted:,}** documents into `{table}`, skipped **{skipped:,}**.")
         st.rerun()
     else:
         s.update(label="❌ Upload failed", state="error")
@@ -390,16 +513,22 @@ def render() -> None:
     with st.container(border=True):
         c1, c2, c3, c4 = st.columns(4)
         if info:
-            c1.metric("Active Dataset", info.get("dataset_name", config.DATASET_NAME))
-            c2.metric("Documents",      f"{info.get('doc_count',   config.DATASET_DOC_COUNT):,}")
-            c3.metric("Test Queries",   f"{info.get('query_count', config.DATASET_QUERY_COUNT_APPROX):,}")
-            c4.metric("Qrels",          f"{info.get('qrel_count',  config.DATASET_QREL_COUNT_APPROX):,}")
+            is_pending = info.get("validation_status") == "pending"
+            source_note = " (from config)" if info.get("source") == "config_fallback" else ""
+            
+            c1.metric("Active Dataset", info.get("dataset_name", config.DATASET_NAME) + source_note)
+            c2.metric("Documents", f"{info.get('doc_count', config.DATASET_DOC_COUNT):,}")
+            c3.metric("Test Queries", f"{info.get('query_count', config.DATASET_QUERY_COUNT_APPROX):,}")
+            c4.metric("Qrels", f"{info.get('qrel_count', info.get('qrels_count', config.DATASET_QREL_COUNT_APPROX)):,}")
+            
+            if is_pending:
+                st.info("ℹ️ Using default values from config. Validate the dataset below for accurate counts.")
         else:
             c1.metric("Active Dataset", config.DATASET_NAME)
-            c2.metric("Documents",      f"{config.DATASET_DOC_COUNT:,}")
-            c3.metric("Test Queries",   f"~{config.DATASET_QUERY_COUNT_APPROX:,}")
-            c4.metric("Qrels",          f"~{config.DATASET_QREL_COUNT_APPROX:,}")
-            st.warning("⚠️ Metadata not found on backend — validate a dataset below.")
+            c2.metric("Documents", f"{config.DATASET_DOC_COUNT:,}")
+            c3.metric("Test Queries", f"~{config.DATASET_QUERY_COUNT_APPROX:,}")
+            c4.metric("Qrels", f"~{config.DATASET_QREL_COUNT_APPROX:,}")
+            st.warning("⚠️ Could not load dataset info — validate a dataset below.")
 
     st.divider()
 
