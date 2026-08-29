@@ -333,16 +333,46 @@ def _render_local_datasets():
                 st.session_state[confirm_key] = True
 
         if st.session_state.get(confirm_key):
-            st.warning(
-                f"⚠️ Are you sure you want to **permanently delete** `{ds_id}`? "
-                "This cannot be undone."
-            )
+            # Check if this is the active dataset
+            active_resp = indexing_api.get_active_dataset()
+            is_active = False
+            if active_resp.ok and isinstance(active_resp.data, dict):
+                active_dataset = active_resp.data.get("active_dataset")
+                is_active = (active_dataset == ds_id)
+            
+            if is_active:
+                st.error(
+                    f"⚠️ **WARNING**: You are about to delete the **ACTIVE** dataset `{ds_id}`!\n\n"
+                    "This will:\n"
+                    "- Delete the local dataset files\n"
+                    "- Remove metadata\n"
+                    "- Clear active dataset pointer\n"
+                    "- **You will need to select another dataset before building indices**\n\n"
+                    "This action **cannot be undone**."
+                )
+            else:
+                st.warning(
+                    f"⚠️ Are you sure you want to **permanently delete** `{ds_id}`? "
+                    "This cannot be undone."
+                )
             yes_col, no_col = st.columns(2)
             with yes_col:
                 if st.button("Yes, delete it", type="primary", key=f"yes_{ds_id}"):
                     del_resp = indexing_api.delete_local_dataset(ds_id)
                     if del_resp.ok:
-                        st.success(f"Deleted `{ds_id}`.")
+                        st.success(f"✅ Deleted `{ds_id}`.")
+                        
+                        # Check if metadata was cleaned up
+                        if del_resp.data and del_resp.data.get("metadata_cleaned"):
+                            # Check if this was the active dataset
+                            if is_active:
+                                st.info(
+                                    "ℹ️ The active dataset has been cleared. "
+                                    "Please select another dataset from the dropdown above."
+                                )
+                                # Clear cache
+                                gateway.clear_dataset_info_cache()
+                                indexing_api.clear_index_status_cache()
                     else:
                         st.error(f"Delete failed: {del_resp.error}")
                     st.session_state.pop(confirm_key, None)
@@ -417,16 +447,45 @@ def _render_db_upload():
                         st.session_state[confirm_key] = True
                 
                 if st.session_state.get(confirm_key):
-                    st.warning(
-                        f"⚠️ Are you sure you want to **permanently delete** `{ds_id}` from database? "
-                        f"This will drop the table with **{doc_count:,}** documents and cannot be undone."
-                    )
+                    # Check if this is the active dataset
+                    active_resp = indexing_api.get_active_dataset()
+                    is_active = False
+                    if active_resp.ok and isinstance(active_resp.data, dict):
+                        active_dataset = active_resp.data.get("active_dataset")
+                        is_active = (active_dataset == ds_id)
+                    
+                    if is_active:
+                        st.error(
+                            f"⚠️ **WARNING**: You are about to delete the **ACTIVE** dataset `{ds_id}` from database!\n\n"
+                            f"This will drop the table with **{doc_count:,}** documents.\n\n"
+                            "⚠️ **Note**: This is the currently active dataset. After deletion:\n"
+                            "- You will need to select another dataset\n"
+                            "- Existing indices will become invalid\n"
+                            "- Metadata will be cleaned up if local files are also deleted\n\n"
+                            "This action **cannot be undone**."
+                        )
+                    else:
+                        st.warning(
+                            f"⚠️ Are you sure you want to **permanently delete** `{ds_id}` from database? "
+                            f"This will drop the table with **{doc_count:,}** documents and cannot be undone."
+                        )
                     yes_col, no_col = st.columns(2)
                     with yes_col:
                         if st.button("Yes, delete from DB", type="primary", key=f"yes_db_{ds_id}"):
                             del_resp = indexing_api.delete_dataset_from_db(ds_id)
                             if del_resp.ok:
-                                st.success(f"Deleted `{ds_id}` from database.")
+                                st.success(f"✅ Deleted `{ds_id}` from database.")
+                                
+                                # If this was the active dataset, inform user
+                                if is_active:
+                                    st.info(
+                                        "ℹ️ You deleted the active dataset from database. "
+                                        "The metadata has been preserved (local files still exist). "
+                                        "You can re-upload to database or select another dataset."
+                                    )
+                                    # Clear cache
+                                    gateway.clear_dataset_info_cache()
+                                    indexing_api.clear_index_status_cache()
                             else:
                                 st.error(f"Delete failed: {del_resp.error}")
                             st.session_state.pop(confirm_key, None)

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict
 
 from services.indexing.dataset.path_resolver import DatasetPathResolver
+from services.indexing.dataset.metadata_manager import DatasetMetadataManager
 
 
 logger = logging.getLogger(__name__)
@@ -24,12 +25,14 @@ class LocalDatasetDeleter:
     def __init__(self):
         """Initialize deleter with path resolver."""
         self.path_resolver = DatasetPathResolver()
+        self.metadata_manager = DatasetMetadataManager()
     
     def delete_dataset(self, dataset_id: str) -> Dict[str, str]:
         """
-        Delete a local dataset directory.
+        Delete a local dataset directory and clean up metadata.
         
         Performs validation before deletion to ensure safe operation.
+        Also removes dataset metadata and clears active dataset if needed.
         
         Args:
             dataset_id: Dataset identifier (e.g., 'beir/quora')
@@ -57,13 +60,23 @@ class LocalDatasetDeleter:
         logger.info(f"Deleting dataset directory: {target_path}")
         
         try:
+            # Delete dataset directory
             shutil.rmtree(target_path)
-            logger.info(f"Successfully deleted dataset '{dataset_id}' at {target_path}")
+            logger.info(f"Successfully deleted dataset directory '{dataset_id}' at {target_path}")
+            
+            # Clean up metadata
+            try:
+                self.metadata_manager.delete_dataset_metadata(dataset_id)
+                logger.info(f"Cleaned up metadata for '{dataset_id}'")
+            except Exception as e:
+                logger.warning(f"Failed to clean up metadata for '{dataset_id}': {e}")
+                # Don't fail the whole operation if metadata cleanup fails
             
             return {
                 "deleted": dataset_id,
                 "path": str(target_path),
-                "status": "success"
+                "status": "success",
+                "metadata_cleaned": True
             }
         except Exception as e:
             logger.error(f"Failed to delete dataset '{dataset_id}': {e}", exc_info=True)

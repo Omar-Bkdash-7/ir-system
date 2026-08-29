@@ -403,6 +403,10 @@ class DatasetDatabaseDeleter:
     def __init__(self):
         """Initialize deleter with configuration."""
         self.table_prefix = get_config("database.table_prefix", "dataset")
+        
+        # Import here to avoid circular dependency
+        from services.indexing.dataset.metadata_manager import DatasetMetadataManager
+        self.metadata_manager = DatasetMetadataManager()
     
     def _get_table_name(self, dataset_id: str) -> str:
         """
@@ -419,9 +423,10 @@ class DatasetDatabaseDeleter:
     
     def delete_dataset_from_db(self, dataset_id: str) -> Dict[str, Any]:
         """
-        Delete dataset table from PostgreSQL.
+        Delete dataset table from PostgreSQL and clean up metadata.
         
         Drops the entire table for the specified dataset.
+        Also cleans up metadata if dataset is deleted completely.
         
         Args:
             dataset_id: Dataset identifier to delete
@@ -468,6 +473,26 @@ class DatasetDatabaseDeleter:
                 conn.commit()
                 
                 logger.info(f"Dropped table '{table_name}' with {count} documents")
+                
+                # Clean up metadata (optional - only if local dataset is also deleted)
+                # Check if local dataset still exists
+                from services.indexing.dataset.path_resolver import DatasetPathResolver
+                path_resolver = DatasetPathResolver()
+                ir_home = path_resolver.get_ir_home()
+                
+                # Build path to dataset
+                parts = dataset_id.strip("/").split("/")
+                dataset_path = ir_home
+                for part in parts:
+                    dataset_path = dataset_path / part
+                
+                # If local dataset doesn't exist, clean up metadata too
+                if not dataset_path.exists():
+                    try:
+                        self.metadata_manager.delete_dataset_metadata(dataset_id)
+                        logger.info(f"Cleaned up metadata for '{dataset_id}' (local dataset not found)")
+                    except Exception as e:
+                        logger.warning(f"Failed to clean up metadata: {e}")
                 
                 return {
                     "status": "success",

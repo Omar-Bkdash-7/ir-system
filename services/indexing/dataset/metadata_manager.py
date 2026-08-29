@@ -186,6 +186,13 @@ class DatasetMetadataManager:
         if "datasets" in main_metadata and dataset_name in main_metadata["datasets"]:
             del main_metadata["datasets"][dataset_name]
         
+        # Clear legacy fields if they match the deleted dataset
+        if main_metadata.get("dataset_name") == dataset_name:
+            main_metadata["dataset_name"] = None
+            main_metadata["doc_count"] = None
+            main_metadata["query_count"] = None
+            main_metadata["qrels_count"] = None
+        
         self._save_main_metadata(main_metadata)
     
     def metadata_exists(self, dataset_name: Optional[str] = None) -> bool:
