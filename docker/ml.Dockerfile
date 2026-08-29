@@ -22,12 +22,20 @@ FROM base AS deps-builder
 # Copy requirements
 COPY requirements/base.txt requirements/ml.txt requirements/nlp.txt requirements/ir.txt /tmp/
 
-# Install Python dependencies (disable hash checking for CPU wheels)
+# Install base dependencies first (without PyTorch index)
 RUN pip install --user --no-warn-script-location --no-cache-dir \
     -r /tmp/base.txt \
-    -r /tmp/ml.txt \
     -r /tmp/nlp.txt \
     -r /tmp/ir.txt
+
+# Install ML dependencies with PyTorch CPU index
+RUN pip install --user --no-warn-script-location --no-cache-dir \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
+    torch==2.3.0 \
+    transformers==4.40.2 \
+    sentence-transformers==2.7.0 \
+    scikit-learn==1.4.2 \
+    scipy==1.13.0
 
 # =============================================================================
 # Models Download Stage - Download and cache models

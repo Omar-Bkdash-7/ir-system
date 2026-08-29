@@ -255,8 +255,39 @@ def _build_single(index_type: str, force: bool, preprocessing_config: dict | Non
     st.session_state[SS_BUILD_LOG] = log[-50:]
 
 
+def _on_dataset_change():
+    """Callback when dataset selection changes."""
+    selected = st.session_state.get("dataset_selector")
+    previous = st.session_state.get("_previous_dataset")
+    
+    if selected and selected != previous:
+        resp = indexing_api.validate_dataset(selected)
+        if resp.ok:
+            gateway.clear_dataset_info_cache()
+            indexing_api.clear_index_status_cache()
+            st.session_state["_previous_dataset"] = selected
+            st.session_state["dataset_change_success"] = selected
+            st.session_state["dataset_needs_rerun"] = True
+        else:
+            st.session_state["dataset_change_error"] = resp.error
+
+
 def render() -> None:
     st.markdown("## 🗂️ Index Management")
+    
+    # Check if we need to rerun after dataset change
+    if st.session_state.get("dataset_needs_rerun"):
+        del st.session_state["dataset_needs_rerun"]
+        st.rerun()
+    
+    # Show feedback messages from dataset change
+    if "dataset_change_success" in st.session_state:
+        st.success(f"✅ Dataset switched to: {st.session_state['dataset_change_success']}")
+        del st.session_state["dataset_change_success"]
+    
+    if "dataset_change_error" in st.session_state:
+        st.error(f"❌ Validation failed: {st.session_state['dataset_change_error']}")
+        del st.session_state["dataset_change_error"]
     
     # Dataset selection
     with st.container(border=True):
@@ -271,39 +302,24 @@ def render() -> None:
         
         # Dataset selector
         if available_datasets:
-            col_select, col_validate = st.columns([3, 1])
+            # Find current index for selectbox
+            try:
+                default_idx = available_datasets.index(current_dataset) if current_dataset in available_datasets else 0
+            except (ValueError, TypeError):
+                default_idx = 0
             
-            with col_select:
-                # Find current index for selectbox
-                try:
-                    default_idx = available_datasets.index(current_dataset) if current_dataset in available_datasets else 0
-                except (ValueError, TypeError):
-                    default_idx = 0
-                
-                selected_dataset = st.selectbox(
-                    "Select Dataset",
-                    options=available_datasets,
-                    index=default_idx,
-                    key="dataset_selector",
-                    help="Choose a dataset to validate and build indices for"
-                )
+            # Initialize previous dataset tracker
+            if "_previous_dataset" not in st.session_state:
+                st.session_state["_previous_dataset"] = current_dataset
             
-            with col_validate:
-                st.markdown("<br>", unsafe_allow_html=True)
-                # Only show validate button if selection is different from current
-                if selected_dataset and selected_dataset != current_dataset:
-                    if st.button("✓ Validate & Switch", key="validate_dataset_btn", 
-                                use_container_width=True, type="primary",
-                                help="Validate and switch to selected dataset"):
-                        with st.spinner(f"Validating {selected_dataset}..."):
-                            resp = indexing_api.validate_dataset(selected_dataset)
-                            if resp.ok:
-                                st.success(f"✅ {selected_dataset} validated!")
-                                gateway.clear_dataset_info_cache()
-                                indexing_api.clear_index_status_cache()
-                                st.rerun()
-                            else:
-                                st.error(f"❌ Validation failed: {resp.error}")
+            selected_dataset = st.selectbox(
+                "Select Dataset",
+                options=available_datasets,
+                index=default_idx,
+                key="dataset_selector",
+                on_change=_on_dataset_change,
+                help="Choose a dataset - will automatically validate and switch"
+            )
             
             st.caption(f"💡 **Available datasets:** {len(available_datasets)} | Currently active: **{current_dataset}**")
         else:
