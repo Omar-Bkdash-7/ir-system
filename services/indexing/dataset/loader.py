@@ -130,7 +130,7 @@ class DatasetLoader:
         Returns:
             Dictionary with extracted statistics
         """
-        # Force download by iterating first document
+        # Force complete download by accessing all iterators
         # This ensures the dataset files are actually downloaded to disk
         if hasattr(docs_ds, 'docs_iter'):
             try:
@@ -139,6 +139,23 @@ class DatasetLoader:
                 logger.info(f"First document loaded: {first_doc.doc_id[:50] if hasattr(first_doc, 'doc_id') else 'N/A'}")
             except Exception as e:
                 logger.warning(f"Could not iterate first document (may be lazy): {e}")
+        
+        # Force download of queries and qrels files
+        if hasattr(test_ds, 'queries_iter'):
+            try:
+                logger.info("Forcing queries download...")
+                next(iter(test_ds.queries_iter()))
+                logger.info("Queries file downloaded")
+            except Exception as e:
+                logger.warning(f"Could not iterate first query: {e}")
+        
+        if hasattr(test_ds, 'qrels_iter'):
+            try:
+                logger.info("Forcing qrels download...")
+                next(iter(test_ds.qrels_iter()))
+                logger.info("Qrels file downloaded")
+            except Exception as e:
+                logger.warning(f"Could not iterate first qrel: {e}")
         
         doc_count = self._safe_count(docs_ds, "docs_count")
         query_count = self._safe_count(test_ds, "queries_count")

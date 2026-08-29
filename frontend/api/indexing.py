@@ -127,3 +127,24 @@ def get_vocabulary_sample(sample_size: int = 100) -> APIResponse:
         f"{config.INDEXING_URL}/index/inverted/sample",
         params={"sample_size": sample_size}
     )
+
+
+# ── Dataset Management (Multi-Dataset Support) ────────────────────────────
+
+def get_active_dataset() -> APIResponse:
+    """Get the currently active dataset."""
+    return get(f"{config.INDEXING_URL}/datasets/active", max_retries=1)
+
+
+def set_active_dataset(dataset_id: str) -> APIResponse:
+    """Set the active dataset."""
+    return post(
+        f"{config.INDEXING_URL}/datasets/active",
+        params={"dataset_id": dataset_id},
+        max_retries=1,
+    )
+
+
+def list_datasets_metadata() -> APIResponse:
+    """List all datasets with their metadata."""
+    return get(f"{config.INDEXING_URL}/datasets/metadata", max_retries=1)

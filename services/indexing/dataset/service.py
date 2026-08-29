@@ -1,5 +1,7 @@
 """
 Main dataset service orchestration.
+
+Supports multi-dataset validation and metadata management.
 """
 
 import logging
@@ -23,8 +25,8 @@ class DatasetService:
     """
     Main service for dataset validation and management operations.
     
-    Orchestrates validation, loading, and metadata management workflows
-    for the IR system dataset management service.
+    Orchestrates validation, loading, and metadata management workflows.
+    Supports multiple datasets with individual metadata storage.
     """
     
     def __init__(self):
@@ -34,7 +36,8 @@ class DatasetService:
     def validate_and_store_metadata(
         self, 
         dataset_id: Optional[str] = None,
-        skip_min_thresholds: bool = False
+        skip_min_thresholds: bool = False,
+        set_as_active: bool = True
     ) -> Dict[str, Any]:
         """
         Validate dataset and store its metadata.
@@ -44,10 +47,12 @@ class DatasetService:
         2. Verify required features (queries, qrels)
         3. Load dataset with retry logic
         4. Extract and store metadata
+        5. Optionally set as active dataset
         
         Args:
             dataset_id: IR datasets identifier (e.g., 'beir/quora')
             skip_min_thresholds: Reserved for future threshold validation
+            set_as_active: Whether to set this dataset as active (default: True)
             
         Returns:
             Dictionary containing dataset metadata and validation status
@@ -73,15 +78,20 @@ class DatasetService:
         loader = DatasetLoader(dataset_id)
         metadata = loader.load_with_retry(max_retries, retry_delay)
         
-        # Step 4: Store metadata
-        self.metadata_manager.save_metadata(metadata)
+        # Step 4: Store metadata (also sets as active if requested)
+        self.metadata_manager.save_metadata(metadata, dataset_name=dataset_id)
         
         logger.info(f"Validation completed successfully for '{dataset_id}'")
+        logger.info(f"Active dataset: {self.metadata_manager.get_active_dataset()}")
+        
         return metadata
     
-    def get_metadata(self) -> Dict[str, Any]:
+    def get_metadata(self, dataset_name: Optional[str] = None) -> Dict[str, Any]:
         """
         Retrieve stored dataset metadata.
+        
+        Args:
+            dataset_name: Dataset identifier. If None, returns active dataset
         
         Returns:
             Dictionary containing dataset metadata
@@ -89,13 +99,44 @@ class DatasetService:
         Raises:
             FileNotFoundError: If metadata file doesn't exist
         """
-        return self.metadata_manager.load_metadata()
+        return self.metadata_manager.load_metadata(dataset_name)
     
-    def has_metadata(self) -> bool:
+    def has_metadata(self, dataset_name: Optional[str] = None) -> bool:
         """
-        Check if metadata exists.
+        Check if metadata exists for a dataset.
+        
+        Args:
+            dataset_name: Dataset identifier. If None, checks main metadata
         
         Returns:
             True if metadata file exists, False otherwise
         """
-        return self.metadata_manager.metadata_exists()
+        return self.metadata_manager.metadata_exists(dataset_name)
+    
+    def get_active_dataset(self) -> Optional[str]:
+        """
+        Get the currently active dataset name.
+        
+        Returns:
+            Active dataset name or None
+        """
+        return self.metadata_manager.get_active_dataset()
+    
+    def set_active_dataset(self, dataset_name: str) -> None:
+        """
+        Set the active dataset.
+        
+        Args:
+            dataset_name: Dataset identifier to set as active
+        """
+        self.metadata_manager.set_active_dataset(dataset_name)
+        logger.info(f"Active dataset changed to: {dataset_name}")
+    
+    def list_datasets(self) -> list:
+        """
+        List all datasets with metadata.
+        
+        Returns:
+            List of dataset metadata dictionaries
+        """
+        return self.metadata_manager.list_datasets()

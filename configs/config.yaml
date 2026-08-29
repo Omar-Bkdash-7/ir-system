@@ -1,11 +1,14 @@
 dataset:
+  # Default dataset for initial setup (can be changed via API)
   name: "beir/quora"
   ir_datasets_id: "beir/quora"
   test_split: "beir/quora/test"
-  expected_docs_count: 522931
-  min_docs_threshold: 200000
-  min_queries_threshold: 1000
-  min_qrels_threshold: 1000
+  
+  # Validation thresholds (applied to all datasets)
+  expected_docs_count: 522931  # Used for beir/quora validation only
+  min_docs_threshold: 1000
+  min_queries_threshold: 50
+  min_qrels_threshold: 50
   validation_retries: 3
   validation_retry_delay: 10
 
@@ -24,11 +27,15 @@ paths:
   indices: "data/indices"
   logs: "logs"
   metadata: "data/metadata.json"
-  raw_docs: "data/raw/quora_docs.jsonl"
-  processed_docs: "data/processed/quora_preprocessed.jsonl"
+  metadata_dir: "data/metadata"
+  
+  # Legacy paths (kept for backward compatibility)
+  raw_docs: "data/raw/{dataset}_docs.jsonl"
+  processed_docs: "data/processed/{dataset}_preprocessed.jsonl"
 
 indices:
   base_dir: "data/indices"
+  # Multi-dataset support: {dataset} will be replaced with dataset slug (e.g., beir-quora)
   bm25_index: "data/indices/{dataset}/bm25_index.pkl"
   inverted_index: "data/indices/{dataset}/bm25_index.pkl"
   tfidf_vectorizer: "data/indices/{dataset}/tfidf_vectorizer.pkl"

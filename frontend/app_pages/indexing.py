@@ -275,6 +275,29 @@ def _on_dataset_change():
 def render() -> None:
     st.markdown("## 🗂️ Index Management")
     
+    # Display active dataset info at the top
+    active_resp = indexing_api.get_active_dataset()
+    if active_resp.ok and isinstance(active_resp.data, dict):
+        active_dataset = active_resp.data.get("active_dataset")
+        metadata = active_resp.data.get("metadata", {})
+        
+        if active_dataset:
+            with st.container(border=True):
+                col1, col2, col3 = st.columns([2, 1, 1])
+                col1.markdown(f"**📊 Active Dataset:** `{active_dataset}`")
+                if metadata:
+                    col2.metric("Documents", f"{metadata.get('doc_count', 0):,}")
+                    col3.metric("Status", metadata.get('validation_status', 'unknown').title())
+                
+                st.caption("💡 Indices will be built for the active dataset. Switch datasets in the Dataset page.")
+        else:
+            st.warning("⚠️ No active dataset. Please validate and select a dataset in the Dataset page first.")
+            return
+    else:
+        st.warning("⚠️ Could not load active dataset info.")
+    
+    st.divider()
+    
     # Check if we need to rerun after dataset change
     if st.session_state.get("dataset_needs_rerun"):
         del st.session_state["dataset_needs_rerun"]

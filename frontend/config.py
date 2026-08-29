@@ -52,12 +52,13 @@ MAX_RETRIES = _env_int("MAX_RETRIES", 3)
 RETRY_BACKOFF_BASE_SECONDS = 0.5
 
 # ---------------------------------------------------------------------------
-# Dataset (beir/quora)
+# Dataset (Dynamic - loaded from backend)
 # ---------------------------------------------------------------------------
-DATASET_NAME = "beir/quora"
-DATASET_DOC_COUNT = 522_931
-DATASET_QUERY_COUNT_APPROX = 10_000
-DATASET_QREL_COUNT_APPROX = 15_675
+# Default values shown until dataset is loaded from backend
+DATASET_NAME = "No dataset loaded"
+DATASET_DOC_COUNT = 0
+DATASET_QUERY_COUNT_APPROX = 0
+DATASET_QREL_COUNT_APPROX = 0
 
 # ---------------------------------------------------------------------------
 # Retrieval defaults / bounds

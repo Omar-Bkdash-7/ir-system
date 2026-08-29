@@ -69,9 +69,12 @@ def validate_and_store_metadata(dataset_id=None, skip_min_thresholds=False):
     return service.validate_and_store_metadata(dataset_id, skip_min_thresholds)
 
 
-def get_metadata():
+def get_metadata(dataset_name=None):
     """
     Public API: Retrieve stored dataset metadata.
+    
+    Args:
+        dataset_name: Dataset identifier. If None, returns active dataset
     
     Returns:
         Dictionary containing dataset metadata
@@ -80,7 +83,7 @@ def get_metadata():
         FileNotFoundError: If metadata file doesn't exist
     """
     service = DatasetService()
-    return service.get_metadata()
+    return service.get_metadata(dataset_name)
 
 
 def list_local_datasets():

@@ -17,5 +17,5 @@ DB_BATCH_PAGE_SIZE = 500
 # File extensions considered as dataset data files
 DATA_FILE_EXTENSIONS: FrozenSet[str] = frozenset({
     ".zip", ".gz", ".jsonl", ".json", ".qrels", 
-    ".tsv", ".pklz4", ".npy", ".pkl"
+    ".tsv", ".pklz4", ".npy", ".pkl", ".txt"
 })
