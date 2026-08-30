@@ -1,5 +1,5 @@
 """
-Index Management page — build, monitor, and rebuild TF-IDF / BM25 / Embedding indices.
+Index Management page build, monitor, and rebuild TF-IDF / BM25 / Embedding indices.
 """
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import config
 import api.indexing as indexing_api
 import api.gateway as gateway
 from components.index_status_badge import render_index_card
-from constants import SS_BUILD_IN_PROGRESS, SS_BUILD_LOG, SS_FORCE_REBUILD
+from constants import SS_BUILD_LOG, SS_FORCE_REBUILD
 
 
 def _get_downloaded_datasets() -> list[str]:
@@ -33,7 +33,7 @@ def _get_downloaded_datasets() -> list[str]:
 def _render_preprocessing_config() -> dict | None:
     """Render preprocessing configuration options and return config dict."""
     
-    with st.expander("⚙️ Preprocessing Configuration", expanded=False):
+    with st.expander("Preprocessing Configuration", expanded=False):
         st.caption("Configure how documents are preprocessed before indexing")
         
         col1, col2 = st.columns(2)
@@ -127,14 +127,14 @@ def _render_preprocessing_config() -> dict | None:
     return None
 
 
-def _build_single(index_type: str, force: bool, preprocessing_config: dict | None = None) -> None:
+def _build_single(index_type: str, force: bool, preprocessing_config: dict | None = None, dataset_in_db: bool = True) -> None:
     label = config.RETRIEVAL_MODEL_LABELS.get(index_type, index_type)
     estimate = config.BUILD_TIME_ESTIMATES.get(index_type, "a few minutes")
     log: list = st.session_state.get(SS_BUILD_LOG, [])
 
-    with st.status(f"Building {label} index… (est. {estimate})", expanded=True) as s:
+    with st.status(f"Building {label} index (est. {estimate})", expanded=True) as s:
         prep_msg = " with custom preprocessing" if preprocessing_config else ""
-        st.write(f"📋 Calling indexing service — force_rebuild={force}{prep_msg}")
+        st.write(f"Calling indexing service - force_rebuild={force}{prep_msg}")
         
         progress_container = st.empty()
         status_container = st.empty()
@@ -199,14 +199,14 @@ def _build_single(index_type: str, force: bool, preprocessing_config: dict | Non
         while not result_holder["done"] and stage_idx < len(current_stages):
             pct, msg = current_stages[stage_idx]
             progress_container.progress(pct, text=f"{pct}% - {msg}")
-            status_container.caption(f"⏳ {msg}")
+            status_container.caption(f"{msg}")
             
             elapsed = int(time.time() - start_time)
             if stage_idx > 0:
                 estimated_total = (elapsed / (stage_idx / len(current_stages)))
                 remaining = int(estimated_total - elapsed)
                 status_container.caption(
-                    f"⏳ {msg} | Elapsed: {elapsed}s | Est. remaining: {remaining}s"
+                    f"{msg} | Elapsed: {elapsed}s | Est. remaining: {remaining}s"
                 )
             
             time.sleep(2)
@@ -230,12 +230,12 @@ def _build_single(index_type: str, force: bool, preprocessing_config: dict | Non
             
             if status_val == "skipped":
                 s.update(
-                    label=f"⏭️ {label} already built — use Force Rebuild to overwrite.",
+                    label=f"{label} already built - use Force Rebuild to overwrite.",
                     state="complete",
                 )
                 log.append(f"[SKIP] {label}: {resp.data.get('message')}")
             else:
-                success_msg = f"✅ {label} built successfully!"
+                success_msg = f"{label} built successfully!"
                 if index_size != "N/A":
                     success_msg += f" | Size: {index_size} MB"
                 if vocab_size != "N/A":
@@ -248,8 +248,59 @@ def _build_single(index_type: str, force: bool, preprocessing_config: dict | Non
             indexing_api.clear_index_status_cache()
         else:
             error_msg = resp.error if resp else "Unknown error from indexing service."
-            s.update(label=f"❌ {label} build failed", state="error")
-            st.error(error_msg)
+            s.update(label=f"{label} build failed", state="error")
+            
+            # Check if error is related to missing dataset in database AND dataset is actually not in DB
+            if dataset_in_db is False and ("not uploaded to the database" in error_msg or ("dataset" in error_msg.lower() and "database" in error_msg.lower())):
+                st.error("### Dataset Not Uploaded to Database")
+                
+                # Extract dataset name from error message if available
+                dataset_match = error_msg.split("Dataset '")[1].split("'")[0] if "Dataset '" in error_msg else "current dataset"
+                
+                st.markdown(f"**Problem:** The dataset **`{dataset_match}`** exists locally but is not in the database.")
+                st.markdown("**Impact:** Indices cannot be built because they require data from the database.")
+                
+                # Show detailed error in expander
+                with st.expander("View Full Error Details", expanded=False):
+                    st.code(error_msg, language="text")
+                
+                with st.container(border=True):
+                    st.markdown("### How to Fix This Issue")
+                    st.markdown("""
+                    **Follow these steps to upload your dataset and build indices:**
+                    
+                    1. **Navigate** to the **Dataset Management** page (use sidebar or button below)
+                    2. **Locate** your dataset in the **Downloaded Datasets** section
+                    3. **Click** the **Upload to Database** button next to the dataset name
+                    4. **Monitor** the upload progress bar (may take a few minutes for large datasets)
+                    5. **Verify** upload completion (you'll see a success message)
+                    6. **Return** to this page to build the index
+                    
+                    **Tip:** After uploading, refresh this page to see updated index build options.
+                    """)
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("Go to Dataset Management", key=f"goto_dataset_{index_type}", use_container_width=True, type="primary"):
+                            st.switch_page("app_pages/dataset.py")
+                    with col2:
+                        if st.button("Refresh Status", key=f"refresh_error_{index_type}", use_container_width=True):
+                            indexing_api.clear_index_status_cache()
+                            st.rerun()
+            else:
+                # For other errors, show a clear error panel
+                with st.container(border=True):
+                    st.markdown("### Error Details")
+                    st.code(error_msg, language="text")
+                    
+                    st.markdown("### Troubleshooting Tips")
+                    st.markdown("""
+                    - Check that the dataset is properly downloaded
+                    - Verify that all required services are running
+                    - Review the build log below for more details
+                    - Try refreshing the page and attempting again
+                    """)
+            
             log.append(f"[ERR] {label}: {error_msg}")
 
     st.session_state[SS_BUILD_LOG] = log[-50:]
@@ -266,132 +317,106 @@ def _on_dataset_change():
             gateway.clear_dataset_info_cache()
             indexing_api.clear_index_status_cache()
             st.session_state["_previous_dataset"] = selected
-            st.session_state["dataset_change_success"] = selected
-            st.session_state["dataset_needs_rerun"] = True
+            # No success message needed - dataset info will show automatically
         else:
             st.session_state["dataset_change_error"] = resp.error
 
 
 def render() -> None:
-    st.markdown("## 🗂️ Index Management")
+    st.markdown("## Index Management")
     
-    # Display active dataset info at the top
-    active_resp = indexing_api.get_active_dataset()
-    if active_resp.ok and isinstance(active_resp.data, dict):
-        active_dataset = active_resp.data.get("active_dataset")
-        metadata = active_resp.data.get("metadata", {})
-        
-        if active_dataset:
-            with st.container(border=True):
-                col1, col2, col3 = st.columns([2, 1, 1])
-                col1.markdown(f"**📊 Active Dataset:** `{active_dataset}`")
-                if metadata:
-                    col2.metric("Documents", f"{metadata.get('doc_count', 0):,}")
-                    col3.metric("Status", metadata.get('validation_status', 'unknown').title())
-                
-                st.caption("💡 Indices will be built for the active dataset. Switch datasets in the Dataset page.")
-        else:
-            st.warning("⚠️ No active dataset. Please validate and select a dataset in the Dataset page first.")
-            return
-    else:
-        st.warning("⚠️ Could not load active dataset info.")
-    
-    st.divider()
-    
-    # Check if we need to rerun after dataset change
-    if st.session_state.get("dataset_needs_rerun"):
-        del st.session_state["dataset_needs_rerun"]
-        st.rerun()
-    
-    # Show feedback messages from dataset change
-    if "dataset_change_success" in st.session_state:
-        st.success(f"✅ Dataset switched to: {st.session_state['dataset_change_success']}")
-        del st.session_state["dataset_change_success"]
-    
+    # Show only error messages from dataset change
     if "dataset_change_error" in st.session_state:
-        st.error(f"❌ Validation failed: {st.session_state['dataset_change_error']}")
+        st.error(f"Validation failed: {st.session_state['dataset_change_error']}")
         del st.session_state["dataset_change_error"]
     
-    # Dataset selection
-    with st.container(border=True):
-        st.markdown("### 📊 Active Dataset")
-        
-        # Get current validated dataset
-        info = gateway.get_dataset_info_cached()
-        current_dataset = info.get("dataset_name", config.DATASET_NAME) if info else config.DATASET_NAME
-        
-        # Get available datasets
-        available_datasets = _get_downloaded_datasets()
-        
-        # Dataset selector
-        if available_datasets:
-            # Find current index for selectbox
-            try:
-                default_idx = available_datasets.index(current_dataset) if current_dataset in available_datasets else 0
-            except (ValueError, TypeError):
-                default_idx = 0
+    # Dataset selection at the top
+    available_datasets = _get_downloaded_datasets()
+    
+    # Get current validated dataset
+    info = gateway.get_dataset_info_cached()
+    current_dataset = info.get("dataset_name", config.DATASET_NAME) if info else None
+    
+    if not available_datasets:
+        st.warning("No datasets found in `data/datasets/.ir_datasets/`")
+        st.info("Go to **Dataset** page to download datasets first")
+        return
+    
+    # Initialize previous dataset tracker
+    if "_previous_dataset" not in st.session_state:
+        st.session_state["_previous_dataset"] = current_dataset
+    
+    # Dataset selector without default selection - always starts empty with placeholder
+    selected_dataset = st.selectbox(
+        "Select Dataset",
+        options=available_datasets,
+        index=None,
+        placeholder="Choose a dataset to work with...",
+        key="dataset_selector",
+        on_change=_on_dataset_change,
+        help="Choose a dataset - will automatically validate and switch"
+    )
+    
+    # Check if dataset is uploaded to database
+    dataset_in_db = False
+    datasets_in_db = []
+    
+    if selected_dataset:
+        db_check_resp = indexing_api.get_db_info()
+        if db_check_resp.ok and isinstance(db_check_resp.data, dict):
+            datasets_in_db = db_check_resp.data.get("datasets", [])
+            # Check if selected_dataset matches any dataset_id in the list
+            dataset_in_db = any(ds.get("dataset_id") == selected_dataset for ds in datasets_in_db)
+    
+    # Show dataset info only if a dataset is selected
+    if selected_dataset:
+        # Get metadata for selected dataset
+        active_resp = indexing_api.get_active_dataset()
+        if active_resp.ok and isinstance(active_resp.data, dict):
+            metadata = active_resp.data.get("metadata", {})
             
-            # Initialize previous dataset tracker
-            if "_previous_dataset" not in st.session_state:
-                st.session_state["_previous_dataset"] = current_dataset
-            
-            selected_dataset = st.selectbox(
-                "Select Dataset",
-                options=available_datasets,
-                index=default_idx,
-                key="dataset_selector",
-                on_change=_on_dataset_change,
-                help="Choose a dataset - will automatically validate and switch"
+            if metadata:
+                with st.container(border=True):
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Dataset", selected_dataset)
+                    
+                    with col2:
+                        doc_count = metadata.get('doc_count', info.get('doc_count', 0) if info else 0)
+                        st.metric("Docs", f"{doc_count:,}")
+                    
+                    with col3:
+                        query_count = metadata.get('query_count', info.get('query_count', 0) if info else 0)
+                        st.metric("Queries", f"{query_count:,}")
+                    
+                    with col4:
+                        qrel_count = metadata.get('qrel_count', metadata.get('qrels_count', info.get('qrel_count', info.get('qrels_count', 0)) if info else 0))
+                        st.metric("Qrels", f"{qrel_count:,}")
+        
+        # Warning message if dataset is not in database
+        if not dataset_in_db:
+            st.error("### Dataset Not Uploaded to Database")
+            st.markdown(f"**Dataset:** `{selected_dataset}`")
+            st.markdown(
+                "This dataset exists locally but **must be uploaded to the database** before you can build indices."
             )
             
-            st.caption(f"💡 **Available datasets:** {len(available_datasets)} | Currently active: **{current_dataset}**")
-        else:
-            st.warning("⚠️ No datasets found in `data/datasets/.ir_datasets/`")
-            st.info("📥 Go to **Dataset** page to download datasets first")
-        
-        # Show current active dataset info
-        if info and info.get("validation_status") == "success":
-            col1, col2, col3, col4 = st.columns(4)
-            
-            with col1:
-                st.metric("Dataset", current_dataset)
-            
-            with col2:
-                st.metric("Documents", f"{info.get('doc_count', 0):,}")
-            
-            with col3:
-                st.metric("Queries", f"{info.get('query_count', 0):,}")
-            
-            with col4:
-                st.metric("Qrels", f"{info.get('qrel_count', info.get('qrels_count', 0)):,}")
-            
-            # Calculate storage info based on actual dataset size
-            doc_count = info.get('doc_count', 0)
-            
-            # Estimate sizes based on document count (linear approximation)
-            # Base estimates from 500K docs
-            scale_factor = doc_count / 500_000
-            est_tfidf_mb = int(200 * scale_factor)
-            est_bm25_mb = int(150 * scale_factor)
-            est_embedding_mb = int(800 * scale_factor)
-            
-            # Estimate build times (sublinear growth)
-            import math
-            time_factor = math.sqrt(scale_factor)  # Square root for sublinear growth
-            est_tfidf_min = max(1, int(1 * time_factor))
-            est_bm25_min = max(1, int(2 * time_factor))
-            est_embedding_min = max(2, int(15 * time_factor))
-            
-            # Storage path info
-            dataset_slug = current_dataset.replace('/', '_').replace('-', '_')
-            st.caption(
-                f"💾 **Index storage:** `data/indices/{dataset_slug}/` "
-                f"(TF-IDF: ~{est_tfidf_mb}MB · BM25: ~{est_bm25_mb}MB · Embeddings: ~{est_embedding_mb}MB)"
-            )
-            st.caption(
-                f"⏱️ **Estimated build times:** "
-                f"TF-IDF: ~{est_tfidf_min} min · BM25: ~{est_bm25_min} min · Embedding: ~{est_embedding_min} min"
-            )
+            with st.container(border=True):
+                st.markdown("### Required Steps")
+                st.markdown("""
+                **To build indices for this dataset:**
+                
+                1. Go to the **Dataset Management** page (from sidebar)
+                2. Find your dataset in the **Downloaded Datasets** section
+                3. Click **Upload to Database** button
+                4. Wait for the upload to complete
+                5. Return here to build indices
+                """)
+            return
+    else:
+        st.info("Select a dataset to view its information and build indices.")
+        return
 
     st.divider()
 
@@ -405,27 +430,30 @@ def render() -> None:
             "Force rebuild (overwrite existing)",
             value=st.session_state.get(SS_FORCE_REBUILD, False),
             key="idx_force_rebuild",
+            disabled=not dataset_in_db
         )
         st.session_state[SS_FORCE_REBUILD] = force
     with hdr_c2:
-        # Enable button if we have available datasets (they're all valid)
-        has_available_datasets = len(available_datasets) > 0 if available_datasets else False
-        if st.button("🚀 Build All Indices", type="primary", use_container_width=True,
-                     key="idx_build_all", disabled=not has_available_datasets):
+        # Disable button if dataset is not in database
+        build_all_disabled = not dataset_in_db
+        build_all_help = "Upload dataset to database first" if not dataset_in_db else "Build all three indices (TF-IDF, BM25, Embedding)"
+        
+        if st.button("Build All Indices", type="primary", use_container_width=True,
+                     key="idx_build_all", disabled=build_all_disabled, help=build_all_help):
             for itype in ("tfidf", "bm25", "embedding"):
-                _build_single(itype, force, preprocessing_config)
+                _build_single(itype, force, preprocessing_config, dataset_in_db)
             st.rerun()
     with hdr_c3:
-        if st.button("🔄 Refresh Status", use_container_width=True, key="idx_refresh"):
+        if st.button("Refresh Status", use_container_width=True, key="idx_refresh"):
             indexing_api.clear_index_status_cache()
             st.rerun()
 
     st.divider()
 
-    st.markdown("### 📦 Index Status")
+    st.markdown("### Index Status")
     st.caption("Build indices for the active dataset. Indices are stored as optimized files for fast retrieval.")
 
-    # Always show index cards, just disable actions if no validated dataset
+    # Show index cards with disabled actions if dataset not in DB
     cols = st.columns(3)
     for col, itype in zip(cols, ("tfidf", "bm25", "embedding")):
         with col:
@@ -433,26 +461,30 @@ def render() -> None:
             status_data = resp.data if resp.ok and isinstance(resp.data, dict) else {}
             if not resp.ok:
                 status_data = {"status": "unknown", "error": resp.error}
+            
+            # Pass dataset_in_db status to disable rebuild button if needed
             rebuild_clicked = render_index_card(
                 index_type=itype,
                 status_data=status_data,
                 on_rebuild_key=f"idx_rebuild_{itype}",
+                disabled=not dataset_in_db
             )
-            if rebuild_clicked:
-                _build_single(itype, force, preprocessing_config)
+            if rebuild_clicked and dataset_in_db:
+                _build_single(itype, force, preprocessing_config, dataset_in_db)
                 st.rerun()
 
     st.divider()
 
     stats_resp = indexing_api.all_stats()
     if stats_resp.ok and isinstance(stats_resp.data, dict):
-        with st.expander("📊 Aggregate index stats", expanded=False):
+        with st.expander("Aggregate index stats", expanded=False):
             st.json(stats_resp.data)
 
     log = st.session_state.get(SS_BUILD_LOG, [])
     if log:
-        with st.expander(f"📋 Build log ({len(log)} entries)", expanded=False):
+        with st.expander(f"Build log ({len(log)} entries)", expanded=False):
             st.code("\n".join(reversed(log)), language="text")
-        if st.button("🗑️ Clear log", key="idx_clear_log"):
+        if st.button("Clear log", key="idx_clear_log"):
             st.session_state[SS_BUILD_LOG] = []
             st.rerun()
+

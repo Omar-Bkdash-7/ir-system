@@ -46,10 +46,16 @@ def render_index_badge_compact(index_type: str, status_data: dict) -> None:
     )
 
 
-def render_index_card(index_type: str, status_data: dict, on_rebuild_key: str) -> bool:
+def render_index_card(index_type: str, status_data: dict, on_rebuild_key: str, disabled: bool = False) -> bool:
     """
     Full card for the Index Management page: title, status, stats, Rebuild button.
     Returns True if the Rebuild button was clicked this run.
+    
+    Args:
+        index_type: Type of index (tfidf, bm25, embedding)
+        status_data: Dictionary containing index status information
+        on_rebuild_key: Unique key for the rebuild button
+        disabled: Whether the rebuild button should be disabled
     """
     status = _status_of(status_data)
     with st.container(border=True):
@@ -61,34 +67,39 @@ def render_index_card(index_type: str, status_data: dict, on_rebuild_key: str) -
             unsafe_allow_html=True,
         )
         st.write("")
-        doc_count = status_data.get("doc_count") or status_data.get("document_count")
-        if doc_count is not None:
-            st.markdown(f'<div class="index-card__stat">{doc_count:,} docs</div>', unsafe_allow_html=True)
-
+        
+        # Stats container with fixed height and vertical spacing
+        stats_html = '<div style="min-height: 75px; display: flex; flex-direction: column; gap: 8px;">'
+        
         if index_type == "tfidf":
             vocab = status_data.get("vocab_size")
-            size_mb = status_data.get("size_mb")
             if vocab is not None:
-                st.markdown(f'<div class="index-card__stat">Vocab: {vocab:,}</div>', unsafe_allow_html=True)
-            if size_mb is not None:
-                st.markdown(f'<div class="index-card__stat">Size: {size_mb} MB</div>', unsafe_allow_html=True)
+                stats_html += f'<div class="index-card__stat">Vocab: {vocab:,}</div>'
+            else:
+                stats_html += '<div class="index-card__stat" style="opacity: 0.5;">Vocab: —</div>'
+
         elif index_type == "bm25":
             vocab = status_data.get("vocab_size")
             avg_dl = status_data.get("avg_doc_length")
             if vocab is not None:
-                st.markdown(f'<div class="index-card__stat">Vocab: {vocab:,}</div>', unsafe_allow_html=True)
+                stats_html += f'<div class="index-card__stat">Vocab: {vocab:,}</div>'
+            else:
+                stats_html += '<div class="index-card__stat" style="opacity: 0.5;">Vocab: —</div>'
             if avg_dl is not None:
-                st.markdown(f'<div class="index-card__stat">Avg DL: {avg_dl}</div>', unsafe_allow_html=True)
+                stats_html += f'<div class="index-card__stat">Avg DL: {avg_dl:.1f}</div>'
+            else:
+                stats_html += '<div class="index-card__stat" style="opacity: 0.5;">Avg DL: —</div>'
         elif index_type == "embedding":
             shape = status_data.get("shape")
-            size_mb = status_data.get("size_mb")
             shape_str = f"[N, {config.EMBEDDING_DIMENSIONS}]" if shape is None else str(shape)
-            st.markdown(f'<div class="index-card__stat">Shape: {shape_str}</div>', unsafe_allow_html=True)
-            if size_mb is not None:
-                st.markdown(f'<div class="index-card__stat">Size: {size_mb} MB</div>', unsafe_allow_html=True)
+            stats_html += f'<div class="index-card__stat">Shape: {shape_str}</div>'
+
+        stats_html += '</div>'
+        st.markdown(stats_html, unsafe_allow_html=True)
 
         if status_data.get("error"):
             st.caption(f"⚠️ {status_data['error']}")
 
         st.write("")
-        return st.button("🔨 Rebuild", key=on_rebuild_key, use_container_width=True)
+        button_help = "Upload dataset to database first" if disabled else None
+        return st.button("🔨 Rebuild", key=on_rebuild_key, use_container_width=True, disabled=disabled, help=button_help)

@@ -38,6 +38,8 @@ volumes:
     name: ir_indices
   cache:
     name: ir_cache
+  models:
+    name: ir_models
   processed_data:
     name: ir_processed_data
   evaluation_results:
@@ -76,6 +78,7 @@ x-common-service: &common-service
     - datasets:/app/data/datasets
     - indices:/app/data/indices
     - cache:/app/data/cache
+    - models:/app/data/models
     - processed_data:/app/data/processed
     - evaluation_results:/app/data/evaluation
   environment:

@@ -19,6 +19,74 @@ from common.config import get_config
 logger = logging.getLogger(__name__)
 
 
+def _check_dataset_in_database(dataset_name: str, table_name: str) -> None:
+    """
+    Check if dataset exists in database and raise helpful error if not.
+    
+    Args:
+        dataset_name: Original dataset name (e.g., 'cranfield', 'beir/quora')
+        table_name: Database table name (e.g., 'dataset_cranfield')
+        
+    Raises:
+        FileNotFoundError: If dataset table doesn't exist in database
+    """
+    from common.database import get_db_connection
+    
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables 
+                    WHERE table_schema = 'public'
+                    AND table_name = %s
+                )
+            """, (table_name,))
+            
+            table_exists = cur.fetchone()[0]
+            
+            if not table_exists:
+                # Get list of available datasets in database
+                cur.execute("""
+                    SELECT table_name 
+                    FROM information_schema.tables 
+                    WHERE table_schema = 'public' 
+                    AND table_name LIKE 'dataset_%'
+                    ORDER BY table_name
+                """)
+                available_tables = [row[0] for row in cur.fetchall()]
+                available_datasets = [t.replace('dataset_', '').replace('_', '/') for t in available_tables]
+                
+                # Build clear, structured error message
+                error_parts = [
+                    f"Dataset '{dataset_name}' is not uploaded to the database.",
+                    "",
+                    "Problem Details:",
+                    f"  • Expected database table: {table_name}",
+                    f"  • Table status: Does not exist",
+                    f"  • Available datasets in database: {', '.join(available_datasets) if available_datasets else 'None'}",
+                    "",
+                    "Required Action:",
+                    "  The dataset exists locally but must be uploaded to PostgreSQL before building indices.",
+                    "",
+                    "How to Upload:",
+                    "  1. Navigate to the Dataset Management page",
+                    f"  2. Locate dataset '{dataset_name}' in the downloaded list",
+                    "  3. Click the 'Upload to Database' button",
+                    "  4. Wait for upload completion (may take several minutes)",
+                    "  5. Return to Index Management page to build indices",
+                    "",
+                    "Why This is Needed:",
+                    "  Indices are built from preprocessed documents stored in PostgreSQL for efficient",
+                    "  indexing and retrieval operations. Raw dataset files must first be processed",
+                    "  and stored in the database."
+                ]
+                
+                error_msg = "\n".join(error_parts)
+                
+                logger.error(f"Dataset not in database: {dataset_name} (table: {table_name})")
+                raise FileNotFoundError(error_msg)
+
+
 def _preprocess_documents(preprocessing_config: Optional[dict] = None) -> str:
     """
     Preprocess documents from database using the provided config.
@@ -47,6 +115,16 @@ def _preprocess_documents(preprocessing_config: Optional[dict] = None) -> str:
         logger.info("Using default preprocessing config")
         config = PreprocessingConfig()
     
+    # Get the correct table name for this dataset
+    table_prefix = get_config("database.table_prefix", "dataset")
+    safe_dataset_name = dataset_name.replace('/', '_').replace('-', '_').replace('.', '_')
+    table_name = f"{table_prefix}_{safe_dataset_name}"
+    
+    # Check if dataset exists in database first
+    _check_dataset_in_database(dataset_name, table_name)
+    
+    logger.info(f"Reading documents from table: {table_name}")
+    
     processed_file = NamedTemporaryFile(mode='w', delete=False, suffix='.jsonl', encoding='utf-8')
     processed_path = processed_file.name
     
@@ -55,7 +133,8 @@ def _preprocess_documents(preprocessing_config: Optional[dict] = None) -> str:
         
         with get_db_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT doc_id, text FROM documents ORDER BY doc_id")
+                # Read documents from dataset-specific table
+                cur.execute(f"SELECT doc_id, text FROM {table_name} ORDER BY doc_id")
                 
                 doc_count = 0
                 with jsonlines.Writer(processed_file) as writer:
@@ -150,11 +229,9 @@ class TFIDFIndexBuilder(IndexBuilder):
         
         processed_path = None
         try:
-            if preprocessing_config is not None:
-                processed_path = _preprocess_documents(preprocessing_config)
-                indexer.build(processed_path=processed_path)
-            else:
-                indexer.build()
+            # Always preprocess documents from database
+            processed_path = _preprocess_documents(preprocessing_config)
+            indexer.build(processed_path=processed_path)
             
             indexer.save()
             
@@ -218,11 +295,9 @@ class EmbeddingIndexBuilder(IndexBuilder):
         
         processed_path = None
         try:
-            if preprocessing_config is not None:
-                processed_path = _preprocess_documents(preprocessing_config)
-                indexer.build(processed_path=processed_path)
-            else:
-                indexer.build()
+            # Always preprocess documents from database
+            processed_path = _preprocess_documents(preprocessing_config)
+            indexer.build(processed_path=processed_path)
             
             indexer.save()
             
@@ -287,11 +362,9 @@ class BM25IndexBuilder(IndexBuilder):
         
         processed_path = None
         try:
-            if preprocessing_config is not None:
-                processed_path = _preprocess_documents(preprocessing_config)
-                indexer.build(processed_path=processed_path)
-            else:
-                indexer.build()
+            # Always preprocess documents from database
+            processed_path = _preprocess_documents(preprocessing_config)
+            indexer.build(processed_path=processed_path)
             
             indexer.save()
             

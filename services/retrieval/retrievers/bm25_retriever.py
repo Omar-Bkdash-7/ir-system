@@ -2,7 +2,7 @@ import pickle
 import heapq
 from pathlib import Path
 from typing import List, Dict, NamedTuple
-from common.config import get_config
+from common.config import get_active_dataset_path, get_config
 from services.preprocessing.preprocessing_service import preprocess
 import logging
 import math
@@ -28,7 +28,10 @@ class BM25Retriever:
         if self.loaded:
             return
         
-        index_path = Path(get_config("indices.bm25_index", "data/indices/bm25_index.pkl"))
+        try:
+            index_path = Path(get_active_dataset_path("indices.bm25_index", "data/indices/bm25_index.pkl"))
+        except ValueError as e:
+            raise FileNotFoundError(f"Cannot load BM25 index: {e}")
         
         if not index_path.exists():
             raise FileNotFoundError(f"BM25 index not found at {index_path}")

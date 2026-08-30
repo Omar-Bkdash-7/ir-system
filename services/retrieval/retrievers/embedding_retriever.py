@@ -2,7 +2,7 @@ import numpy as np
 import json
 from pathlib import Path
 from sentence_transformers import SentenceTransformer
-from common.config import get_config
+from common.config import get_active_dataset_path, get_config
 from common.device import get_torch_device
 from common.exceptions import IndexNotFoundError, InvalidQueryError, ModelLoadError
 import logging
@@ -22,8 +22,11 @@ class EmbeddingRetriever:
         if self.loaded:
             return
 
-        embeddings_path = Path(get_config("indices.embeddings", "data/indices/embeddings.npy"))
-        doc_id_map_path = Path(get_config("indices.doc_id_map", "data/indices/doc_id_map.json"))
+        try:
+            embeddings_path = Path(get_active_dataset_path("indices.embeddings", "data/indices/embeddings.npy"))
+            doc_id_map_path = Path(get_active_dataset_path("indices.doc_id_map", "data/indices/doc_id_map.json"))
+        except ValueError as e:
+            raise IndexNotFoundError(f"Cannot load embedding index: {e}")
 
         if not embeddings_path.exists():
             raise IndexNotFoundError(f"Embeddings not found at {embeddings_path}")
@@ -42,7 +45,7 @@ class EmbeddingRetriever:
                 f"Mismatch: {len(self.doc_ids)} doc_ids but {self.embeddings.shape[0]} embeddings"
             )
 
-        model_name = get_config("models.embedding.model_name", "models/all-MiniLM-L6-v2")
+        model_name = get_config("models.embedding.model_name", "all-MiniLM-L6-v2")
         logger.info(f"Loading embedding model: {model_name} on {self.device}")
 
         try:

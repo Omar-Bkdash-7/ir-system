@@ -32,7 +32,7 @@ class EmbeddingIndexer:
 
     def _load_model(self):
         if self.model is None:
-            model_name = get_config("models.embedding.model_name", "models/all-MiniLM-L6-v2")
+            model_name = get_config("models.embedding.model_name", "all-MiniLM-L6-v2")
             logger.info(f"Loading embedding model: {model_name} on {self.device}")
 
             try:

@@ -13,7 +13,7 @@ class PreprocessingConfig:
     use_lemmatization: bool = True
     use_stemming: bool = False
     keep_numbers: bool = False
-    use_spacy_tokenizer: bool = True
+    use_spacy_tokenizer: bool = False
     custom_stopwords: set[str] = field(default_factory=set)
     
     def to_dict(self) -> dict:

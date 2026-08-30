@@ -10,7 +10,7 @@ FROM ir-python-base:latest AS base
 # Set ML-specific environment variables
 ENV TORCH_HOME=/app/.cache/torch \
     TRANSFORMERS_CACHE=/app/.cache/transformers \
-    SENTENCE_TRANSFORMERS_HOME=/app/.cache/sentence-transformers \
+    SENTENCE_TRANSFORMERS_HOME=/app/data/models \
     NLTK_DATA=/app/.cache/nltk_data \
     SPACY_DATA=/app/.cache/spacy_data
 
@@ -48,20 +48,24 @@ ENV PATH=/root/.local/bin:$PATH \
     CUDA_VISIBLE_DEVICES=-1
 
 # Create cache directories
-RUN mkdir -p /app/.cache/sentence-transformers \
+RUN mkdir -p /app/data/models \
     /app/.cache/nltk_data \
     /app/.cache/spacy_data \
     /app/.cache/transformers \
     /app/.cache/torch
 
+# Copy local model if available (for offline use)
+# Note: Models will be loaded from volume mount at runtime (data/models)
+# This allows using local models without building them into the image
+
 # Download spaCy model (it installs to site-packages, not user directory)
-RUN python -m spacy download en_core_web_sm
+RUN python -m spacy download en_core_web_sm || echo "spaCy model download failed, continuing..."
 
 # Download NLTK data
 RUN python -c "import nltk; nltk.download('wordnet', download_dir='/app/.cache/nltk_data', quiet=True); nltk.download('stopwords', download_dir='/app/.cache/nltk_data', quiet=True); nltk.download('omw-1.4', download_dir='/app/.cache/nltk_data', quiet=True); nltk.download('punkt', download_dir='/app/.cache/nltk_data', quiet=True); nltk.download('punkt_tab', download_dir='/app/.cache/nltk_data', quiet=True); print('NLTK data downloaded successfully')"
 
-# Download SentenceTransformer model (force CPU during build)
-RUN python -c "import os; os.environ['CUDA_VISIBLE_DEVICES'] = '-1'; from sentence_transformers import SentenceTransformer; model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu', trust_remote_code=False); print(f'Model cached successfully')"
+# Try to download SentenceTransformer model from HuggingFace, but continue if it fails (use local copy)
+RUN python -c "import os; os.environ['CUDA_VISIBLE_DEVICES'] = '-1'; from sentence_transformers import SentenceTransformer; model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu', trust_remote_code=False); print(f'Model cached successfully')" || echo "SentenceTransformer download failed, will use local model"
 
 # =============================================================================
 # Runtime Stage - Final optimized image
@@ -76,6 +80,7 @@ COPY --from=models-downloader --chown=appuser:appuser /usr/local/lib/python3.11/
 
 # Copy downloaded models and data
 COPY --from=models-downloader --chown=appuser:appuser /app/.cache /app/.cache
+# Note: /app/data/models will be mounted as a volume at runtime
 
 # Copy common code
 COPY --chown=appuser:appuser common/ /app/common/
@@ -92,6 +97,7 @@ COPY --chown=appuser:appuser scripts/ /app/scripts/
 # Create directories for runtime data (these will be mounted as volumes)
 RUN mkdir -p /app/data/indices \
     /app/data/datasets \
+    /app/data/models \
     /app/data/processed \
     /app/data/evaluation \
     /app/logs && \

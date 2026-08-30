@@ -14,7 +14,7 @@ class SemanticRefinementEngine:
     def __init__(self, model_name: str = None):
         device = get_torch_device()
         if model_name is None:
-            model_name = get_config("models.embedding.model_name", "data/models/all-MiniLM-L6-v2")
+            model_name = get_config("models.embedding.model_name", "all-MiniLM-L6-v2")
         self.model = SentenceTransformer(model_name, device=device, trust_remote_code=False)
         self._embedding_cache = {}
         self._cache_max_size = 1000
