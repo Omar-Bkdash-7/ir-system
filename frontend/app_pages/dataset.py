@@ -333,46 +333,18 @@ def _render_local_datasets():
                 st.session_state[confirm_key] = True
 
         if st.session_state.get(confirm_key):
-            # Check if this is the active dataset
-            active_resp = indexing_api.get_active_dataset()
-            is_active = False
-            if active_resp.ok and isinstance(active_resp.data, dict):
-                active_dataset = active_resp.data.get("active_dataset")
-                is_active = (active_dataset == ds_id)
-            
-            if is_active:
-                st.error(
-                    f"⚠️ **WARNING**: You are about to delete the **ACTIVE** dataset `{ds_id}`!\n\n"
-                    "This will:\n"
-                    "- Delete the local dataset files\n"
-                    "- Remove metadata\n"
-                    "- Clear active dataset pointer\n"
-                    "- **You will need to select another dataset before building indices**\n\n"
-                    "This action **cannot be undone**."
-                )
-            else:
-                st.warning(
-                    f"⚠️ Are you sure you want to **permanently delete** `{ds_id}`? "
-                    "This cannot be undone."
-                )
+            st.warning(
+                f"⚠️ Are you sure you want to **permanently delete** `{ds_id}`? "
+                "This cannot be undone."
+            )
             yes_col, no_col = st.columns(2)
             with yes_col:
                 if st.button("Yes, delete it", type="primary", key=f"yes_{ds_id}"):
                     del_resp = indexing_api.delete_local_dataset(ds_id)
                     if del_resp.ok:
                         st.success(f"✅ Deleted `{ds_id}`.")
-                        
-                        # Check if metadata was cleaned up
-                        if del_resp.data and del_resp.data.get("metadata_cleaned"):
-                            # Check if this was the active dataset
-                            if is_active:
-                                st.info(
-                                    "ℹ️ The active dataset has been cleared. "
-                                    "Please select another dataset from the dropdown above."
-                                )
-                                # Clear cache
-                                gateway.clear_dataset_info_cache()
-                                indexing_api.clear_index_status_cache()
+                        gateway.clear_dataset_info_cache()
+                        indexing_api.clear_index_status_cache()
                     else:
                         st.error(f"Delete failed: {del_resp.error}")
                     st.session_state.pop(confirm_key, None)
@@ -447,45 +419,18 @@ def _render_db_upload():
                         st.session_state[confirm_key] = True
                 
                 if st.session_state.get(confirm_key):
-                    # Check if this is the active dataset
-                    active_resp = indexing_api.get_active_dataset()
-                    is_active = False
-                    if active_resp.ok and isinstance(active_resp.data, dict):
-                        active_dataset = active_resp.data.get("active_dataset")
-                        is_active = (active_dataset == ds_id)
-                    
-                    if is_active:
-                        st.error(
-                            f"⚠️ **WARNING**: You are about to delete the **ACTIVE** dataset `{ds_id}` from database!\n\n"
-                            f"This will drop the table with **{doc_count:,}** documents.\n\n"
-                            "⚠️ **Note**: This is the currently active dataset. After deletion:\n"
-                            "- You will need to select another dataset\n"
-                            "- Existing indices will become invalid\n"
-                            "- Metadata will be cleaned up if local files are also deleted\n\n"
-                            "This action **cannot be undone**."
-                        )
-                    else:
-                        st.warning(
-                            f"⚠️ Are you sure you want to **permanently delete** `{ds_id}` from database? "
-                            f"This will drop the table with **{doc_count:,}** documents and cannot be undone."
-                        )
+                    st.warning(
+                        f"⚠️ Are you sure you want to **permanently delete** `{ds_id}` from database? "
+                        f"This will drop the table with **{doc_count:,}** documents and cannot be undone."
+                    )
                     yes_col, no_col = st.columns(2)
                     with yes_col:
                         if st.button("Yes, delete from DB", type="primary", key=f"yes_db_{ds_id}"):
                             del_resp = indexing_api.delete_dataset_from_db(ds_id)
                             if del_resp.ok:
                                 st.success(f"✅ Deleted `{ds_id}` from database.")
-                                
-                                # If this was the active dataset, inform user
-                                if is_active:
-                                    st.info(
-                                        "ℹ️ You deleted the active dataset from database. "
-                                        "The metadata has been preserved (local files still exist). "
-                                        "You can re-upload to database or select another dataset."
-                                    )
-                                    # Clear cache
-                                    gateway.clear_dataset_info_cache()
-                                    indexing_api.clear_index_status_cache()
+                                gateway.clear_dataset_info_cache()
+                                indexing_api.clear_index_status_cache()
                             else:
                                 st.error(f"Delete failed: {del_resp.error}")
                             st.session_state.pop(confirm_key, None)
@@ -620,117 +565,6 @@ def _render_db_upload():
 def render() -> None:
     st.markdown("## 📊 Dataset Management")
 
-    # ── Active Dataset Selector & Info ────────────────────────────────────
-    st.markdown("### Active Dataset")
-    
-    # Get active dataset and all available datasets
-    active_resp = indexing_api.get_active_dataset()
-    metadata_resp = indexing_api.list_datasets_metadata()
-    
-    current_active = None
-    all_datasets = []
-    
-    if active_resp.ok and isinstance(active_resp.data, dict):
-        current_active = active_resp.data.get("active_dataset")
-    
-    if metadata_resp.ok and isinstance(metadata_resp.data, dict):
-        all_datasets = metadata_resp.data.get("datasets", [])
-    
-    # Dataset selector with auto-switch
-    col_select, col_info = st.columns([4, 1])
-    
-    with col_select:
-        if all_datasets:
-            dataset_names = [ds.get("dataset_name") for ds in all_datasets if ds.get("dataset_name")]
-            current_idx = 0
-            if current_active and current_active in dataset_names:
-                current_idx = dataset_names.index(current_active)
-            
-            selected_dataset = st.selectbox(
-                "Select Dataset",
-                options=dataset_names,
-                index=current_idx,
-                key="active_dataset_selector",
-                help="Choose which dataset to make active for indexing and retrieval"
-            )
-            
-            # Auto-switch when selection changes
-            if selected_dataset and selected_dataset != current_active:
-                with st.spinner(f"Switching to {selected_dataset}..."):
-                    switch_resp = indexing_api.set_active_dataset(selected_dataset)
-                    if switch_resp.ok:
-                        st.success(f"✓ Switched to: {selected_dataset}")
-                        gateway.clear_dataset_info_cache()
-                        indexing_api.clear_index_status_cache()
-                        time.sleep(0.5)  # Brief pause for user feedback
-                        st.rerun()
-                    else:
-                        st.error(f"Failed to switch: {switch_resp.error}")
-        else:
-            st.info("No validated datasets found. Validate a dataset below first.")
-            selected_dataset = None
-
-    st.divider()
-
-    # ── All Validated Datasets ────────────────────────────────────────────
-    if all_datasets:
-        st.markdown("### Validated Datasets")
-        st.caption(f"Showing {len(all_datasets)} validated dataset(s)")
-        
-        # CSS for active badge
-        st.markdown("""
-            <style>
-            .active-badge {
-                background-color: #10b981;
-                color: white;
-                padding: 2px 8px;
-                border-radius: 4px;
-                font-size: 12px;
-                font-weight: bold;
-            }
-            </style>
-        """, unsafe_allow_html=True)
-        
-        # Header row
-        hdr = st.columns([4, 1, 1, 1, 2, 1])
-        for col, lbl in zip(hdr, ["Dataset", "Docs", "Queries", "Qrels", "Validated", "Status"]):
-            col.markdown(f"**{lbl}**")
-        
-        # Dataset rows
-        for ds in all_datasets:
-            ds_name = ds.get("dataset_name", "—")
-            doc_count = ds.get("doc_count", 0)
-            query_count = ds.get("query_count", 0)
-            qrel_count = ds.get("qrels_count", ds.get("qrel_count", 0))
-            timestamp = ds.get("timestamp", "—")
-            status = ds.get("validation_status", "unknown")
-            
-            is_active = (ds_name == current_active)
-            
-            cols = st.columns([4, 1, 1, 1, 2, 1])
-            
-            with cols[0]:
-                if is_active:
-                    st.markdown(f'<span class="active-badge">{ds_name}</span>', unsafe_allow_html=True)
-                else:
-                    st.write(ds_name)
-            
-            cols[1].write(f"{doc_count:,}")
-            cols[2].write(f"{query_count:,}")
-            cols[3].write(f"{qrel_count:,}")
-            cols[4].write(timestamp[:19] if len(timestamp) > 19 else timestamp)
-            
-            with cols[5]:
-                if status == "success":
-                    st.markdown(
-                        '<div style="background-color: #10b981; color: white; padding: 2px 20px; border-radius: 4px; display: inline-block; font-size: 14px;">✓</div>', 
-                        unsafe_allow_html=True
-                    )
-                else:
-                    st.warning(status)
-
-    st.divider()
-
     # ── Browser ───────────────────────────────────────────────────────────
     chosen = _render_browser()
     if chosen:
@@ -765,29 +599,37 @@ def render() -> None:
             gateway.clear_dataset_info_cache()
             st.rerun()
     
-    if all_datasets:
-        # Create dropdown with all available datasets
-        dataset_names = [ds.get("dataset_name") for ds in all_datasets if ds.get("dataset_name")]
+    # Get list of validated datasets for metadata viewer
+    metadata_resp = indexing_api.list_datasets_metadata()
+    
+    if metadata_resp.ok and isinstance(metadata_resp.data, dict):
+        all_datasets_meta = metadata_resp.data.get("datasets", [])
         
-        selected_metadata_ds = st.selectbox(
-            "Select dataset to view metadata",
-            options=dataset_names,
-            index=None,
-            placeholder="Choose a dataset...",
-            key="metadata_viewer_selector",
-            help="Choose a dataset to view its detailed metadata"
-        )
-        
-        # Display metadata if a dataset is selected
-        if selected_metadata_ds:
-            # Find the selected dataset's metadata
-            selected_ds_meta = next((ds for ds in all_datasets if ds.get("dataset_name") == selected_metadata_ds), None)
+        if all_datasets_meta:
+            # Create dropdown with all available datasets
+            dataset_names = [ds.get("dataset_name") for ds in all_datasets_meta if ds.get("dataset_name")]
             
-            if selected_ds_meta:
-                is_active_badge = " 🟢 ACTIVE" if selected_metadata_ds == current_active else ""
-                with st.expander(f"📄 {selected_metadata_ds}{is_active_badge}", expanded=True):
-                    st.json(selected_ds_meta)
-            else:
-                st.warning(f"Metadata not found for: {selected_metadata_ds}")
+            selected_metadata_ds = st.selectbox(
+                "Select dataset to view metadata",
+                options=dataset_names,
+                index=None,
+                placeholder="Choose a dataset...",
+                key="metadata_viewer_selector",
+                help="Choose a dataset to view its detailed metadata"
+            )
+            
+            # Display metadata if a dataset is selected
+            if selected_metadata_ds:
+                # Find the selected dataset's metadata
+                selected_ds_meta = next((ds for ds in all_datasets_meta if ds.get("dataset_name") == selected_metadata_ds), None)
+                
+                if selected_ds_meta:
+                    with st.expander(f"📄 {selected_metadata_ds}", expanded=True):
+                        st.json(selected_ds_meta)
+                else:
+                    st.warning(f"Metadata not found for: {selected_metadata_ds}")
+        else:
+            st.info("No validated datasets available. Validate a dataset first to view its metadata.")
     else:
-        st.info("No validated datasets available. Validate a dataset first to view its metadata.")
+        st.warning("Could not retrieve metadata list.")
+
