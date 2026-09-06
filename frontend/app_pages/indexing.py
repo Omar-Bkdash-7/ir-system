@@ -370,12 +370,19 @@ def render() -> None:
     
     # Show dataset info only if a dataset is selected
     if selected_dataset:
-        # Get metadata for selected dataset
-        active_resp = indexing_api.get_active_dataset()
-        if active_resp.ok and isinstance(active_resp.data, dict):
-            metadata = active_resp.data.get("metadata", {})
+        # Get metadata for selected dataset from the list
+        metadata_resp = indexing_api.list_datasets_metadata()
+        
+        if metadata_resp.ok and isinstance(metadata_resp.data, dict):
+            all_datasets = metadata_resp.data.get("datasets", [])
             
-            if metadata:
+            # Find metadata for selected dataset
+            selected_metadata = next(
+                (ds for ds in all_datasets if ds.get("dataset_name") == selected_dataset),
+                None
+            )
+            
+            if selected_metadata:
                 with st.container(border=True):
                     col1, col2, col3, col4 = st.columns(4)
                     
@@ -383,15 +390,15 @@ def render() -> None:
                         st.metric("Dataset", selected_dataset)
                     
                     with col2:
-                        doc_count = metadata.get('doc_count', info.get('doc_count', 0) if info else 0)
+                        doc_count = selected_metadata.get('doc_count', info.get('doc_count', 0) if info else 0)
                         st.metric("Docs", f"{doc_count:,}")
                     
                     with col3:
-                        query_count = metadata.get('query_count', info.get('query_count', 0) if info else 0)
+                        query_count = selected_metadata.get('query_count', info.get('query_count', 0) if info else 0)
                         st.metric("Queries", f"{query_count:,}")
                     
                     with col4:
-                        qrel_count = metadata.get('qrel_count', metadata.get('qrels_count', info.get('qrel_count', info.get('qrels_count', 0)) if info else 0))
+                        qrel_count = selected_metadata.get('qrel_count', selected_metadata.get('qrels_count', info.get('qrel_count', info.get('qrels_count', 0)) if info else 0))
                         st.metric("Qrels", f"{qrel_count:,}")
         
         # Warning message if dataset is not in database

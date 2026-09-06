@@ -12,6 +12,7 @@ volumes:
   processed_data: null
   evaluation_results: null
   logs: null
+  metadata: null
 
 services:
 
@@ -35,7 +36,6 @@ services:
       - ./data/cache:/app/data/cache
       - ./data/processed:/app/data/processed
       - ./data/evaluation:/app/data/evaluation
-      - ./data/metadata.json:/app/data/metadata.json
       - ./data/metadata:/app/data/metadata
     environment:
       ENVIRONMENT: development
@@ -60,7 +60,6 @@ services:
       - ./data/cache:/app/data/cache
       - ./data/processed:/app/data/processed
       - ./data/evaluation:/app/data/evaluation
-      - ./data/metadata.json:/app/data/metadata.json
       - ./data/metadata:/app/data/metadata
     environment:
       ENVIRONMENT: development
@@ -86,7 +85,6 @@ services:
       - ./data/models:/app/data/models
       - ./data/processed:/app/data/processed
       - ./data/evaluation:/app/data/evaluation
-      - ./data/metadata.json:/app/data/metadata.json
       - ./data/metadata:/app/data/metadata
     environment:
       ENVIRONMENT: development
@@ -112,7 +110,6 @@ services:
       - ./data/models:/app/data/models
       - ./data/processed:/app/data/processed
       - ./data/evaluation:/app/data/evaluation
-      - ./data/metadata.json:/app/data/metadata.json
       - ./data/metadata:/app/data/metadata
     environment:
       ENVIRONMENT: development
@@ -138,7 +135,6 @@ services:
       - ./data/models:/app/data/models
       - ./data/processed:/app/data/processed
       - ./data/evaluation:/app/data/evaluation
-      - ./data/metadata.json:/app/data/metadata.json
       - ./data/metadata:/app/data/metadata
     environment:
       ENVIRONMENT: development
@@ -164,7 +160,6 @@ services:
       - ./data/models:/app/data/models
       - ./data/processed:/app/data/processed
       - ./data/evaluation:/app/data/evaluation
-      - ./data/metadata.json:/app/data/metadata.json
       - ./data/metadata:/app/data/metadata
     environment:
       ENVIRONMENT: development
@@ -190,7 +185,6 @@ services:
       - ./data/models:/app/data/models
       - ./data/processed:/app/data/processed
       - ./data/evaluation:/app/data/evaluation
-      - ./data/metadata.json:/app/data/metadata.json
       - ./data/metadata:/app/data/metadata
     environment:
       ENVIRONMENT: development
@@ -211,7 +205,7 @@ services:
       - ./configs:/app/configs
       - ./.streamlit:/app/.streamlit
       - ./logs:/app/logs
-      - ./data/metadata.json:/app/data/metadata.json
+      - ./data/metadata:/app/data/metadata
     environment:
       ENVIRONMENT: development
       DEBUG: "true"

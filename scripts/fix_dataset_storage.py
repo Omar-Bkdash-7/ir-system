@@ -5,7 +5,7 @@ This script:
 1. Identifies duplicate dataset storage locations
 2. Consolidates datasets to the correct location (.ir_datasets)
 3. Removes redundant duplicate directories
-4. Updates metadata.json with correct information
+4. Verifies metadata directory structure
 """
 
 import os

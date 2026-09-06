@@ -1,7 +1,7 @@
 import numpy as np
 import json
 from pathlib import Path
-from common.config import get_active_dataset_path, get_config
+from common.config import get_dataset_specific_path, get_config
 from common.device import get_torch_device
 from common.model_loader import load_embedding_model
 from common.exceptions import IndexNotFoundError, InvalidQueryError, ModelLoadError
@@ -11,7 +11,17 @@ logger = logging.getLogger(__name__)
 
 
 class EmbeddingRetriever:
-    def __init__(self):
+    def __init__(self, dataset_name: str):
+        """
+        Initialize Embedding retriever.
+        
+        Args:
+            dataset_name: Dataset identifier (REQUIRED)
+        """
+        if not dataset_name:
+            raise ValueError("dataset_name is required")
+        
+        self.dataset_name = dataset_name
         self.model = None
         self.embeddings = None
         self.doc_ids = []
@@ -23,8 +33,8 @@ class EmbeddingRetriever:
             return
 
         try:
-            embeddings_path = Path(get_active_dataset_path("indices.embeddings", "data/indices/embeddings.npy"))
-            doc_id_map_path = Path(get_active_dataset_path("indices.doc_id_map", "data/indices/doc_id_map.json"))
+            embeddings_path = Path(get_dataset_specific_path("indices.embeddings", self.dataset_name, "data/indices/embeddings.npy"))
+            doc_id_map_path = Path(get_dataset_specific_path("indices.doc_id_map", self.dataset_name, "data/indices/doc_id_map.json"))
         except ValueError as e:
             raise IndexNotFoundError(f"Cannot load embedding index: {e}")
 

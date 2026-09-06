@@ -44,6 +44,8 @@ volumes:
     name: ir_processed_data
   evaluation_results:
     name: ir_evaluation_results
+  metadata:
+    name: ir_metadata
   
   # Logs
   logs:
@@ -81,6 +83,7 @@ x-common-service: &common-service
     - models:/app/data/models
     - processed_data:/app/data/processed
     - evaluation_results:/app/data/evaluation
+    - metadata:/app/data/metadata
   environment:
     <<: *common-env
   logging:

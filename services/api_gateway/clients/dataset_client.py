@@ -8,22 +8,28 @@ logger = logging.getLogger(__name__)
 
 def get_dataset_info() -> dict:
     """
-    Get dataset metadata from file or fallback to config defaults.
+    Get dataset metadata from the metadata directory.
+    Uses the first available dataset metadata file as a fallback.
     
     Returns:
         Dictionary with dataset metadata
     """
-    metadata_path = Path(get_config("paths.metadata", "data/metadata.json"))
+    metadata_dir = Path(get_config("paths.metadata_dir", "data/metadata"))
 
-    if not metadata_path.exists():
+    if not metadata_dir.exists():
         logger.warning(
-            f"Dataset metadata not found at {metadata_path}. "
+            f"Metadata directory not found at {metadata_dir}. "
             "Returning config defaults. Run validation to create metadata."
         )
         return _get_fallback_metadata()
 
     try:
-        with open(metadata_path, encoding="utf-8") as f:
+        metadata_files = list(metadata_dir.glob("*.json"))
+        if not metadata_files:
+            logger.warning("No metadata files found in metadata directory.")
+            return _get_fallback_metadata()
+        
+        with open(metadata_files[0], encoding="utf-8") as f:
             metadata = json.load(f)
         logger.debug(f"Retrieved dataset info: {metadata.get('dataset_name')}")
         return metadata

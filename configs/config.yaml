@@ -26,7 +26,6 @@ paths:
   processed: "data/processed"
   indices: "data/indices"
   logs: "logs"
-  metadata: "data/metadata.json"
   metadata_dir: "data/metadata"
   
   # Legacy paths (kept for backward compatibility)

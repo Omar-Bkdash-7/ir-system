@@ -127,22 +127,27 @@ def main():
     
     print()
     
-    # Check metadata file
-    print("📄 Metadata File:")
+    # Check metadata directory
+    print("📄 Metadata Directory:")
     print("-" * 80)
-    metadata_path = "/app/data/metadata.json"
-    if Path(metadata_path).exists():
-        print(f"✅ {metadata_path} exists")
+    metadata_dir = "/app/data/metadata"
+    if Path(metadata_dir).exists():
+        print(f"✅ {metadata_dir} exists")
         try:
-            import json
-            with open(metadata_path) as f:
-                data = json.load(f)
-                print(f"   Dataset: {data.get('dataset_name', 'unknown')}")
-                print(f"   Doc count: {data.get('doc_count', 0):,}")
+            metadata_files = list(Path(metadata_dir).glob("*.json"))
+            if metadata_files:
+                print(f"   Found {len(metadata_files)} metadata file(s):")
+                import json
+                for metadata_file in metadata_files[:5]:
+                    with open(metadata_file) as f:
+                        data = json.load(f)
+                        print(f"   - {metadata_file.name}: {data.get('dataset_name', 'unknown')} ({data.get('doc_count', 0):,} docs)")
+            else:
+                print("   No metadata files found yet")
         except Exception as e:
             print(f"   ⚠️  Could not read metadata: {e}")
     else:
-        print(f"⚠️  {metadata_path} does not exist (will be created on first dataset validation)")
+        print(f"⚠️  {metadata_dir} does not exist (will be created on first dataset validation)")
     
     print()
     

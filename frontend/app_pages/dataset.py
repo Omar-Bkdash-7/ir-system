@@ -219,7 +219,7 @@ def _render_download():
         (40, "Downloading / verifying files…"),
         (60, "Counting documents…"),
         (80, "Counting queries & qrels…"),
-        (92, "Writing metadata.json…"),
+        (92, "Saving metadata…"),
     ]
     stage_idx = 0
     while thread.is_alive():

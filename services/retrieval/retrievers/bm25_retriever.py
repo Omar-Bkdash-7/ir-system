@@ -2,7 +2,7 @@ import pickle
 import heapq
 from pathlib import Path
 from typing import List, Dict, NamedTuple
-from common.config import get_active_dataset_path, get_config
+from common.config import get_dataset_specific_path, get_config
 from services.preprocessing.preprocessing_service import preprocess
 import logging
 import math
@@ -14,7 +14,17 @@ class PostingEntry(NamedTuple):
     term_freq: int
 
 class BM25Retriever:
-    def __init__(self):
+    def __init__(self, dataset_name: str):
+        """
+        Initialize BM25 retriever.
+        
+        Args:
+            dataset_name: Dataset identifier (REQUIRED)
+        """
+        if not dataset_name:
+            raise ValueError("dataset_name is required")
+        
+        self.dataset_name = dataset_name
         self.inverted_index: Dict[str, List[PostingEntry]] = {}
         self.doc_frequencies: Dict[str, int] = {}
         self.idf_scores: Dict[str, float] = {}
@@ -29,7 +39,7 @@ class BM25Retriever:
             return
         
         try:
-            index_path = Path(get_active_dataset_path("indices.bm25_index", "data/indices/bm25_index.pkl"))
+            index_path = Path(get_dataset_specific_path("indices.bm25_index", self.dataset_name, "data/indices/bm25_index.pkl"))
         except ValueError as e:
             raise FileNotFoundError(f"Cannot load BM25 index: {e}")
         

@@ -12,7 +12,6 @@ from typing import Dict, Any, Optional
 from tempfile import NamedTemporaryFile
 
 from services.indexing.indexers import TFIDFIndexer, EmbeddingIndexer, BM25Indexer
-from services.indexing.dataset_service import get_metadata
 from common.config import get_config
 
 
@@ -87,24 +86,25 @@ def _check_dataset_in_database(dataset_name: str, table_name: str) -> None:
                 raise FileNotFoundError(error_msg)
 
 
-def _preprocess_documents(preprocessing_config: Optional[dict] = None) -> str:
+def _preprocess_documents(dataset_name: str, preprocessing_config: Optional[dict] = None) -> str:
     """
     Preprocess documents from database using the provided config.
     
     Args:
+        dataset_name: Dataset identifier (REQUIRED)
         preprocessing_config: Preprocessing configuration dictionary
         
     Returns:
         Path to the preprocessed documents file
     """
+    if not dataset_name:
+        raise ValueError("dataset_name is required")
+    
     try:
         from services.preprocessing.preprocessing_service import preprocess, PreprocessingConfig
     except ImportError:
         logger.error("Preprocessing service not available")
         raise ImportError("Preprocessing service is required but not available")
-    
-    metadata = get_metadata()
-    dataset_name = metadata.get("dataset_name", "unknown")
     
     logger.info(f"Preprocessing documents for dataset: {dataset_name}")
     
@@ -204,22 +204,22 @@ class IndexBuilder:
 class TFIDFIndexBuilder(IndexBuilder):
     """Builds TF-IDF index from documents."""
     
-    def build(self, force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
+    def build(self, dataset_name: str, force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
         """
         Build TF-IDF index.
         
         Args:
+            dataset_name: Dataset identifier (REQUIRED)
             force_rebuild: Force rebuild even if index exists
             preprocessing_config: Custom preprocessing configuration
             
         Returns:
             Dictionary with build status and index statistics
         """
-        logger.info(f"Building TF-IDF index (force_rebuild={force_rebuild})")
+        if not dataset_name:
+            raise ValueError("dataset_name is required")
         
-        # Get dataset name from metadata
-        metadata = get_metadata()
-        dataset_name = metadata.get("dataset_name")
+        logger.info(f"Building TF-IDF index for dataset: {dataset_name} (force_rebuild={force_rebuild})")
         
         indexer = TFIDFIndexer(dataset_name=dataset_name)
         
@@ -230,7 +230,7 @@ class TFIDFIndexBuilder(IndexBuilder):
         processed_path = None
         try:
             # Always preprocess documents from database
-            processed_path = _preprocess_documents(preprocessing_config)
+            processed_path = _preprocess_documents(dataset_name, preprocessing_config)
             indexer.build(processed_path=processed_path)
             
             indexer.save()
@@ -270,22 +270,22 @@ class TFIDFIndexBuilder(IndexBuilder):
 class EmbeddingIndexBuilder(IndexBuilder):
     """Builds embedding-based index from documents."""
     
-    def build(self, force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
+    def build(self, dataset_name: str, force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
         """
         Build Embedding index.
         
         Args:
+            dataset_name: Dataset identifier (REQUIRED)
             force_rebuild: Force rebuild even if index exists
             preprocessing_config: Custom preprocessing configuration
             
         Returns:
             Dictionary with build status and index statistics
         """
-        logger.info(f"Building Embedding index (force_rebuild={force_rebuild})")
+        if not dataset_name:
+            raise ValueError("dataset_name is required")
         
-        # Get dataset name from metadata
-        metadata = get_metadata()
-        dataset_name = metadata.get("dataset_name")
+        logger.info(f"Building Embedding index for dataset: {dataset_name} (force_rebuild={force_rebuild})")
         
         indexer = EmbeddingIndexer(dataset_name=dataset_name)
         
@@ -296,7 +296,7 @@ class EmbeddingIndexBuilder(IndexBuilder):
         processed_path = None
         try:
             # Always preprocess documents from database
-            processed_path = _preprocess_documents(preprocessing_config)
+            processed_path = _preprocess_documents(dataset_name, preprocessing_config)
             indexer.build(processed_path=processed_path)
             
             indexer.save()
@@ -337,22 +337,22 @@ class EmbeddingIndexBuilder(IndexBuilder):
 class BM25IndexBuilder(IndexBuilder):
     """Builds BM25 index from documents."""
     
-    def build(self, force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
+    def build(self, dataset_name: str, force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
         """
         Build BM25 index.
         
         Args:
+            dataset_name: Dataset identifier (REQUIRED)
             force_rebuild: Force rebuild even if index exists
             preprocessing_config: Custom preprocessing configuration
             
         Returns:
             Dictionary with build status and index statistics
         """
-        logger.info(f"Building BM25 index (force_rebuild={force_rebuild})")
+        if not dataset_name:
+            raise ValueError("dataset_name is required")
         
-        # Get dataset name from metadata
-        metadata = get_metadata()
-        dataset_name = metadata.get("dataset_name")
+        logger.info(f"Building BM25 index for dataset: {dataset_name} (force_rebuild={force_rebuild})")
         
         indexer = BM25Indexer(dataset_name=dataset_name)
         
@@ -363,7 +363,7 @@ class BM25IndexBuilder(IndexBuilder):
         processed_path = None
         try:
             # Always preprocess documents from database
-            processed_path = _preprocess_documents(preprocessing_config)
+            processed_path = _preprocess_documents(dataset_name, preprocessing_config)
             indexer.build(processed_path=processed_path)
             
             indexer.save()
@@ -396,11 +396,12 @@ class BM25IndexBuilder(IndexBuilder):
                 Path(processed_path).unlink(missing_ok=True)
 
 
-def build_tfidf_index(force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
+def build_tfidf_index(dataset_name: str, force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
     """
     Public API: Build TF-IDF index.
     
     Args:
+        dataset_name: Dataset identifier (REQUIRED)
         force_rebuild: Force rebuild even if index exists
         preprocessing_config: Custom preprocessing configuration
         
@@ -408,14 +409,15 @@ def build_tfidf_index(force_rebuild: bool = False, preprocessing_config: Optiona
         Dictionary with build status and statistics
     """
     builder = TFIDFIndexBuilder()
-    return builder.build(force_rebuild, preprocessing_config)
+    return builder.build(dataset_name, force_rebuild, preprocessing_config)
 
 
-def build_embedding_index(force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
+def build_embedding_index(dataset_name: str, force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
     """
     Public API: Build Embedding index.
     
     Args:
+        dataset_name: Dataset identifier (REQUIRED)
         force_rebuild: Force rebuild even if index exists
         preprocessing_config: Custom preprocessing configuration
         
@@ -423,14 +425,15 @@ def build_embedding_index(force_rebuild: bool = False, preprocessing_config: Opt
         Dictionary with build status and statistics
     """
     builder = EmbeddingIndexBuilder()
-    return builder.build(force_rebuild, preprocessing_config)
+    return builder.build(dataset_name, force_rebuild, preprocessing_config)
 
 
-def build_bm25_index(force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
+def build_bm25_index(dataset_name: str, force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
     """
     Public API: Build BM25 index.
     
     Args:
+        dataset_name: Dataset identifier (REQUIRED)
         force_rebuild: Force rebuild even if index exists
         preprocessing_config: Custom preprocessing configuration
         
@@ -438,7 +441,7 @@ def build_bm25_index(force_rebuild: bool = False, preprocessing_config: Optional
         Dictionary with build status and statistics
     """
     builder = BM25IndexBuilder()
-    return builder.build(force_rebuild, preprocessing_config)
+    return builder.build(dataset_name, force_rebuild, preprocessing_config)
 
 
 __all__ = [

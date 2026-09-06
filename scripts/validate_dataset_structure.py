@@ -76,27 +76,28 @@ def validate_structure():
             warnings.append("⚠️  No datasets found in correct location")
             logger.warning("   ⚠️  No datasets downloaded yet")
     
-    logger.info("\n3. Checking metadata.json...")
+    logger.info("\n3. Checking metadata directory...")
     
-    metadata_path = data_dir / "metadata.json"
-    if metadata_path.exists():
-        try:
-            with open(metadata_path) as f:
-                metadata = json.load(f)
-            
-            dataset_name = metadata.get("dataset_name", "unknown")
-            status = metadata.get("validation_status", "unknown")
-            
-            logger.info(f"   ✅ metadata.json exists")
-            logger.info(f"      Active dataset: {dataset_name}")
-            logger.info(f"      Status: {status}")
-            
-            if status != "success":
-                warnings.append(f"⚠️  Dataset validation status is '{status}'")
-        except Exception as e:
-            issues.append(f"❌ Failed to read metadata.json: {e}")
+    metadata_dir = data_dir / "metadata"
+    if metadata_dir.exists():
+        metadata_files = list(metadata_dir.glob("*.json"))
+        if metadata_files:
+            logger.info(f"   ✅ Found {len(metadata_files)} metadata file(s)")
+            for metadata_file in metadata_files:
+                try:
+                    with open(metadata_file) as f:
+                        metadata = json.load(f)
+                    dataset_name = metadata.get("dataset_name", "unknown")
+                    status = metadata.get("validation_status", "unknown")
+                    logger.info(f"      - {metadata_file.name}: {dataset_name} ({status})")
+                    if status != "success":
+                        warnings.append(f"⚠️  Dataset '{dataset_name}' validation status is '{status}'")
+                except Exception as e:
+                    issues.append(f"❌ Failed to read {metadata_file.name}: {e}")
+        else:
+            warnings.append("⚠️  No metadata files found (no datasets validated yet)")
     else:
-        warnings.append("⚠️  metadata.json does not exist (no dataset validated yet)")
+        warnings.append("⚠️  data/metadata/ directory does not exist (no datasets validated yet)")
     
     logger.info("\n4. Checking environment configuration...")
     

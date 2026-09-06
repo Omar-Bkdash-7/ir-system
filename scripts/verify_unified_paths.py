@@ -78,7 +78,6 @@ def verify_directory_structure():
     checks = [
         (base / "datasets", "datasets directory"),
         (base / "datasets" / ".ir_datasets", ".ir_datasets directory"),
-        (base / "metadata.json", "metadata.json file"),
         (base / "metadata", "metadata directory"),
     ]
     

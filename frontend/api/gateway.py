@@ -32,7 +32,7 @@ def health() -> APIResponse:
 # ---------------------------------------------------------------------------
 
 def get_dataset_info() -> APIResponse:
-    """GET /datasets/info — reads data/metadata.json on the backend."""
+    """GET /datasets/info — reads dataset metadata from the backend."""
     return get(f"{config.API_GATEWAY_URL}/datasets/info")
 
 

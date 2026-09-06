@@ -129,22 +129,30 @@ def check_indices():
 
 
 def check_metadata():
-    """Check metadata file."""
+    """Check metadata directory."""
     logger.info("\n" + "=" * 60)
     logger.info("METADATA")
     logger.info("=" * 60)
     
-    metadata_file = Path("/app/data/metadata.json")
+    metadata_dir = Path("/app/data/metadata")
     
-    if metadata_file.exists():
-        with open(metadata_file, 'r') as f:
-            metadata = json.load(f)
-        
-        logger.info("📋 Metadata file found:")
-        for key, value in metadata.items():
-            logger.info(f"   {key}: {value}")
+    if metadata_dir.exists():
+        metadata_files = list(metadata_dir.glob("*.json"))
+        if metadata_files:
+            logger.info(f"📋 Found {len(metadata_files)} metadata file(s):")
+            for metadata_file in metadata_files:
+                try:
+                    with open(metadata_file, 'r') as f:
+                        metadata = json.load(f)
+                    logger.info(f"\n   File: {metadata_file.name}")
+                    for key, value in metadata.items():
+                        logger.info(f"      {key}: {value}")
+                except Exception as e:
+                    logger.error(f"   ❌ Failed to read {metadata_file.name}: {e}")
+        else:
+            logger.warning("⚠️  No metadata files found in directory")
     else:
-        logger.warning("⚠️  No metadata file found")
+        logger.warning("⚠️  Metadata directory not found")
 
 
 if __name__ == "__main__":

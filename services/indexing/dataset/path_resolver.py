@@ -44,12 +44,12 @@ class DatasetPathResolver:
     
     def get_metadata_path(self) -> Path:
         """
-        Get path to metadata JSON file.
+        Get path to metadata directory.
         
         Returns:
-            Path object pointing to metadata file location
+            Path object pointing to metadata directory location
         """
-        return Path(get_config("paths.metadata", "data/metadata.json"))
+        return Path(get_config("paths.metadata_dir", "data/metadata"))
     
     def ensure_directory_exists(self, path: Path) -> None:
         """

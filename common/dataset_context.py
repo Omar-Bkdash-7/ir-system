@@ -1,52 +1,31 @@
 """
 Dataset Context Manager
 
-Provides global access to current dataset information across all services.
-This module maintains the concept of an "active dataset" that services
-can query to determine which dataset they should operate on.
+Provides access to dataset information across services.
+DEPRECATED: Use explicit dataset_name parameters instead of global context.
 
-Usage:
-    from common.dataset_context import get_active_dataset, get_dataset_metadata
+Usage (DEPRECATED):
+    # Don't use this pattern anymore!
+    # from common.dataset_context import get_active_dataset
     
-    dataset_name = get_active_dataset()  # Returns 'beir/quora'
-    metadata = get_dataset_metadata()    # Returns full metadata dict
+    # Use this instead:
+    def my_function(dataset_name: str):
+        # Pass dataset_name explicitly
+        pass
 """
 
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
 
 
-def get_active_dataset() -> Optional[str]:
+def get_dataset_metadata(dataset_name: str) -> Optional[Dict[str, Any]]:
     """
-    Get the name of the currently active dataset.
-    
-    Returns:
-        Active dataset name (e.g., 'beir/quora') or None if not set
-        
-    Example:
-        >>> dataset = get_active_dataset()
-        >>> print(dataset)
-        'beir/quora'
-    """
-    try:
-        from services.indexing.dataset.metadata_manager import get_active_dataset_name
-        return get_active_dataset_name()
-    except ImportError:
-        logger.warning("Could not import metadata manager")
-        return None
-    except Exception as e:
-        logger.warning(f"Failed to get active dataset: {e}")
-        return None
-
-
-def get_dataset_metadata(dataset_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
-    """
-    Get metadata for a specific dataset or the active dataset.
+    Get metadata for a specific dataset.
     
     Args:
-        dataset_name: Dataset identifier. If None, returns active dataset metadata
+        dataset_name: Dataset identifier (REQUIRED)
         
     Returns:
         Dataset metadata dictionary or None if not found
@@ -56,6 +35,9 @@ def get_dataset_metadata(dataset_name: Optional[str] = None) -> Optional[Dict[st
         >>> print(metadata['doc_count'])
         522931
     """
+    if not dataset_name:
+        raise ValueError("dataset_name is required")
+    
     try:
         from services.indexing.dataset.metadata_manager import get_metadata
         return get_metadata(dataset_name)
@@ -63,14 +45,14 @@ def get_dataset_metadata(dataset_name: Optional[str] = None) -> Optional[Dict[st
         logger.warning("Could not import metadata manager")
         return None
     except FileNotFoundError:
-        logger.warning(f"Metadata not found for dataset: {dataset_name or 'active'}")
+        logger.warning(f"Metadata not found for dataset: {dataset_name}")
         return None
     except Exception as e:
         logger.warning(f"Failed to get dataset metadata: {e}")
         return None
 
 
-def list_available_datasets() -> list:
+def list_available_datasets() -> List[Dict[str, Any]]:
     """
     Get list of all datasets with metadata.
     
@@ -93,34 +75,3 @@ def list_available_datasets() -> list:
     except Exception as e:
         logger.warning(f"Failed to list datasets: {e}")
         return []
-
-
-def get_dataset_or_default(dataset_name: Optional[str] = None, default: str = "beir/quora") -> str:
-    """
-    Get dataset name with fallback chain.
-    
-    Priority:
-    1. Provided dataset_name
-    2. Active dataset from metadata
-    3. Default value
-    
-    Args:
-        dataset_name: Optional dataset identifier
-        default: Default dataset to use as final fallback
-        
-    Returns:
-        Dataset name string (never None)
-        
-    Example:
-        >>> dataset = get_dataset_or_default()
-        >>> # Returns active dataset, or 'beir/quora' if no active dataset
-    """
-    if dataset_name:
-        return dataset_name
-    
-    active = get_active_dataset()
-    if active:
-        return active
-    
-    logger.info(f"No active dataset, using default: {default}")
-    return default

@@ -3,13 +3,23 @@ import scipy.sparse
 import json
 from pathlib import Path
 from sklearn.metrics.pairwise import cosine_similarity
-from common.config import get_active_dataset_path, get_config
+from common.config import get_dataset_specific_path, get_config
 import logging
 
 logger = logging.getLogger(__name__)
 
 class TFIDFRetriever:
-    def __init__(self):
+    def __init__(self, dataset_name: str):
+        """
+        Initialize TF-IDF retriever.
+        
+        Args:
+            dataset_name: Dataset identifier (REQUIRED)
+        """
+        if not dataset_name:
+            raise ValueError("dataset_name is required")
+        
+        self.dataset_name = dataset_name
         self.vectorizer = None
         self.matrix = None
         self.doc_ids = []
@@ -20,9 +30,9 @@ class TFIDFRetriever:
             return
         
         try:
-            vectorizer_path = Path(get_active_dataset_path("indices.tfidf_vectorizer", "data/indices/tfidf_vectorizer.pkl"))
-            matrix_path = Path(get_active_dataset_path("indices.tfidf_matrix", "data/indices/tfidf_matrix.npz"))
-            doc_ids_path = Path(get_active_dataset_path("indices.tfidf_doc_ids", "data/indices/tfidf_doc_ids.json"))
+            vectorizer_path = Path(get_dataset_specific_path("indices.tfidf_vectorizer", self.dataset_name, "data/indices/tfidf_vectorizer.pkl"))
+            matrix_path = Path(get_dataset_specific_path("indices.tfidf_matrix", self.dataset_name, "data/indices/tfidf_matrix.npz"))
+            doc_ids_path = Path(get_dataset_specific_path("indices.tfidf_doc_ids", self.dataset_name, "data/indices/tfidf_doc_ids.json"))
         except ValueError as e:
             raise FileNotFoundError(f"Cannot load TF-IDF index: {e}")
         

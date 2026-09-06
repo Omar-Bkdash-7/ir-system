@@ -23,7 +23,6 @@ from services.indexing.services.stats_service import (
     TFIDFStatsRetriever,
     EmbeddingStatsRetriever,
     BM25StatsRetriever,
-    AllIndicesStatsRetriever,
 )
 
 
@@ -44,5 +43,4 @@ __all__ = [
     "TFIDFStatsRetriever",
     "EmbeddingStatsRetriever",
     "BM25StatsRetriever",
-    "AllIndicesStatsRetriever",
 ]

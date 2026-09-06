@@ -181,54 +181,6 @@ def db_info():
     return get_db_dataset_info()
 
 
-@app.get("/datasets/active")
-def get_active_dataset():
-    """Get the currently active dataset."""
-    try:
-        from services.indexing.dataset.service import DatasetService
-        service = DatasetService()
-        active = service.get_active_dataset()
-        
-        if not active:
-            return {"active_dataset": None, "message": "No active dataset set"}
-        
-        # Get metadata for active dataset
-        try:
-            metadata = service.get_metadata(active)
-            return {
-                "active_dataset": active,
-                "metadata": metadata
-            }
-        except FileNotFoundError:
-            return {
-                "active_dataset": active,
-                "message": "Active dataset metadata not found"
-            }
-    except Exception as e:
-        logger.error(f"Failed to get active dataset: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/datasets/active")
-def set_active_dataset(dataset_id: str = Query(..., description="Dataset ID to set as active")):
-    """Set the active dataset."""
-    try:
-        from services.indexing.dataset.service import DatasetService
-        service = DatasetService()
-        service.set_active_dataset(dataset_id)
-        
-        return {
-            "status": "success",
-            "active_dataset": dataset_id,
-            "message": f"Active dataset set to: {dataset_id}"
-        }
-    except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    except Exception as e:
-        logger.error(f"Failed to set active dataset: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.get("/datasets/metadata")
 def list_datasets_metadata():
     """List all datasets with their metadata."""
@@ -236,10 +188,8 @@ def list_datasets_metadata():
         from services.indexing.dataset.service import DatasetService
         service = DatasetService()
         datasets = service.list_datasets()
-        active = service.get_active_dataset()
         
         return {
-            "active_dataset": active,
             "datasets": datasets,
             "count": len(datasets)
         }

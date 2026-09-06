@@ -58,7 +58,7 @@ python scripts/validate_dataset_structure.py
 **What it checks**:
 1. Directory structure correctness
 2. Downloaded datasets detection
-3. metadata.json consistency
+3. metadata directory consistency
 4. Environment variable configuration
 5. Indices directory organization
 
@@ -84,10 +84,9 @@ Dataset Storage Structure Validation
    ✅ Found 1 dataset(s):
       - beir/quora (74.5 MB)
 
-3. Checking metadata.json...
-   ✅ metadata.json exists
-      Active dataset: beir/quora
-      Status: success
+3. Checking metadata directory...
+   ✅ Found 1 metadata file(s)
+      - beir-quora.json: beir/quora (success)
 
 4. Checking environment configuration...
    ✅ IR_DATASETS_HOME is set in .env
@@ -156,7 +155,7 @@ project_root/
 ├── data/
 │   ├── datasets/
 │   │   └── .ir_datasets/
-│   └── metadata.json
+│   └── metadata/
 ├── scripts/
 │   ├── fix_dataset_storage.py
 │   └── validate_dataset_structure.py

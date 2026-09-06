@@ -10,15 +10,17 @@ from typing import Dict, List, Any, Optional
 from collections import Counter
 
 from services.indexing.indexers import BM25Indexer
-from services.indexing.dataset_service import get_metadata
 
 
 logger = logging.getLogger(__name__)
 
 
-def get_inverted_index_stats() -> Dict[str, Any]:
+def get_inverted_index_stats(dataset_name: str) -> Dict[str, Any]:
     """
     Get comprehensive statistics about the inverted index.
+    
+    Args:
+        dataset_name: Dataset identifier (REQUIRED)
     
     Returns:
         Dictionary containing:
@@ -30,11 +32,10 @@ def get_inverted_index_stats() -> Dict[str, Any]:
         - top_terms: Most frequent terms by document frequency
         - longest_posting_lists: Terms with most postings
     """
+    if not dataset_name:
+        raise ValueError("dataset_name is required")
+    
     try:
-        # Get dataset name from metadata
-        metadata = get_metadata()
-        dataset_name = metadata.get("dataset_name")
-        
         indexer = BM25Indexer(dataset_name=dataset_name)
         
         if not indexer.exists():
@@ -108,11 +109,12 @@ def _calculate_doc_length_stats(indexer: BM25Indexer) -> Dict[str, Any]:
     }
 
 
-def get_term_info(term: str) -> Dict[str, Any]:
+def get_term_info(dataset_name: str, term: str) -> Dict[str, Any]:
     """
     Get detailed information about a specific term in the inverted index.
     
     Args:
+        dataset_name: Dataset identifier (REQUIRED)
         term: The term to look up
         
     Returns:
@@ -123,11 +125,10 @@ def get_term_info(term: str) -> Dict[str, Any]:
         - idf: IDF score
         - posting_list: List of (doc_id, term_freq) tuples
     """
+    if not dataset_name:
+        raise ValueError("dataset_name is required")
+    
     try:
-        # Get dataset name from metadata
-        metadata = get_metadata()
-        dataset_name = metadata.get("dataset_name")
-        
         indexer = BM25Indexer(dataset_name=dataset_name)
         
         if not indexer.exists():
@@ -175,22 +176,22 @@ def get_term_info(term: str) -> Dict[str, Any]:
         }
 
 
-def search_terms(prefix: str, limit: int = 50) -> Dict[str, Any]:
+def search_terms(dataset_name: str, prefix: str, limit: int = 50) -> Dict[str, Any]:
     """
     Search for terms in vocabulary that start with the given prefix.
     
     Args:
+        dataset_name: Dataset identifier (REQUIRED)
         prefix: Prefix to search for
         limit: Maximum number of results
         
     Returns:
         Dictionary containing matching terms and their statistics
     """
+    if not dataset_name:
+        raise ValueError("dataset_name is required")
+    
     try:
-        # Get dataset name from metadata
-        metadata = get_metadata()
-        dataset_name = metadata.get("dataset_name")
-        
         indexer = BM25Indexer(dataset_name=dataset_name)
         
         if not indexer.exists():
@@ -236,21 +237,21 @@ def search_terms(prefix: str, limit: int = 50) -> Dict[str, Any]:
         }
 
 
-def get_vocabulary_sample(sample_size: int = 100) -> Dict[str, Any]:
+def get_vocabulary_sample(dataset_name: str, sample_size: int = 100) -> Dict[str, Any]:
     """
     Get a random sample of vocabulary terms.
     
     Args:
+        dataset_name: Dataset identifier (REQUIRED)
         sample_size: Number of terms to sample
         
     Returns:
         Dictionary containing sampled terms and statistics
     """
+    if not dataset_name:
+        raise ValueError("dataset_name is required")
+    
     try:
-        # Get dataset name from metadata
-        metadata = get_metadata()
-        dataset_name = metadata.get("dataset_name")
-        
         indexer = BM25Indexer(dataset_name=dataset_name)
         
         if not indexer.exists():
