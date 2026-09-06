@@ -553,10 +553,60 @@ def _render_db_upload():
         table = up_resp.data.get("table", "—")
         s.update(label="✅ Upload complete!", state="complete")
         st.success(f"Inserted **{inserted:,}** documents into `{table}`, skipped **{skipped:,}**.")
+        gateway.clear_dataset_info_cache()
         st.rerun()
     else:
         s.update(label="❌ Upload failed", state="error")
-        st.error(f"Error: {up_resp.error}")
+        error_msg = up_resp.error or "Unknown error"
+        
+        # Check if it's a corruption error
+        if "corrupted" in error_msg.lower() or "decompression" in error_msg.lower() or "lz4" in error_msg.lower():
+            st.error("### 🔴 Dataset Files Corrupted")
+            
+            st.markdown("""
+            The dataset files appear to be **corrupted or incomplete**. This usually happens when:
+            - Download was interrupted
+            - Network connection was lost during download
+            - Disk space was insufficient
+            """)
+            
+            st.warning("**📋 Solution:** Click the button below to automatically fix the dataset.")
+            
+            col1, col2 = st.columns([1, 2])
+            with col1:
+                if st.button("🔧 Fix Corrupted Dataset", type="primary", use_container_width=True, key="fix_corrupted"):
+                    with st.spinner(f"Fixing corrupted dataset `{upload_id}`..."):
+                        st.info("⏳ Deleting corrupted files...")
+                        fix_resp = indexing_api.fix_corrupted_dataset(upload_id)
+                        
+                        if fix_resp.ok and isinstance(fix_resp.data, dict):
+                            counts = fix_resp.data.get("counts", {})
+                            docs = counts.get("documents", 0)
+                            queries = counts.get("queries", 0)
+                            qrels = counts.get("qrels", 0)
+                            
+                            st.success(f"""
+                            ✅ **Dataset fixed successfully!**
+                            
+                            - Documents: {docs:,}
+                            - Queries: {queries:,}
+                            - Qrels: {qrels:,}
+                            """)
+                            
+                            st.info("💡 You can now try uploading to database again.")
+                            gateway.clear_dataset_info_cache()
+                            st.rerun()
+                        else:
+                            st.error(f"❌ Failed to fix dataset: {fix_resp.error}")
+            
+            with col2:
+                with st.expander("🔍 See error details"):
+                    st.code(error_msg, language="text")
+        else:
+            st.error(f"**Error:** {error_msg}")
+            
+            with st.expander("🔍 See full error"):
+                st.code(error_msg, language="text")
 
 
 # ---------------------------------------------------------------------------

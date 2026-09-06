@@ -99,8 +99,10 @@ class DatasetUploader:
             raise ValueError(error_msg)
         
         conn = get_db_connection()
+        table_created = False
+        
         try:
-            # Check if table exists and ask for confirmation via warning
+            # Check if table exists
             table_exists = self._table_exists(conn, table_name)
             
             if table_exists:
@@ -108,6 +110,7 @@ class DatasetUploader:
                 self._drop_table(conn, table_name)
             
             self._create_table(conn, table_name)
+            table_created = True
             
             inserted, skipped = self._process_documents(
                 conn,
@@ -131,6 +134,30 @@ class DatasetUploader:
             
         except Exception as e:
             conn.rollback()
+            
+            # Clean up empty table if it was created but upload failed
+            if table_created:
+                try:
+                    logger.warning(f"Cleaning up empty table '{table_name}' after failed upload")
+                    self._drop_table(conn, table_name)
+                except Exception as cleanup_error:
+                    logger.error(f"Failed to clean up table: {cleanup_error}")
+            
+            error_msg = str(e)
+            
+            # Check if it's a corruption error
+            if "Decompression failed" in error_msg or "LZ4BlockError" in error_msg:
+                logger.error(
+                    f"Dataset '{dataset_id}' appears to be corrupted. "
+                    f"The dataset files may be incomplete or damaged. "
+                    f"Please delete the local dataset and download it again."
+                )
+                raise ValueError(
+                    f"Dataset files are corrupted. Please delete dataset '{dataset_id}' "
+                    f"and re-download it using 'Fix Corrupted Dataset' button. "
+                    f"Error: {error_msg}"
+                ) from e
+            
             logger.error(f"DB upload failed for '{dataset_id}': {e}", exc_info=True)
             raise
         finally:

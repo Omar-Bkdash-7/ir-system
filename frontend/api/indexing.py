@@ -135,3 +135,13 @@ def list_datasets_metadata() -> APIResponse:
     """List all datasets with their metadata."""
     return get(f"{config.INDEXING_URL}/datasets/metadata", max_retries=1)
 
+
+def fix_corrupted_dataset(dataset_id: str) -> APIResponse:
+    """Fix corrupted dataset by deleting and re-downloading."""
+    return post(
+        f"{config.INDEXING_URL}/datasets/fix-corrupted",
+        params={"dataset_id": dataset_id},
+        timeout=config.BUILD_TIMEOUT,
+        max_retries=1,
+    )
+

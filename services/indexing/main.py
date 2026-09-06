@@ -208,6 +208,79 @@ def delete_dataset_from_db_endpoint(dataset_id: str = Query(..., description="Da
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/datasets/fix-corrupted")
+def fix_corrupted_dataset(dataset_id: str = Query(..., description="Dataset ID to fix")):
+    """
+    Fix corrupted dataset by deleting local files and re-downloading.
+    
+    This endpoint:
+    1. Deletes the corrupted local dataset
+    2. Re-downloads it completely from ir_datasets registry
+    3. Validates the download
+    """
+    try:
+        import shutil
+        from services.indexing.dataset.path_resolver import DatasetPathResolver
+        
+        logger.info(f"Attempting to fix corrupted dataset: {dataset_id}")
+        
+        # Get dataset path
+        resolver = DatasetPathResolver()
+        ir_home = resolver.get_ir_home()
+        
+        parts = dataset_id.strip("/").split("/")
+        dataset_path = ir_home
+        for part in parts:
+            dataset_path = dataset_path / part
+        
+        # Delete existing dataset
+        if dataset_path.exists():
+            logger.info(f"Deleting corrupted dataset at: {dataset_path}")
+            shutil.rmtree(dataset_path)
+            logger.info("Deleted corrupted dataset files")
+        
+        # Re-download dataset
+        logger.info(f"Re-downloading dataset '{dataset_id}'...")
+        ds = ir_datasets.load(dataset_id)
+        
+        # Force complete download by counting all items
+        doc_count = 0
+        if hasattr(ds, 'docs_iter'):
+            logger.info("Iterating documents to force complete download...")
+            for doc in ds.docs_iter():
+                doc_count += 1
+                if doc_count % 5000 == 0:
+                    logger.info(f"Downloaded {doc_count:,} documents...")
+        
+        query_count = 0
+        if hasattr(ds, 'queries_iter'):
+            query_count = sum(1 for _ in ds.queries_iter())
+        
+        qrel_count = 0
+        if hasattr(ds, 'qrels_iter'):
+            qrel_count = sum(1 for _ in ds.qrels_iter())
+        
+        logger.info(
+            f"Dataset fixed successfully: "
+            f"docs={doc_count}, queries={query_count}, qrels={qrel_count}"
+        )
+        
+        return {
+            "status": "success",
+            "dataset_id": dataset_id,
+            "message": "Dataset fixed and re-downloaded successfully",
+            "counts": {
+                "documents": doc_count,
+                "queries": query_count,
+                "qrels": qrel_count
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to fix corrupted dataset: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── Index management ──────────────────────────────────────────────────────
 
 @app.get("/index/stats")
@@ -225,8 +298,12 @@ def build_tfidf(
 
 
 @app.get("/index/tfidf/status")
-def tfidf_status():
-    return get_tfidf_status()
+def tfidf_status(dataset_name: str = Query(None, description="Dataset name (optional)")):
+    # For backward compatibility, use default dataset if not provided
+    from common.dataset_context import get_active_dataset_name
+    if not dataset_name:
+        dataset_name = get_active_dataset_name()
+    return get_tfidf_status(dataset_name)
 
 
 @app.post("/index/embedding/build")
@@ -239,8 +316,12 @@ def build_embedding(
 
 
 @app.get("/index/embedding/status")
-def embedding_status():
-    return get_embedding_status()
+def embedding_status(dataset_name: str = Query(None, description="Dataset name (optional)")):
+    # For backward compatibility, use default dataset if not provided
+    from common.dataset_context import get_active_dataset_name
+    if not dataset_name:
+        dataset_name = get_active_dataset_name()
+    return get_embedding_status(dataset_name)
 
 
 @app.post("/index/bm25/build")
@@ -253,8 +334,12 @@ def build_bm25(
 
 
 @app.get("/index/bm25/status")
-def bm25_status():
-    return get_bm25_status()
+def bm25_status(dataset_name: str = Query(None, description="Dataset name (optional)")):
+    # For backward compatibility, use default dataset if not provided
+    from common.dataset_context import get_active_dataset_name
+    if not dataset_name:
+        dataset_name = get_active_dataset_name()
+    return get_bm25_status(dataset_name)
 
 
 # ── Inverted Index Analysis ───────────────────────────────────────────────
