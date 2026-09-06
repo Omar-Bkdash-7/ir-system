@@ -34,7 +34,11 @@ def build_embedding_index(force_rebuild: bool = False):
     logger.info("Building Embedding Index")
     logger.info("=" * 60)
     logger.info(f"Device: {indexer.device}")
-    logger.info(f"Model: {get_config('models.embedding.model_name', 'all-MiniLM-L6-v2')}")
+    
+    from common.model_loader import get_embedding_model_config
+    model_config = get_embedding_model_config()
+    logger.info(f"Model: {model_config['model_name']}")
+    logger.info(f"Local path: {model_config['local_path']}")
     logger.info("")
 
     try:

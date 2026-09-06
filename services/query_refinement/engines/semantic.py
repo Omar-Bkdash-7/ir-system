@@ -1,4 +1,3 @@
-from sentence_transformers import SentenceTransformer
 from nltk.corpus import stopwords
 import numpy as np
 import logging
@@ -6,6 +5,7 @@ from typing import List, Set
 from collections import Counter
 from common.device import get_torch_device
 from common.config import get_config
+from common.model_loader import load_embedding_model
 
 logger = logging.getLogger(__name__)
 
@@ -13,12 +13,19 @@ logger = logging.getLogger(__name__)
 class SemanticRefinementEngine:
     def __init__(self, model_name: str = None):
         device = get_torch_device()
-        if model_name is None:
-            model_name = get_config("models.embedding.model_name", "all-MiniLM-L6-v2")
-        self.model = SentenceTransformer(model_name, device=device, trust_remote_code=False)
+        
+        if model_name is not None:
+            logger.warning(
+                "Custom model_name parameter is deprecated. "
+                "Model is loaded from centralized config."
+            )
+        
+        logger.info("Loading embedding model using centralized loader")
+        self.model = load_embedding_model(device=device, cache=True)
+        
         self._embedding_cache = {}
         self._cache_max_size = 1000
-        logger.info(f"Loaded semantic model: {model_name} on {device}")
+        logger.info(f"Semantic refinement engine initialized on {device}")
     
     def compute_similarity(self, query: str, history: List[str]) -> float:
         if not query or not query.strip() or not history:

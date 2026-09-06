@@ -46,10 +46,12 @@ indices:
 
 models:
   embedding:
-    model_name: "all-MiniLM-L6-v2"
+    model_name: "sentence-transformers/all-MiniLM-L6-v2"
+    local_path: "data/models/all-MiniLM-L6-v2"
     dimension: 384
     batch_size: 64
     normalize: true
+    trust_remote_code: false
   bm25:
     default_k1: 1.5
     default_b: 0.75

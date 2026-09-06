@@ -1,9 +1,9 @@
 import numpy as np
 import json
 from pathlib import Path
-from sentence_transformers import SentenceTransformer
 from common.config import get_active_dataset_path, get_config
 from common.device import get_torch_device
+from common.model_loader import load_embedding_model
 from common.exceptions import IndexNotFoundError, InvalidQueryError, ModelLoadError
 import logging
 
@@ -45,16 +45,12 @@ class EmbeddingRetriever:
                 f"Mismatch: {len(self.doc_ids)} doc_ids but {self.embeddings.shape[0]} embeddings"
             )
 
-        model_name = get_config("models.embedding.model_name", "all-MiniLM-L6-v2")
-        logger.info(f"Loading embedding model: {model_name} on {self.device}")
+        logger.info(f"Loading embedding model using centralized loader")
 
         try:
-            self.model = SentenceTransformer(model_name, device=self.device, trust_remote_code=False)
-        except Exception as e:
-            raise ModelLoadError(
-                f"Failed to load the model '{model_name}'. "
-                f"Check internet connection or model cache. Original error: {str(e)}"
-            )
+            self.model = load_embedding_model(device=self.device, cache=True)
+        except ModelLoadError:
+            raise
 
         expected_dim = self.embeddings.shape[1]
         actual_dim = self.model.get_sentence_embedding_dimension()
@@ -137,12 +133,16 @@ class EmbeddingRetriever:
         if not self.loaded:
             self.load()
 
+        from common.model_loader import get_embedding_model_config
+        model_config = get_embedding_model_config()
+
         return {
             "total_docs": len(self.doc_ids),
             "embedding_dimension": self.embeddings.shape[1],
             "memory_mb": self.embeddings.nbytes / (1024**2),
             "device": self.device,
-            "model": get_config("models.embedding.model_name", "models/all-MiniLM-L6-v2")
+            "model_name": model_config["model_name"],
+            "local_path": model_config["local_path"]
         }
     
     def score_documents(self, query_text: str, doc_ids: list[str]) -> dict[str, float]:

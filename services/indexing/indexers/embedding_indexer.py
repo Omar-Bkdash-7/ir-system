@@ -2,9 +2,9 @@ import numpy as np
 import json
 import jsonlines
 from pathlib import Path
-from sentence_transformers import SentenceTransformer
 from common.config import get_config
 from common.device import get_torch_device
+from common.model_loader import load_embedding_model
 from common.exceptions import IndexNotFoundError, ModelLoadError
 import logging
 
@@ -32,16 +32,12 @@ class EmbeddingIndexer:
 
     def _load_model(self):
         if self.model is None:
-            model_name = get_config("models.embedding.model_name", "all-MiniLM-L6-v2")
-            logger.info(f"Loading embedding model: {model_name} on {self.device}")
+            logger.info(f"Loading embedding model using centralized loader on {self.device}")
 
             try:
-                self.model = SentenceTransformer(model_name, device=self.device, trust_remote_code=False)
-            except Exception as e:
-                raise ModelLoadError(
-                    f"Failed to load the model '{model_name}'. "
-                    f"Check internet connection or model cache. Original error: {str(e)}"
-                )
+                self.model = load_embedding_model(device=self.device, cache=True)
+            except ModelLoadError:
+                raise
 
             expected_dim = get_config("models.embedding.dimension", 384)
             actual_dim = self.model.get_sentence_embedding_dimension()

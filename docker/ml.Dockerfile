@@ -65,7 +65,14 @@ RUN python -m spacy download en_core_web_sm || echo "spaCy model download failed
 RUN python -c "import nltk; nltk.download('wordnet', download_dir='/app/.cache/nltk_data', quiet=True); nltk.download('stopwords', download_dir='/app/.cache/nltk_data', quiet=True); nltk.download('omw-1.4', download_dir='/app/.cache/nltk_data', quiet=True); nltk.download('punkt', download_dir='/app/.cache/nltk_data', quiet=True); nltk.download('punkt_tab', download_dir='/app/.cache/nltk_data', quiet=True); print('NLTK data downloaded successfully')"
 
 # Try to download SentenceTransformer model from HuggingFace, but continue if it fails (use local copy)
-RUN python -c "import os; os.environ['CUDA_VISIBLE_DEVICES'] = '-1'; from sentence_transformers import SentenceTransformer; model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu', trust_remote_code=False); print(f'Model cached successfully')" || echo "SentenceTransformer download failed, will use local model"
+# The model will be cached in SENTENCE_TRANSFORMERS_HOME for future use
+RUN python -c "\
+import os; \
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'; \
+from sentence_transformers import SentenceTransformer; \
+model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2', device='cpu', trust_remote_code=False); \
+print(f'Model downloaded and cached successfully: {model.get_sentence_embedding_dimension()}d'); \
+" || echo "SentenceTransformer download failed, will use local model from volume mount"
 
 # =============================================================================
 # Runtime Stage - Final optimized image
