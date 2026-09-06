@@ -40,17 +40,17 @@ def get_dataset_info() -> dict:
 
 def _get_fallback_metadata() -> dict:
     """
-    Generate fallback metadata from configuration values.
+    Generate fallback metadata when no datasets are validated.
     
     Returns:
-        Dictionary with approximate dataset info from config
+        Dictionary indicating no dataset is available
     """
     return {
-        "dataset_name": get_config("dataset.name", "beir/quora"),
-        "doc_count": get_config("dataset.expected_docs_count", 522931),
-        "query_count": 10000,
-        "qrels_count": 15675,
-        "validation_status": "pending",
-        "source": "config_fallback",
-        "note": "Run dataset validation to get accurate counts"
+        "dataset_name": None,
+        "doc_count": 0,
+        "query_count": 0,
+        "qrels_count": 0,
+        "validation_status": "not_validated",
+        "source": "fallback",
+        "note": "No datasets validated. Please validate a dataset first."
     }

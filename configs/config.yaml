@@ -1,11 +1,5 @@
 dataset:
-  # Default dataset for initial setup (can be changed via API)
-  name: "beir/quora"
-  ir_datasets_id: "beir/quora"
-  test_split: "beir/quora/test"
-  
   # Validation thresholds (applied to all datasets)
-  expected_docs_count: 522931  # Used for beir/quora validation only
   min_docs_threshold: 1000
   min_queries_threshold: 50
   min_qrels_threshold: 50

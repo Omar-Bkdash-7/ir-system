@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import FrozenSet
 
 # Default configuration values
-DEFAULT_DATASET_ID = "beir/quora"
 DEFAULT_BATCH_SIZE = 1000
 DEFAULT_VALIDATION_RETRIES = 3
 DEFAULT_RETRY_DELAY = 10

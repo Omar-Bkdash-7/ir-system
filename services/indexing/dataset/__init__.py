@@ -39,7 +39,6 @@ from services.indexing.dataset.db_operations import (
 )
 from services.indexing.dataset.path_resolver import DatasetPathResolver
 from services.indexing.dataset.constants import (
-    DEFAULT_DATASET_ID,
     DEFAULT_BATCH_SIZE,
     DEFAULT_VALIDATION_RETRIES,
     DEFAULT_RETRY_DELAY,
@@ -190,7 +189,6 @@ __all__ = [
     "database_cursor",
     
     # Constants
-    "DEFAULT_DATASET_ID",
     "DEFAULT_BATCH_SIZE",
     "DEFAULT_VALIDATION_RETRIES",
     "DEFAULT_RETRY_DELAY",

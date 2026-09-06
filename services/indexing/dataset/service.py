@@ -9,7 +9,6 @@ from typing import Dict, Any, Optional
 
 from common.config import get_config
 from services.indexing.dataset.constants import (
-    DEFAULT_DATASET_ID,
     DEFAULT_VALIDATION_RETRIES,
     DEFAULT_RETRY_DELAY
 )
