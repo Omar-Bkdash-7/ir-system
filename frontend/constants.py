@@ -60,6 +60,7 @@ SS_RETRIEVAL_DEEP_STATUS = "retrieval_deep_status_cache"
 SS_DATASET_INFO = "dataset_info_cache"
 SS_DATASET_VALIDATION_RESULT = "dataset_validation_result"
 SS_VALIDATION_IN_PROGRESS = "dataset_validation_in_progress"
+SS_SELECTED_DATASET = "selected_dataset"
 
 # --- Misc -----------------------------------------------------------------
 SS_SESSION_ID = "session_id"
@@ -115,4 +116,5 @@ DEFAULTS = {
     SS_DATASET_INFO: None,
     SS_DATASET_VALIDATION_RESULT: None,
     SS_VALIDATION_IN_PROGRESS: False,
+    SS_SELECTED_DATASET: None,
 }

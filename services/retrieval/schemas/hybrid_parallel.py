@@ -57,6 +57,10 @@ class HybridParallelRequest(BaseModel):
         le=1.0,
         description="BM25 b parameter"
     )
+    dataset: Optional[str] = Field(
+        default=None,
+        description="Dataset name (e.g., 'cranfield', 'vaswani')"
+    )
 
     @field_validator("models")
     @classmethod

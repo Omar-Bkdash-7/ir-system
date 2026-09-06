@@ -25,6 +25,7 @@ class BasicSearchRequest(BaseModel):
     bm25_b: Optional[float] = Field(default=0.75, ge=0.0, le=1.0)
     enable_refinement: bool = Field(default=False, description="Enable query refinement")
     query_history: List[str] = Field(default=[], description="Query history for refinement")
+    dataset: Optional[str] = Field(default=None, description="Dataset name (e.g., 'cranfield', 'vaswani')")
 
 
 class HybridSerialSearchRequest(BaseModel):
@@ -37,6 +38,7 @@ class HybridSerialSearchRequest(BaseModel):
     bm25_b: Optional[float] = Field(default=0.75, ge=0.0, le=1.0)
     enable_refinement: bool = Field(default=False, description="Enable query refinement")
     query_history: List[str] = Field(default=[], description="Query history for refinement")
+    dataset: Optional[str] = Field(default=None, description="Dataset name (e.g., 'cranfield', 'vaswani')")
 
 
 class HybridParallelSearchRequest(BaseModel):
@@ -51,6 +53,7 @@ class HybridParallelSearchRequest(BaseModel):
     bm25_b: Optional[float] = Field(default=0.75, ge=0.0, le=1.0)
     enable_refinement: bool = Field(default=False, description="Enable query refinement")
     query_history: List[str] = Field(default=[], description="Query history for refinement")
+    dataset: Optional[str] = Field(default=None, description="Dataset name (e.g., 'cranfield', 'vaswani')")
     
     @model_validator(mode='after')
     def validate_weights(self):
@@ -116,7 +119,8 @@ def search_endpoint(req: BasicSearchRequest):
             model=req.model,
             top_k=req.top_k,
             bm25_k1=req.bm25_k1,
-            bm25_b=req.bm25_b
+            bm25_b=req.bm25_b,
+            dataset=req.dataset
         )
         
         if refinement_info:
@@ -151,7 +155,8 @@ def search_hybrid_serial_endpoint(req: HybridSerialSearchRequest):
             first_stage_k=req.first_stage_k,
             final_top_k=req.final_top_k,
             bm25_k1=req.bm25_k1,
-            bm25_b=req.bm25_b
+            bm25_b=req.bm25_b,
+            dataset=req.dataset
         )
         
         if refinement_info:
@@ -188,7 +193,8 @@ def search_hybrid_parallel_endpoint(req: HybridParallelSearchRequest):
             candidates_per_model=req.candidates_per_model,
             rrf_k=req.rrf_k,
             bm25_k1=req.bm25_k1,
-            bm25_b=req.bm25_b
+            bm25_b=req.bm25_b,
+            dataset=req.dataset
         )
         
         if refinement_info:

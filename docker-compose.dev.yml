@@ -205,6 +205,12 @@ services:
       - ./configs:/app/configs
       - ./.streamlit:/app/.streamlit
       - ./logs:/app/logs
+      - ./data/datasets:/app/data/datasets
+      - ./data/indices:/app/data/indices
+      - ./data/cache:/app/data/cache
+      - ./data/models:/app/data/models
+      - ./data/processed:/app/data/processed
+      - ./data/evaluation:/app/data/evaluation
       - ./data/metadata:/app/data/metadata
     environment:
       ENVIRONMENT: development

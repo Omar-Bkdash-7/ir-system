@@ -40,7 +40,9 @@ from constants import (
     SS_SEARCH_COUNT,
     SS_SEARCH_RESULTS,
     SS_SESSION_ID,
+    SS_SELECTED_DATASET,
 )
+from utils.dataset_utils import get_available_datasets, get_dataset_display_name
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -69,6 +71,7 @@ def _run_search(query: str, mode: str, mode_cfg: dict) -> None:
     history = st.session_state.get(SS_QUERY_HISTORY, [])
     refinement_enabled = st.session_state.get(SS_REFINEMENT_ENABLED, False)
     session_id = st.session_state.get(SS_SESSION_ID, "default")
+    selected_dataset = st.session_state.get(SS_SELECTED_DATASET)
 
     t0 = time.perf_counter()
 
@@ -96,6 +99,7 @@ def _run_search(query: str, mode: str, mode_cfg: dict) -> None:
                     bm25_b=mcfg.get("b", config.DEFAULT_BM25_B),
                     enable_refinement=refinement_enabled,
                     query_history=history[-3:],
+                    dataset=selected_dataset,
                 )
                 if resp.ok and isinstance(resp.data, dict):
                     docs = resp.data.get("results", [])
@@ -128,6 +132,7 @@ def _run_search(query: str, mode: str, mode_cfg: dict) -> None:
                 bm25_b=mode_cfg.get("b", config.DEFAULT_BM25_B),
                 enable_refinement=refinement_enabled,
                 query_history=history[-3:],
+                dataset=selected_dataset,
             )
             elapsed = (time.perf_counter() - t0) * 1000
             if resp.ok and isinstance(resp.data, dict):
@@ -163,6 +168,7 @@ def _run_search(query: str, mode: str, mode_cfg: dict) -> None:
                 bm25_b=mode_cfg.get("b", config.DEFAULT_BM25_B),
                 enable_refinement=refinement_enabled,
                 query_history=history[-3:],
+                dataset=selected_dataset,
             )
             elapsed = (time.perf_counter() - t0) * 1000
             if resp.ok and isinstance(resp.data, dict):
@@ -408,6 +414,44 @@ def _tab_hybrid_parallel() -> dict:
 
 def render() -> None:
     st.markdown("## 🔍 Search")
+
+    # ── Dataset selector ───────────────────────────────────────────────────
+    available_datasets = get_available_datasets()
+    
+    # Initialize selected dataset if not set
+    if (not st.session_state.get(SS_SELECTED_DATASET) 
+        and available_datasets):
+        st.session_state[SS_SELECTED_DATASET] = available_datasets[0]
+    
+    dataset_col, _ = st.columns([2, 3])
+    with dataset_col:
+        if available_datasets:
+            selected_dataset = st.selectbox(
+                "📚 Select Dataset",
+                options=available_datasets,
+                format_func=get_dataset_display_name,
+                index=available_datasets.index(st.session_state.get(SS_SELECTED_DATASET))
+                if st.session_state.get(SS_SELECTED_DATASET) in available_datasets
+                else 0,
+                key="dataset_selector",
+                help="Only datasets with all indices (TF-IDF, BM25, Embedding) built are shown",
+            )
+            
+            if st.session_state.get(SS_SELECTED_DATASET) != selected_dataset:
+                st.session_state[SS_SELECTED_DATASET] = selected_dataset
+                st.session_state[SS_SEARCH_RESULTS] = None
+                st.rerun()
+        else:
+            st.selectbox(
+                "📚 Select Dataset",
+                options=[],
+                placeholder="Select a ready dataset...",
+                key="dataset_selector_empty",
+                help="No datasets available. Download a dataset and build all indices (TF-IDF, BM25, Embedding) to enable search.",
+                disabled=True,
+            )
+    
+    st.divider()
 
     # ── Top bar ────────────────────────────────────────────────────────────
     qcol, rcol, ccol = st.columns([5, 1, 1])

@@ -87,22 +87,29 @@ def search_basic(
     bm25_b: float = 0.75,
     enable_refinement: bool = False,
     query_history: Optional[List[str]] = None,
+    dataset: Optional[str] = None,
 ) -> APIResponse:
     """
     POST /search
     model: "tfidf" | "embedding" | "bm25"
+    dataset: dataset name (e.g., 'cranfield', 'vaswani')
     """
+    payload = {
+        "query": query,
+        "model": model,
+        "top_k": top_k,
+        "bm25_k1": bm25_k1,
+        "bm25_b": bm25_b,
+        "enable_refinement": enable_refinement,
+        "query_history": query_history or [],
+    }
+    
+    if dataset:
+        payload["dataset"] = dataset
+    
     return post(
         f"{config.API_GATEWAY_URL}/search",
-        json_body={
-            "query": query,
-            "model": model,
-            "top_k": top_k,
-            "bm25_k1": bm25_k1,
-            "bm25_b": bm25_b,
-            "enable_refinement": enable_refinement,
-            "query_history": query_history or [],
-        },
+        json_body=payload,
     )
 
 
@@ -120,21 +127,27 @@ def search_hybrid_serial(
     bm25_b: float = 0.75,
     enable_refinement: bool = False,
     query_history: Optional[List[str]] = None,
+    dataset: Optional[str] = None,
 ) -> APIResponse:
     """POST /search/hybrid/serial"""
+    payload = {
+        "query": query,
+        "first_model": first_model,
+        "second_model": second_model,
+        "first_stage_k": first_stage_k,
+        "final_top_k": final_top_k,
+        "bm25_k1": bm25_k1,
+        "bm25_b": bm25_b,
+        "enable_refinement": enable_refinement,
+        "query_history": query_history or [],
+    }
+    
+    if dataset:
+        payload["dataset"] = dataset
+    
     return post(
         f"{config.API_GATEWAY_URL}/search/hybrid/serial",
-        json_body={
-            "query": query,
-            "first_model": first_model,
-            "second_model": second_model,
-            "first_stage_k": first_stage_k,
-            "final_top_k": final_top_k,
-            "bm25_k1": bm25_k1,
-            "bm25_b": bm25_b,
-            "enable_refinement": enable_refinement,
-            "query_history": query_history or [],
-        },
+        json_body=payload,
         timeout=60,
     )
 
@@ -155,6 +168,7 @@ def search_hybrid_parallel(
     bm25_b: float = 0.75,
     enable_refinement: bool = False,
     query_history: Optional[List[str]] = None,
+    dataset: Optional[str] = None,
 ) -> APIResponse:
     """POST /search/hybrid/parallel"""
     payload: dict = {
@@ -171,6 +185,10 @@ def search_hybrid_parallel(
     }
     if fusion_method == "weighted" and model_weights:
         payload["model_weights"] = model_weights
+    
+    if dataset:
+        payload["dataset"] = dataset
+    
     return post(
         f"{config.API_GATEWAY_URL}/search/hybrid/parallel",
         json_body=payload,

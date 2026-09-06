@@ -14,9 +14,10 @@ def search_basic(
     model: str = "tfidf",
     top_k: int = 50,
     bm25_k1: float = 1.5,
-    bm25_b: float = 0.75
+    bm25_b: float = 0.75,
+    dataset: str = None
 ) -> dict:
-    logger.info(f"Basic search: model={model}, top_k={top_k}")
+    logger.info(f"Basic search: model={model}, top_k={top_k}, dataset={dataset}")
     logger.info(f"Query: '{query[:50]}...'")
     
     try:
@@ -41,17 +42,22 @@ def search_basic(
             
             logger.info(f"Query tokens: {len(query_tokens)} tokens")
             
+            retrieval_payload = {
+                "query_tokens": query_tokens,
+                "query_text": query,
+                "model": model,
+                "top_k": top_k,
+                "include_text": True,
+                "bm25_k1": bm25_k1,
+                "bm25_b": bm25_b
+            }
+            
+            if dataset:
+                retrieval_payload["dataset"] = dataset
+            
             retrieval_resp = client.post(
                 f"{RETRIEVAL_SERVICE_URL}/retrieve",
-                json={
-                    "query_tokens": query_tokens,
-                    "query_text": query,
-                    "model": model,
-                    "top_k": top_k,
-                    "include_text": True,
-                    "bm25_k1": bm25_k1,
-                    "bm25_b": bm25_b
-                }
+                json=retrieval_payload
             )
             retrieval_resp.raise_for_status()
             retrieval_data = retrieval_resp.json()
@@ -75,9 +81,10 @@ def search_hybrid_serial(
     first_stage_k: int = 1000,
     final_top_k: int = 50,
     bm25_k1: float = 1.5,
-    bm25_b: float = 0.75
+    bm25_b: float = 0.75,
+    dataset: str = None
 ) -> dict:
-    logger.info(f"Hybrid serial search: {first_model} -> {second_model}")
+    logger.info(f"Hybrid serial search: {first_model} -> {second_model}, dataset={dataset}")
     logger.info(f"Query: '{query[:50]}...'")
     
     try:
@@ -102,19 +109,24 @@ def search_hybrid_serial(
             
             logger.info(f"Query tokens: {len(query_tokens)} tokens")
             
+            retrieval_payload = {
+                "query_tokens": query_tokens,
+                "query_text": query,
+                "first_model": first_model,
+                "second_model": second_model,
+                "first_stage_k": first_stage_k,
+                "final_top_k": final_top_k,
+                "include_text": True,
+                "bm25_k1": bm25_k1,
+                "bm25_b": bm25_b
+            }
+            
+            if dataset:
+                retrieval_payload["dataset"] = dataset
+            
             retrieval_resp = client.post(
                 f"{RETRIEVAL_SERVICE_URL}/retrieve/hybrid/serial",
-                json={
-                    "query_tokens": query_tokens,
-                    "query_text": query,
-                    "first_model": first_model,
-                    "second_model": second_model,
-                    "first_stage_k": first_stage_k,
-                    "final_top_k": final_top_k,
-                    "include_text": True,
-                    "bm25_k1": bm25_k1,
-                    "bm25_b": bm25_b
-                }
+                json=retrieval_payload
             )
             retrieval_resp.raise_for_status()
             retrieval_data = retrieval_resp.json()
@@ -140,9 +152,10 @@ def search_hybrid_parallel(
     candidates_per_model: int = 1000,
     rrf_k: int = 60,
     bm25_k1: float = 1.5,
-    bm25_b: float = 0.75
+    bm25_b: float = 0.75,
+    dataset: str = None
 ) -> dict:
-    logger.info(f"Hybrid parallel search: models={models}, fusion={fusion_method}")
+    logger.info(f"Hybrid parallel search: models={models}, fusion={fusion_method}, dataset={dataset}")
     logger.info(f"Query: '{query[:50]}...'")
     
     try:
@@ -167,21 +180,26 @@ def search_hybrid_parallel(
             
             logger.info(f"Query tokens: {len(query_tokens)} tokens")
             
+            retrieval_payload = {
+                "query_tokens": query_tokens,
+                "query_text": query,
+                "models": models,
+                "fusion_method": fusion_method,
+                "model_weights": model_weights,
+                "top_k": top_k,
+                "candidates_per_model": candidates_per_model,
+                "rrf_k": rrf_k,
+                "include_text": True,
+                "bm25_k1": bm25_k1,
+                "bm25_b": bm25_b
+            }
+            
+            if dataset:
+                retrieval_payload["dataset"] = dataset
+            
             retrieval_resp = client.post(
                 f"{RETRIEVAL_SERVICE_URL}/retrieve/hybrid/parallel",
-                json={
-                    "query_tokens": query_tokens,
-                    "query_text": query,
-                    "models": models,
-                    "fusion_method": fusion_method,
-                    "model_weights": model_weights,
-                    "top_k": top_k,
-                    "candidates_per_model": candidates_per_model,
-                    "rrf_k": rrf_k,
-                    "include_text": True,
-                    "bm25_k1": bm25_k1,
-                    "bm25_b": bm25_b
-                }
+                json=retrieval_payload
             )
             retrieval_resp.raise_for_status()
             retrieval_data = retrieval_resp.json()
