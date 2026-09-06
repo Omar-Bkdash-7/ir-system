@@ -135,16 +135,3 @@ def list_datasets_metadata() -> APIResponse:
     """List all datasets with their metadata."""
     return get(f"{config.INDEXING_URL}/datasets/metadata", max_retries=1)
 
-
-def validate_dataset(dataset_id: str) -> APIResponse:
-    """Validate and store metadata for a dataset."""
-    return post(
-        f"{config.INDEXING_URL}/datasets/active",
-        params={"dataset_id": dataset_id},
-        max_retries=1,
-    )
-
-
-def list_datasets_metadata() -> APIResponse:
-    """List all datasets with their metadata."""
-    return get(f"{config.INDEXING_URL}/datasets/metadata", max_retries=1)
