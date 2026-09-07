@@ -9,17 +9,19 @@ import pandas as pd
 import api.indexing as indexing_api
 
 
-def _render_index_overview() -> None:
+def _render_index_overview(cached_stats: dict | None = None) -> None:
     """Render overall inverted index statistics."""
     st.markdown("### 📊 Index Overview")
     
-    resp = indexing_api.get_inverted_index_stats()
-    
-    if not resp.ok:
-        st.error(f"Failed to load index stats: {resp.error}")
-        return
-    
-    data = resp.data
+    # Use provided cached stats or fetch if not provided
+    if cached_stats is None:
+        resp = indexing_api.get_inverted_index_stats()
+        if not resp.ok:
+            st.error(f"Failed to load index stats: {resp.error}")
+            return
+        data = resp.data
+    else:
+        data = cached_stats
     
     if not isinstance(data, dict):
         st.error("Invalid response format")
@@ -61,16 +63,18 @@ def _render_index_overview() -> None:
         cols[4].metric("Max", doc_stats.get("max", 0))
 
 
-def _render_top_terms() -> None:
+def _render_top_terms(cached_stats: dict | None = None) -> None:
     """Render top terms by document frequency."""
     st.markdown("### 🔝 Top Terms by Document Frequency")
     
-    resp = indexing_api.get_inverted_index_stats()
-    
-    if not resp.ok or not isinstance(resp.data, dict):
-        return
-    
-    data = resp.data
+    # Use provided cached stats or fetch if not provided
+    if cached_stats is None:
+        resp = indexing_api.get_inverted_index_stats()
+        if not resp.ok or not isinstance(resp.data, dict):
+            return
+        data = resp.data
+    else:
+        data = cached_stats
     
     if data.get("status") != "success":
         return
@@ -96,16 +100,18 @@ def _render_top_terms() -> None:
     )
 
 
-def _render_longest_posting_lists() -> None:
+def _render_longest_posting_lists(cached_stats: dict | None = None) -> None:
     """Render terms with longest posting lists."""
     st.markdown("### 📋 Longest Posting Lists")
     
-    resp = indexing_api.get_inverted_index_stats()
-    
-    if not resp.ok or not isinstance(resp.data, dict):
-        return
-    
-    data = resp.data
+    # Use provided cached stats or fetch if not provided
+    if cached_stats is None:
+        resp = indexing_api.get_inverted_index_stats()
+        if not resp.ok or not isinstance(resp.data, dict):
+            return
+        data = resp.data
+    else:
+        data = cached_stats
     
     if data.get("status") != "success":
         return
@@ -290,17 +296,21 @@ def render() -> None:
     
     st.divider()
     
-    _render_index_overview()
+    # Fetch stats once and reuse for all sections
+    resp = indexing_api.get_inverted_index_stats()
+    cached_stats = resp.data if resp.ok and isinstance(resp.data, dict) else None
+    
+    _render_index_overview(cached_stats)
     
     st.divider()
     
     col1, col2 = st.columns(2)
     
     with col1:
-        _render_top_terms()
+        _render_top_terms(cached_stats)
     
     with col2:
-        _render_longest_posting_lists()
+        _render_longest_posting_lists(cached_stats)
     
     st.divider()
     

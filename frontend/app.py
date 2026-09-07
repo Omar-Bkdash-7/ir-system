@@ -23,14 +23,6 @@ st.set_page_config(
 import config                                        # noqa: E402
 from constants import DEFAULTS, SS_SELECTED_PAGE    # noqa: E402
 from components.sidebar import render_sidebar       # noqa: E402
-import app_pages.search as page_search                  # noqa: E402
-import app_pages.dataset as page_dataset               # noqa: E402
-import app_pages.indexing as page_indexing             # noqa: E402
-import app_pages.inverted_index as page_inverted       # noqa: E402
-import app_pages.preprocessing as page_preprocessing   # noqa: E402
-import app_pages.evaluation as page_evaluation         # noqa: E402
-import app_pages.query_refinement as page_qr           # noqa: E402
-import app_pages.system_status as page_sysmon          # noqa: E402
 
 
 # ── CSS ──────────────────────────────────────────────────────────────────
@@ -111,28 +103,39 @@ def _init_session_state() -> None:
 _init_session_state()
 
 
-# ── Page map ──────────────────────────────────────────────────────────────
-_PAGE_MAP = {
-    "search":           page_search,
-    "dataset":          page_dataset,
-    "indexing":         page_indexing,
-    "inverted_index":   page_inverted,
-    "preprocessing":    page_preprocessing,
-    "evaluation":       page_evaluation,
-    "query_refinement": page_qr,
-    "system_status":    page_sysmon,
-}
+# ── Page map with lazy loading ────────────────────────────────────────────
+def _get_page_module(page_key: str):
+    """Lazy load page modules only when needed."""
+    if page_key == "search":
+        import app_pages.search as page
+    elif page_key == "dataset":
+        import app_pages.dataset as page
+    elif page_key == "indexing":
+        import app_pages.indexing as page
+    elif page_key == "inverted_index":
+        import app_pages.inverted_index as page
+    elif page_key == "preprocessing":
+        import app_pages.preprocessing as page
+    elif page_key == "evaluation":
+        import app_pages.evaluation as page
+    elif page_key == "query_refinement":
+        import app_pages.query_refinement as page
+    elif page_key == "system_status":
+        import app_pages.system_status as page
+    else:
+        return None
+    return page
 
 
 # ── Render ────────────────────────────────────────────────────────────────
 # 1. Draw the sidebar (sets session_state[SS_SELECTED_PAGE] on click)
 render_sidebar()
 
-# 2. Read the active page key — never use the return value of render_sidebar()
+# 2. Read the active page key
 active_page = st.session_state.get(SS_SELECTED_PAGE, "search")
 
-# 3. Render the active page
-module = _PAGE_MAP.get(active_page)
+# 3. Lazy load and render the active page
+module = _get_page_module(active_page)
 if module is not None:
     module.render()
 else:

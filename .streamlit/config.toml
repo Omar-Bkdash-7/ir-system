@@ -15,6 +15,10 @@ fileWatcherType = "poll"
 runOnSave = true
 allowRunOnSave = true
 
+[runner]
+fastReruns = true
+enforceSerializableSessionState = false
+
 [browser]
 gatherUsageStats = false
 serverAddress = "localhost"

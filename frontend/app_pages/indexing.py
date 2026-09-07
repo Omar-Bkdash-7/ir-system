@@ -14,7 +14,7 @@ from constants import SS_BUILD_LOG, SS_FORCE_REBUILD
 
 def _get_downloaded_datasets() -> list[str]:
     """
-    Get list of downloaded datasets from indexing service.
+    Get list of downloaded datasets from indexing service (cached).
     Returns list of dataset IDs like ['beir/quora', 'cranfield', etc.]
     """
     resp = indexing_api.list_local_datasets()
@@ -28,6 +28,32 @@ def _get_downloaded_datasets() -> list[str]:
     dataset_ids = [ds.get("dataset_id") for ds in datasets_info if ds.get("dataset_id")]
     
     return sorted(dataset_ids)
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _get_datasets_in_db() -> list[str]:
+    """Get list of datasets currently in database (cached)."""
+    db_check_resp = indexing_api.get_db_info()
+    if db_check_resp.ok and isinstance(db_check_resp.data, dict):
+        datasets_in_db_list = db_check_resp.data.get("datasets", [])
+        return [ds.get("dataset_id") for ds in datasets_in_db_list if ds.get("dataset_id")]
+    return []
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _get_dataset_metadata(dataset_id: str) -> dict | None:
+    """Get metadata for a specific dataset (cached)."""
+    metadata_resp = indexing_api.list_datasets_metadata()
+    
+    if metadata_resp.ok and isinstance(metadata_resp.data, dict):
+        all_datasets = metadata_resp.data.get("datasets", [])
+        
+        # Find metadata for the requested dataset
+        return next(
+            (ds for ds in all_datasets if ds.get("dataset_name") == dataset_id),
+            None
+        )
+    return None
 
 
 def _render_preprocessing_config() -> dict | None:
@@ -357,49 +383,35 @@ def render() -> None:
         help="Choose a dataset - will automatically validate and switch"
     )
     
-    # Check if dataset is uploaded to database
+    # Check if dataset is uploaded to database (use cached function)
     dataset_in_db = False
-    datasets_in_db = []
     
     if selected_dataset:
-        db_check_resp = indexing_api.get_db_info()
-        if db_check_resp.ok and isinstance(db_check_resp.data, dict):
-            datasets_in_db = db_check_resp.data.get("datasets", [])
-            # Check if selected_dataset matches any dataset_id in the list
-            dataset_in_db = any(ds.get("dataset_id") == selected_dataset for ds in datasets_in_db)
+        datasets_in_db = _get_datasets_in_db()
+        dataset_in_db = selected_dataset in datasets_in_db
     
-    # Show dataset info only if a dataset is selected
+    # Show dataset info only if a dataset is selected (use cached metadata)
     if selected_dataset:
-        # Get metadata for selected dataset from the list
-        metadata_resp = indexing_api.list_datasets_metadata()
+        selected_metadata = _get_dataset_metadata(selected_dataset)
         
-        if metadata_resp.ok and isinstance(metadata_resp.data, dict):
-            all_datasets = metadata_resp.data.get("datasets", [])
-            
-            # Find metadata for selected dataset
-            selected_metadata = next(
-                (ds for ds in all_datasets if ds.get("dataset_name") == selected_dataset),
-                None
-            )
-            
-            if selected_metadata:
-                with st.container(border=True):
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    with col1:
-                        st.metric("Dataset", selected_dataset)
-                    
-                    with col2:
-                        doc_count = selected_metadata.get('doc_count', info.get('doc_count', 0) if info else 0)
-                        st.metric("Docs", f"{doc_count:,}")
-                    
-                    with col3:
-                        query_count = selected_metadata.get('query_count', info.get('query_count', 0) if info else 0)
-                        st.metric("Queries", f"{query_count:,}")
-                    
-                    with col4:
-                        qrel_count = selected_metadata.get('qrel_count', selected_metadata.get('qrels_count', info.get('qrel_count', info.get('qrels_count', 0)) if info else 0))
-                        st.metric("Qrels", f"{qrel_count:,}")
+        if selected_metadata:
+            with st.container(border=True):
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("Dataset", selected_dataset)
+                
+                with col2:
+                    doc_count = selected_metadata.get('doc_count', info.get('doc_count', 0) if info else 0)
+                    st.metric("Docs", f"{doc_count:,}")
+                
+                with col3:
+                    query_count = selected_metadata.get('query_count', info.get('query_count', 0) if info else 0)
+                    st.metric("Queries", f"{query_count:,}")
+                
+                with col4:
+                    qrel_count = selected_metadata.get('qrel_count', selected_metadata.get('qrels_count', info.get('qrel_count', info.get('qrels_count', 0)) if info else 0))
+                    st.metric("Qrels", f"{qrel_count:,}")
         
         # Warning message if dataset is not in database
         if not dataset_in_db:
@@ -453,6 +465,8 @@ def render() -> None:
     with hdr_c3:
         if st.button("Refresh Status", use_container_width=True, key="idx_refresh"):
             indexing_api.clear_index_status_cache()
+            _get_datasets_in_db.clear()
+            _get_dataset_metadata.clear()
             st.rerun()
 
     st.divider()
@@ -482,10 +496,13 @@ def render() -> None:
 
     st.divider()
 
-    stats_resp = indexing_api.all_stats()
-    if stats_resp.ok and isinstance(stats_resp.data, dict):
-        with st.expander("Aggregate index stats", expanded=False):
+    # Only fetch stats when expander is actually opened
+    if st.checkbox("Show aggregate index stats", value=False, key="idx_show_stats"):
+        stats_resp = indexing_api.all_stats()
+        if stats_resp.ok and isinstance(stats_resp.data, dict):
             st.json(stats_resp.data)
+        else:
+            st.warning(f"Could not load stats: {stats_resp.error}")
 
     log = st.session_state.get(SS_BUILD_LOG, [])
     if log:

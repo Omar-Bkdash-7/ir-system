@@ -193,9 +193,9 @@ BUILD_TIME_ESTIMATES = {
 # ---------------------------------------------------------------------------
 # Caching TTLs (seconds) -- see performance considerations in the spec
 # ---------------------------------------------------------------------------
-CACHE_TTL_HEALTH = 30
-CACHE_TTL_INDEX_STATUS = 60
-CACHE_TTL_DATASET_INFO = 300
+CACHE_TTL_HEALTH = 60           # Increased from 30 to reduce API calls
+CACHE_TTL_INDEX_STATUS = 120    # Increased from 60 to reduce API calls
+CACHE_TTL_DATASET_INFO = 600    # Increased from 300 to reduce API calls
 
 # ---------------------------------------------------------------------------
 # Misc

@@ -26,10 +26,15 @@ def build_index(index_type: str, force_rebuild: bool = False, preprocessing_conf
     )
 
 
+@st.cache_data(ttl=config.CACHE_TTL_INDEX_STATUS, show_spinner=False)
 def index_status(index_type: str) -> APIResponse:
     if index_type not in INDEX_TYPES:
         raise ValueError(f"Unknown index type: {index_type!r}")
     return get(f"{config.INDEXING_URL}/index/{index_type}/status")
+
+
+def clear_single_index_status_cache() -> None:
+    index_status.clear()
 
 
 def all_stats() -> APIResponse:
@@ -45,8 +50,13 @@ def validate_dataset(dataset_id: str) -> APIResponse:
     )
 
 
+@st.cache_data(ttl=config.CACHE_TTL_INDEX_STATUS, show_spinner=False)
 def list_local_datasets() -> APIResponse:
     return get(f"{config.INDEXING_URL}/datasets/local", max_retries=1)
+
+
+def clear_local_datasets_cache() -> None:
+    list_local_datasets.clear()
 
 
 def delete_local_dataset(dataset_id: str) -> APIResponse:
@@ -77,8 +87,13 @@ def delete_dataset_from_db(dataset_id: str) -> APIResponse:
     )
 
 
+@st.cache_data(ttl=config.CACHE_TTL_INDEX_STATUS, show_spinner=False)
 def get_db_info() -> APIResponse:
     return get(f"{config.INDEXING_URL}/datasets/db-info", max_retries=1)
+
+
+def clear_db_info_cache() -> None:
+    get_db_info.clear()
 
 
 def health() -> APIResponse:
@@ -98,14 +113,24 @@ def get_all_index_status_cached() -> dict:
 
 
 def clear_index_status_cache() -> None:
+    """Clear all index-related caches."""
     get_all_index_status_cached.clear()
+    index_status.clear()
+    list_local_datasets.clear()
+    get_db_info.clear()
+    list_datasets_metadata.clear()
 
 
 # ── Inverted Index Analysis ───────────────────────────────────────────────
 
+@st.cache_data(ttl=config.CACHE_TTL_INDEX_STATUS, show_spinner=False)
 def get_inverted_index_stats() -> APIResponse:
-    """Get comprehensive inverted index statistics."""
+    """Get comprehensive inverted index statistics (cached)."""
     return get(f"{config.INDEXING_URL}/index/inverted/stats")
+
+
+def clear_inverted_index_stats_cache() -> None:
+    get_inverted_index_stats.clear()
 
 
 def get_term_info(term: str) -> APIResponse:
@@ -131,9 +156,14 @@ def get_vocabulary_sample(sample_size: int = 100) -> APIResponse:
 
 # ── Dataset Management (Multi-Dataset Support) ────────────────────────────
 
+@st.cache_data(ttl=config.CACHE_TTL_DATASET_INFO, show_spinner=False)
 def list_datasets_metadata() -> APIResponse:
     """List all datasets with their metadata."""
     return get(f"{config.INDEXING_URL}/datasets/metadata", max_retries=1)
+
+
+def clear_datasets_metadata_cache() -> None:
+    list_datasets_metadata.clear()
 
 
 def fix_corrupted_dataset(dataset_id: str) -> APIResponse:
