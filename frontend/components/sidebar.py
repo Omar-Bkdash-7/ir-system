@@ -64,53 +64,6 @@ def render_sidebar() -> None:
 
         st.divider()
 
-        # ── Dataset Info ───────────────────────────────────────────────
-        st.markdown("**Dataset**")
-        
-        # Use cached data without blocking - show cached or fallback
-        try:
-            info = gateway.get_dataset_info_cached()
-            if info and isinstance(info, dict):
-                name = info.get("dataset_name", config.DATASET_NAME)
-                doc_count = info.get("doc_count", config.DATASET_DOC_COUNT)
-                st.success(f"✅ {name}")
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.metric("Docs", f"{doc_count:,}")
-                with c2:
-                    q = info.get("query_count", config.DATASET_QUERY_COUNT_APPROX)
-                    st.metric("Queries", f"{q:,}")
-            else:
-                st.info("Loading dataset info...")
-        except Exception:
-            st.info("Loading dataset info...")
-
-        st.divider()
-
-        # ── Index Status ───────────────────────────────────────────────
-        st.markdown("**Indices**")
-        
-        # Use cached data without blocking
-        try:
-            idx_summary = indexing_api.get_all_index_status_cached()
-            _INDEX_ICONS = {"tfidf": "📊 TF-IDF", "bm25": "📈 BM25", "embedding": "🧠 Embedding"}
-            for itype in ("tfidf", "bm25", "embedding"):
-                data = idx_summary.get(itype, {}) if isinstance(idx_summary, dict) else {}
-                status = str(data.get("status", "unknown")).lower() if isinstance(data, dict) else "unknown"
-                ok = status in ("ready", "built", "complete", "healthy")
-                status_icon = "🟢" if ok else "🔴"
-                doc_count = data.get("doc_count") or data.get("document_count") or data.get("total_docs")
-                count_str = f" · {doc_count:,}" if isinstance(doc_count, int) else ""
-                st.caption(f"{status_icon} {_INDEX_ICONS[itype]}{count_str}")
-        except Exception:
-            st.info("Loading indices...")
-
-        if st.button("🔄 Refresh indices", key="sb_refresh_idx", use_container_width=True):
-            indexing_api.clear_index_status_cache()
-            st.rerun()
-
-        st.divider()
-
         # ── Service Health ─────────────────────────────────────────
         st.markdown("**Services**")
         

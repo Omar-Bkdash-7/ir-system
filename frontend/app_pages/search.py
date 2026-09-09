@@ -46,6 +46,28 @@ from utils.dataset_utils import get_available_datasets, get_dataset_display_name
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Dataset metadata helper
+# ─────────────────────────────────────────────────────────────────────────────
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _get_dataset_metadata(dataset_id: str) -> dict | None:
+    """Get metadata for a specific dataset (cached)."""
+    import api.indexing as indexing_api
+    
+    metadata_resp = indexing_api.list_datasets_metadata()
+    
+    if metadata_resp.ok and isinstance(metadata_resp.data, dict):
+        all_datasets = metadata_resp.data.get("datasets", [])
+        
+        # Find metadata for the requested dataset
+        return next(
+            (ds for ds in all_datasets if ds.get("dataset_name") == dataset_id),
+            None
+        )
+    return None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Internal helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -200,6 +222,8 @@ def _tab_individual() -> dict:
     """Render Individual Models tab, return mode_cfg dict."""
     st.markdown("##### Select & configure models")
     mode_cfg: dict = {}
+    
+    # Horizontal layout for model cards
     cols = st.columns(3)
 
     for col, model in zip(cols, config.RETRIEVAL_MODELS):
@@ -418,43 +442,67 @@ def render() -> None:
     # ── Dataset selector ───────────────────────────────────────────────────
     available_datasets = get_available_datasets()
     
-    # Initialize selected dataset if not set
-    if (not st.session_state.get(SS_SELECTED_DATASET) 
-        and available_datasets):
-        st.session_state[SS_SELECTED_DATASET] = available_datasets[0]
+    st.caption("Choose a dataset with all indices built")
     
-    dataset_col, _ = st.columns([2, 3])
-    with dataset_col:
-        if available_datasets:
-            selected_dataset = st.selectbox(
-                "📚 Select Dataset",
-                options=available_datasets,
-                format_func=get_dataset_display_name,
-                index=available_datasets.index(st.session_state.get(SS_SELECTED_DATASET))
-                if st.session_state.get(SS_SELECTED_DATASET) in available_datasets
-                else 0,
-                key="dataset_selector",
-                help="Only datasets with all indices (TF-IDF, BM25, Embedding) built are shown",
-            )
-            
-            if st.session_state.get(SS_SELECTED_DATASET) != selected_dataset:
-                st.session_state[SS_SELECTED_DATASET] = selected_dataset
-                st.session_state[SS_SEARCH_RESULTS] = None
-                st.rerun()
-        else:
-            st.selectbox(
-                "📚 Select Dataset",
-                options=[],
-                placeholder="Select a ready dataset...",
-                key="dataset_selector_empty",
-                help="No datasets available. Download a dataset and build all indices (TF-IDF, BM25, Embedding) to enable search.",
-                disabled=True,
-            )
+    if available_datasets:
+        # Find index if dataset is selected and valid
+        current_dataset = st.session_state.get(SS_SELECTED_DATASET)
+        default_index = None
+        if current_dataset and current_dataset in available_datasets:
+            default_index = available_datasets.index(current_dataset)
+        
+        selected_dataset = st.selectbox(
+            "Dataset",
+            options=available_datasets,
+            format_func=get_dataset_display_name,
+            index=default_index,
+            key="dataset_selector",
+            help="Only datasets with all indices (TF-IDF, BM25, Embedding) built are shown",
+            label_visibility="collapsed",
+        )
+        
+        if st.session_state.get(SS_SELECTED_DATASET) != selected_dataset:
+            st.session_state[SS_SELECTED_DATASET] = selected_dataset
+            st.session_state[SS_SEARCH_RESULTS] = None
+            st.rerun()
+    else:
+        st.selectbox(
+            "Dataset",
+            options=[],
+            placeholder="No datasets with all indices available",
+            key="dataset_selector_empty",
+            help="No datasets available. Download a dataset and build all indices (TF-IDF, BM25, Embedding) to enable search.",
+            disabled=True,
+            label_visibility="collapsed",
+        )
+    
+    # ── Dataset Information Cards ──────────────────────────────────────────
+    if st.session_state.get(SS_SELECTED_DATASET):
+        selected_metadata = _get_dataset_metadata(st.session_state[SS_SELECTED_DATASET])
+        
+        if selected_metadata:
+            with st.container(border=True):
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    st.metric("Dataset", st.session_state[SS_SELECTED_DATASET])
+                
+                with col2:
+                    doc_count = selected_metadata.get('doc_count', 0)
+                    st.metric("Docs", f"{doc_count:,}")
+                
+                with col3:
+                    query_count = selected_metadata.get('query_count', 0)
+                    st.metric("Queries", f"{query_count:,}")
+                
+                with col4:
+                    qrel_count = selected_metadata.get('qrel_count', selected_metadata.get('qrels_count', 0))
+                    st.metric("Qrels", f"{qrel_count:,}")
     
     st.divider()
 
-    # ── Top bar ────────────────────────────────────────────────────────────
-    qcol, rcol, ccol = st.columns([5, 1, 1])
+    # ── Query input bar ────────────────────────────────────────────────────
+    qcol, rcol = st.columns([5, 1])
     with qcol:
         query = st.text_input(
             "Query",
@@ -466,7 +514,6 @@ def render() -> None:
         st.session_state[SS_CURRENT_QUERY] = query
 
     with rcol:
-        st.markdown("<div style='margin-top:4px'></div>", unsafe_allow_html=True)
         if st.button("✨ Refine", use_container_width=True, key="btn_refine"):
             if query.strip():
                 with st.spinner("Refining…"):
@@ -482,14 +529,6 @@ def render() -> None:
                         st.warning(f"Refinement unavailable: {resp.error}")
             else:
                 st.warning("Enter a query first.")
-
-    with ccol:
-        st.markdown("<div style='margin-top:4px'></div>", unsafe_allow_html=True)
-        if st.button("🔄 Clear", use_container_width=True, key="btn_clear"):
-            st.session_state[SS_CURRENT_QUERY] = ""
-            st.session_state[SS_SEARCH_RESULTS] = None
-            st.session_state[SS_REFINEMENT_RESULT] = None
-            st.rerun()
 
     # ── Refinement preview ─────────────────────────────────────────────────
     refinement_result = st.session_state.get(SS_REFINEMENT_RESULT)
@@ -543,21 +582,10 @@ def render() -> None:
         help="Automatically applies spelling correction, synonyms, and history-aware boosting.",
     )
 
-    # ── Retrieval mode tabs ─────────────────────────────────────────────────
+    # ── Retrieval mode segmented control ───────────────────────────────────
     st.markdown("### Retrieval Mode")
-    tab1, tab2, tab3 = st.tabs(
-        ["📊 Individual Models", "🔗 Hybrid Serial", "🔀 Hybrid Parallel"]
-    )
-    with tab1:
-        mode_cfg_individual = _tab_individual()
-        active_mode_cfg = mode_cfg_individual
-        active_mode = "individual"
-    with tab2:
-        mode_cfg_serial = _tab_hybrid_serial()
-    with tab3:
-        mode_cfg_parallel = _tab_hybrid_parallel()
-
-    # Determine which tab is active via a radio (Streamlit tabs don't expose active state)
+    
+    # Segmented control using radio buttons with custom styling
     mode_choice = st.radio(
         "Active mode",
         ["individual", "hybrid_serial", "hybrid_parallel"],
@@ -567,15 +595,24 @@ def render() -> None:
         horizontal=True,
         key="mode_radio",
         label_visibility="collapsed",
+        format_func=lambda x: {
+            "individual": "📊 Individual Models",
+            "hybrid_serial": "🔗 Hybrid Serial",
+            "hybrid_parallel": "🔀 Hybrid Parallel"
+        }[x]
     )
     st.session_state[SS_RETRIEVAL_MODE] = mode_choice
 
+    # Render the appropriate configuration panel based on selected mode
     if mode_choice == "individual":
-        active_mode, active_mode_cfg = "individual", mode_cfg_individual
+        active_mode_cfg = _tab_individual()
+        active_mode = "individual"
     elif mode_choice == "hybrid_serial":
-        active_mode, active_mode_cfg = "hybrid_serial", mode_cfg_serial
+        active_mode_cfg = _tab_hybrid_serial()
+        active_mode = "hybrid_serial"
     else:
-        active_mode, active_mode_cfg = "hybrid_parallel", mode_cfg_parallel
+        active_mode_cfg = _tab_hybrid_parallel()
+        active_mode = "hybrid_parallel"
 
     # ── Search button ───────────────────────────────────────────────────────
     st.divider()

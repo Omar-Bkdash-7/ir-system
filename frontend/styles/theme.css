@@ -361,6 +361,34 @@ hr,
   color: var(--faint) !important;
 }
 
+/* Ensure proper alignment for query input and refine button row */
+div[data-testid="stHorizontalBlock"]:has(input[placeholder*="search query"]) {
+  display: flex !important;
+  align-items: flex-end !important;
+  gap: 12px !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(input[placeholder*="search query"])>div[data-testid="column"] {
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: flex-end !important;
+}
+
+/* Ensure the text input container fills properly */
+div[data-testid="stHorizontalBlock"]:has(input[placeholder*="search query"]) div[data-testid="stTextInput"] {
+  margin-bottom: 0 !important;
+}
+
+/* Ensure button aligns at the bottom */
+div[data-testid="stHorizontalBlock"]:has(input[placeholder*="search query"]) div[data-testid="stButton"] {
+  margin-top: 0 !important;
+  padding-top: 0 !important;
+}
+
+div[data-testid="stHorizontalBlock"]:has(input[placeholder*="search query"]) div[data-testid="stButton"] button {
+  margin-top: 0 !important;
+}
+
 /* ============================================================
    TABS
    ============================================================ */
@@ -386,6 +414,119 @@ hr,
   background: var(--accent-soft);
   color: var(--accent-bright);
   font-weight: 700;
+}
+
+/* ============================================================
+   SEGMENTED CONTROL (Radio buttons styled as tabs)
+   ============================================================ */
+/* Target the radio group container for retrieval mode */
+[data-testid="stRadio"][key="mode_radio"]>div,
+[data-testid="stRadio"]:has(label[data-baseweb="radio"])>div[role="radiogroup"] {
+  background: var(--bg-2) !important;
+  border-radius: var(--radius-sm) !important;
+  padding: 4px !important;
+  display: flex !important;
+  gap: 4px !important;
+}
+
+/* Individual radio option styling */
+[data-testid="stRadio"] label[data-baseweb="radio"] {
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  border-radius: 10px !important;
+  padding: 10px 20px !important;
+  margin: 0 !important;
+  transition: all 0.18s ease !important;
+  cursor: pointer !important;
+  flex: 1 !important;
+  text-align: center !important;
+  color: var(--text-2) !important;
+  font-weight: 500 !important;
+}
+
+/* Hover state */
+[data-testid="stRadio"] label[data-baseweb="radio"]:hover {
+  background: var(--surface-2) !important;
+  color: var(--text) !important;
+}
+
+/* Selected/active state */
+[data-testid="stRadio"] label[data-baseweb="radio"]:has(input[type="radio"]:checked) {
+  background: linear-gradient(100deg, var(--accent-soft), var(--accent-soft-2)) !important;
+  border-color: var(--accent-line) !important;
+  color: var(--accent-bright) !important;
+  font-weight: 700 !important;
+  box-shadow: 0 4px 12px -6px rgba(109, 140, 255, .6) !important;
+}
+
+/* Hide the radio input circle */
+[data-testid="stRadio"] input[type="radio"] {
+  display: none !important;
+}
+
+/* Adjust the text container */
+[data-testid="stRadio"] label[data-baseweb="radio"]>div {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* ============================================================
+   DATASET INFORMATION CARDS
+   ============================================================ */
+/* Ensure dataset info cards stay horizontal */
+[data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlock"] [data-testid="stMarkdown"]:has-text("Dataset")),
+[data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlock"] [data-testid="stMarkdown"]:has-text("Docs")),
+[data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlock"] [data-testid="stMarkdown"]:has-text("Queries")),
+[data-testid="stHorizontalBlock"]:has([data-testid="stVerticalBlock"] [data-testid="stMarkdown"]:has-text("Qrels")) {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 12px !important;
+}
+
+/* Style the dataset info cards */
+[data-testid="stHorizontalBlock"] [data-testid="stVerticalBlock"]:has([data-testid="stMarkdown"]:has-text("Dataset")),
+[data-testid="stHorizontalBlock"] [data-testid="stVerticalBlock"]:has([data-testid="stMarkdown"]:has-text("Docs")),
+[data-testid="stHorizontalBlock"] [data-testid="stVerticalBlock"]:has([data-testid="stMarkdown"]:has-text("Queries")),
+[data-testid="stHorizontalBlock"] [data-testid="stVerticalBlock"]:has([data-testid="stMarkdown"]:has-text("Qrels")) {
+  flex: 1 !important;
+  min-width: 0 !important;
+}
+
+/* ============================================================
+   MODEL CONFIGURATION CARDS (Select & configure models)
+   ============================================================ */
+/* Ensure model cards stay horizontal on desktop */
+[data-testid="stMarkdown"]:has-text("Select & configure models")~[data-testid="stHorizontalBlock"] {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important;
+  gap: 16px !important;
+}
+
+/* Responsive: On very wide screens, limit to 3 columns */
+@media (min-width: 1400px) {
+  [data-testid="stMarkdown"]:has-text("Select & configure models")~[data-testid="stHorizontalBlock"] {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
+/* Responsive: On medium screens, allow 2 columns */
+@media (max-width: 1200px) and (min-width: 768px) {
+  [data-testid="stMarkdown"]:has-text("Select & configure models")~[data-testid="stHorizontalBlock"] {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* Responsive: On small screens, single column */
+@media (max-width: 767px) {
+  [data-testid="stMarkdown"]:has-text("Select & configure models")~[data-testid="stHorizontalBlock"] {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Ensure each model card column takes full width of its grid cell */
+[data-testid="stMarkdown"]:has-text("Select & configure models")~[data-testid="stHorizontalBlock"]>[data-testid="column"] {
+  width: 100% !important;
+  max-width: 100% !important;
 }
 
 /* ============================================================
@@ -537,4 +678,84 @@ hr,
   border-color: var(--accent);
   color: var(--accent-bright);
   background: var(--accent-soft);
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+/* ============================================================
+   PIPELINE & FUSION VISUALIZATIONS
+   ============================================================ */
+.pipeline-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: center;
+  margin: 16px 0;
+  flex-wrap: wrap;
+}
+
+.pipeline-box {
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm);
+  padding: 12px 20px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+  min-width: 140px;
+}
+
+.pipeline-box--accent {
+  background: linear-gradient(100deg, var(--accent-soft), var(--accent-soft-2));
+  border-color: var(--accent-line);
+  color: var(--accent-bright);
+}
+
+.pipeline-box--final {
+  background: var(--ok-soft);
+  border-color: var(--ok);
+  color: var(--ok);
+  font-weight: 700;
+}
+
+.pipeline-arrow {
+  font-size: 1.4em;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.fusion-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.fusion-sources {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.fusion-box {
+  background: linear-gradient(100deg, var(--accent-soft), var(--accent-soft-2));
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-sm);
+  padding: 12px 24px;
+  color: var(--accent-bright);
+  font-weight: 700;
+  text-align: center;
+}
+
+.fusion-arrow-down {
+  font-size: 1.6em;
+  color: var(--muted);
+  font-weight: 700;
 }
