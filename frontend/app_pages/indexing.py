@@ -14,20 +14,27 @@ from constants import SS_BUILD_LOG, SS_FORCE_REBUILD
 
 def _get_downloaded_datasets() -> list[str]:
     """
-    Get list of downloaded datasets from indexing service (cached).
+    Get list of downloaded datasets that are ALSO uploaded to database.
     Returns list of dataset IDs like ['beir/quora', 'cranfield', etc.]
+    Only includes datasets that exist both locally and in PostgreSQL.
     """
-    resp = indexing_api.list_local_datasets()
+    # Get locally downloaded datasets
+    local_resp = indexing_api.list_local_datasets()
     
-    if not resp.ok:
+    if not local_resp.ok:
         return []
     
-    datasets_info = resp.data.get("datasets", []) if isinstance(resp.data, dict) else []
+    local_datasets_info = local_resp.data.get("datasets", []) if isinstance(local_resp.data, dict) else []
+    local_dataset_ids = {ds.get("dataset_id") for ds in local_datasets_info if ds.get("dataset_id")}
     
-    # Extract just the dataset IDs from the full info
-    dataset_ids = [ds.get("dataset_id") for ds in datasets_info if ds.get("dataset_id")]
+    # Get datasets in database
+    db_datasets = _get_datasets_in_db()
+    db_dataset_ids = set(db_datasets)
     
-    return sorted(dataset_ids)
+    # Return only datasets that are in BOTH local and database
+    common_datasets = local_dataset_ids.intersection(db_dataset_ids)
+    
+    return sorted(common_datasets)
 
 
 @st.cache_data(ttl=120, show_spinner=False)
@@ -519,8 +526,20 @@ def render() -> None:
     current_dataset = info.get("dataset_name", config.DATASET_NAME) if info else None
     
     if not available_datasets:
-        st.warning("No datasets found in `data/datasets/.ir_datasets/`")
-        st.info("Go to **Dataset** page to download datasets first")
+        st.warning("⚠️ No datasets available for indexing")
+        st.info("""
+        **To build indices, you need datasets that are:**
+        1. ✓ Downloaded locally (via Dataset Management page)
+        2. ✓ Uploaded to PostgreSQL database
+        
+        **Next steps:**
+        - Go to **Dataset Management** page
+        - Download a dataset
+        - Upload it to the database
+        - Return here to build indices
+        """)
+        if st.button("📦 Go to Dataset Management", type="primary"):
+            st.switch_page("app_pages/dataset.py")
         return
     
     # Initialize previous dataset tracker
@@ -535,15 +554,11 @@ def render() -> None:
         placeholder="Choose a dataset to work with...",
         key="dataset_selector",
         on_change=_on_dataset_change,
-        help="Choose a dataset - will automatically validate and switch"
+        help="Only shows datasets that are downloaded locally AND uploaded to database"
     )
     
-    # Check if dataset is uploaded to database (use cached function)
-    dataset_in_db = False
-    
-    if selected_dataset:
-        datasets_in_db = _get_datasets_in_db()
-        dataset_in_db = selected_dataset in datasets_in_db
+    # Check if dataset is uploaded to database (should always be true now, but keep for safety)
+    dataset_in_db = True  # Since we filter by database presence in _get_downloaded_datasets()
     
     # Show dataset info only if a dataset is selected (use cached metadata)
     if selected_dataset:
@@ -567,27 +582,6 @@ def render() -> None:
                 with col4:
                     qrel_count = selected_metadata.get('qrel_count', selected_metadata.get('qrels_count', info.get('qrel_count', info.get('qrels_count', 0)) if info else 0))
                     st.metric("Qrels", f"{qrel_count:,}")
-        
-        # Warning message if dataset is not in database
-        if not dataset_in_db:
-            st.error("### Dataset Not Uploaded to Database")
-            st.markdown(f"**Dataset:** `{selected_dataset}`")
-            st.markdown(
-                "This dataset exists locally but **must be uploaded to the database** before you can build indices."
-            )
-            
-            with st.container(border=True):
-                st.markdown("### Required Steps")
-                st.markdown("""
-                **To build indices for this dataset:**
-                
-                1. Go to the **Dataset Management** page (from sidebar)
-                2. Find your dataset in the **Downloaded Datasets** section
-                3. Click **Upload to Database** button
-                4. Wait for the upload to complete
-                5. Return here to build indices
-                """)
-            return
     else:
         st.info("Select a dataset to view its information and build indices.")
         return
