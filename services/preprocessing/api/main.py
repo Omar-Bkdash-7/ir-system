@@ -1,10 +1,8 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from services.preprocessing.preprocessing_service import (
-    preprocess,
-    warmup_resources,
-    PreprocessingConfig,
-)
+from services.preprocessing.core.config import PreprocessingConfig
+from services.preprocessing.core.pipeline import preprocess as _core_preprocess
+from services.preprocessing.core.resources import warmup_resources
 from services.preprocessing.api.schemas import PreprocessRequest, PreprocessResponse
 from common.exception_handlers import register_exception_handlers
 from common.logging_config import setup_logging
@@ -34,7 +32,7 @@ def health():
 def preprocess_text(req: PreprocessRequest):
     config = None
     if req.config:
-        config = PreprocessingConfig(**req.config)
+        config = PreprocessingConfig.from_dict(req.config)
     
-    tokens = preprocess(req.text, config)
+    tokens = _core_preprocess(req.text, config)
     return PreprocessResponse(tokens=tokens, original=req.text)

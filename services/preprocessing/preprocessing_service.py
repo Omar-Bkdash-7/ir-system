@@ -6,6 +6,9 @@ from .core.exceptions import (
     TokenizationError,
 )
 from typing import Optional, Union
+import logging
+
+logger = logging.getLogger("services.preprocessing.preprocessing_service")
 
 
 def preprocess(
@@ -14,7 +17,9 @@ def preprocess(
     config: Optional[Union[PreprocessingConfig, dict]] = None
 ) -> list[str]:
     if isinstance(config, dict):
-        config = PreprocessingConfig(**config)
+        logger.warning(f"[PREPROCESSING_SERVICE] Converting dict to PreprocessingConfig: use_stemming={config.get('use_stemming')}, use_lemmatization={config.get('use_lemmatization')}")
+        config = PreprocessingConfig.from_dict(config)
+        logger.warning(f"[PREPROCESSING_SERVICE] After conversion: use_stemming={config.use_stemming}, use_lemmatization={config.use_lemmatization}")
     
     return _preprocess(text, config)
 

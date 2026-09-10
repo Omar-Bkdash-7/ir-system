@@ -84,6 +84,15 @@ def get_lemmatizer() -> WordNetLemmatizer:
         try:
             logger.info("Loading WordNet Lemmatizer...")
             start_time = time.time()
+            
+            # Try to download wordnet if not available
+            try:
+                import nltk
+                nltk.download('wordnet', quiet=True, raise_on_error=False)
+                nltk.download('omw-1.4', quiet=True, raise_on_error=False)
+            except Exception as download_err:
+                logger.warning(f"Could not download wordnet: {download_err}")
+            
             _lemmatizer = WordNetLemmatizer()
             elapsed = time.time() - start_time
             logger.info(f"WordNet Lemmatizer loaded in {elapsed:.2f}s")

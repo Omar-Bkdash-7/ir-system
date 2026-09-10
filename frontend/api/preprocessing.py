@@ -14,7 +14,7 @@ def preprocess(text: str, preprocessing_config: dict) -> APIResponse:
     """
     return post(
         f"{config.PREPROCESSING_URL}/preprocess",
-        json_body={"text": text, "config": preprocessing_config},
+        json={"text": text, "config": preprocessing_config},
     )
 
 

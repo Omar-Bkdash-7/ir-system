@@ -13,7 +13,7 @@ class PreprocessingConfig:
     use_lemmatization: bool = True
     use_stemming: bool = False
     keep_numbers: bool = False
-    use_spacy_tokenizer: bool = False
+    use_spacy_tokenizer: bool = True
     custom_stopwords: set[str] = field(default_factory=set)
     
     def to_dict(self) -> dict:
@@ -33,5 +33,6 @@ class PreprocessingConfig:
     
     @classmethod
     def from_dict(cls, data: dict) -> "PreprocessingConfig":
-        custom_stopwords = set(data.pop("custom_stopwords", []))
-        return cls(**data, custom_stopwords=custom_stopwords)
+        data_copy = data.copy()
+        custom_stopwords = data_copy.pop("custom_stopwords", [])
+        return cls(**data_copy, custom_stopwords=set(custom_stopwords))
