@@ -793,14 +793,6 @@ def render() -> None:
 
     st.divider()
 
-    # Only fetch stats when expander is actually opened
-    if st.checkbox("Show aggregate index stats", value=False, key="idx_show_stats"):
-        stats_resp = indexing_api.all_stats()
-        if stats_resp.ok and isinstance(stats_resp.data, dict):
-            st.json(stats_resp.data)
-        else:
-            st.warning(f"Could not load stats: {stats_resp.error}")
-
     log = st.session_state.get(SS_BUILD_LOG, [])
     if log:
         with st.expander(f"Build log ({len(log)} entries)", expanded=False):
