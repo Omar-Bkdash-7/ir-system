@@ -20,10 +20,10 @@ from constants import (
 )
 
 _PAGES = [
+    {"key": "guide", "label": "User Guide", "icon": "📘"},
     {"key": "search", "label": "Search", "icon": "🔍"},
     {"key": "dataset", "label": "Dataset", "icon": "📊"},
     {"key": "indexing", "label": "Indexing", "icon": "🗂️"},
-    {"key": "inverted_index", "label": "Inverted Index", "icon": "🗃️"},
     {"key": "preprocessing", "label": "Preprocessing", "icon": "⚙️"},
     {"key": "evaluation", "label": "Evaluation", "icon": "📈"},
     {"key": "query_refinement", "label": "Query Refinement", "icon": "🔬"},
@@ -43,7 +43,7 @@ def render_sidebar() -> None:
         st.divider()
 
         # ── Navigation ────────────────────────────────────────────────
-        current_page = st.session_state.get(SS_SELECTED_PAGE, "search")
+        current_page = st.session_state.get(SS_SELECTED_PAGE, "guide")
 
         for page in _PAGES:
             key = page["key"]

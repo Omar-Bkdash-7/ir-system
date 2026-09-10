@@ -12,7 +12,8 @@ from services.indexing.services import (
     get_bm25_stats,
     build_tfidf_index,
     build_embedding_index,
-    build_bm25_index
+    build_bm25_index,
+    build_all_indices
 )
 
 get_tfidf_status = get_tfidf_stats
@@ -29,5 +30,6 @@ __all__ = [
     "get_bm25_status",
     "build_tfidf_index",
     "build_embedding_index",
-    "build_bm25_index"
+    "build_bm25_index",
+    "build_all_indices"
 ]

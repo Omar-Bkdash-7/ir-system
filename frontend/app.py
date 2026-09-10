@@ -106,14 +106,14 @@ _init_session_state()
 # ── Page map with lazy loading ────────────────────────────────────────────
 def _get_page_module(page_key: str):
     """Lazy load page modules only when needed."""
-    if page_key == "search":
+    if page_key == "guide":
+        import app_pages.guide as page
+    elif page_key == "search":
         import app_pages.search as page
     elif page_key == "dataset":
         import app_pages.dataset as page
     elif page_key == "indexing":
         import app_pages.indexing as page
-    elif page_key == "inverted_index":
-        import app_pages.inverted_index as page
     elif page_key == "preprocessing":
         import app_pages.preprocessing as page
     elif page_key == "evaluation":
@@ -132,7 +132,7 @@ def _get_page_module(page_key: str):
 render_sidebar()
 
 # 2. Read the active page key
-active_page = st.session_state.get(SS_SELECTED_PAGE, "search")
+active_page = st.session_state.get(SS_SELECTED_PAGE, "guide")
 
 # 3. Lazy load and render the active page
 module = _get_page_module(active_page)

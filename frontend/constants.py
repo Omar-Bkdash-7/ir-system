@@ -71,7 +71,7 @@ SS_SESSION_ID = "session_id"
 # populated lazily on first use so this module never imports `config`.
 # ---------------------------------------------------------------------------
 DEFAULTS = {
-    SS_SELECTED_PAGE: "search",
+    SS_SELECTED_PAGE: "guide",
 
     SS_QUERY_HISTORY: [],
     SS_CURRENT_QUERY: "",

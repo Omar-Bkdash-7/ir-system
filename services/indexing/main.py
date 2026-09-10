@@ -15,7 +15,8 @@ from services.indexing.indexing_service import (
     build_embedding_index,
     get_embedding_status,
     build_bm25_index,
-    get_bm25_status
+    get_bm25_status,
+    build_all_indices
 )
 from services.indexing.services.inverted_index_service import (
     get_inverted_index_stats,
@@ -290,56 +291,61 @@ def index_stats():
 
 @app.post("/index/tfidf/build")
 def build_tfidf(
+    dataset_name: str = Query(..., description="Dataset name to build index for"),
     force_rebuild: bool = Query(False, description="Force rebuild the index"), 
     body: Optional[dict] = Body(None)
 ):
     preprocessing_config = body.get("preprocessing_config") if body else None
-    return build_tfidf_index(force_rebuild, preprocessing_config)
+    return build_tfidf_index(dataset_name, force_rebuild, preprocessing_config)
 
 
 @app.get("/index/tfidf/status")
-def tfidf_status(dataset_name: str = Query(None, description="Dataset name (optional)")):
-    # For backward compatibility, use default dataset if not provided
-    from common.dataset_context import get_active_dataset_name
-    if not dataset_name:
-        dataset_name = get_active_dataset_name()
+def tfidf_status(dataset_name: str = Query(..., description="Dataset name")):
     return get_tfidf_status(dataset_name)
 
 
 @app.post("/index/embedding/build")
 def build_embedding(
+    dataset_name: str = Query(..., description="Dataset name to build index for"),
     force_rebuild: bool = Query(False, description="Force rebuild the index"),
     body: Optional[dict] = Body(None)
 ):
     preprocessing_config = body.get("preprocessing_config") if body else None
-    return build_embedding_index(force_rebuild, preprocessing_config)
+    return build_embedding_index(dataset_name, force_rebuild, preprocessing_config)
 
 
 @app.get("/index/embedding/status")
-def embedding_status(dataset_name: str = Query(None, description="Dataset name (optional)")):
-    # For backward compatibility, use default dataset if not provided
-    from common.dataset_context import get_active_dataset_name
-    if not dataset_name:
-        dataset_name = get_active_dataset_name()
+def embedding_status(dataset_name: str = Query(..., description="Dataset name")):
     return get_embedding_status(dataset_name)
 
 
 @app.post("/index/bm25/build")
 def build_bm25(
+    dataset_name: str = Query(..., description="Dataset name to build index for"),
     force_rebuild: bool = Query(False, description="Force rebuild the index"),
     body: Optional[dict] = Body(None)
 ):
     preprocessing_config = body.get("preprocessing_config") if body else None
-    return build_bm25_index(force_rebuild, preprocessing_config)
+    return build_bm25_index(dataset_name, force_rebuild, preprocessing_config)
 
 
 @app.get("/index/bm25/status")
-def bm25_status(dataset_name: str = Query(None, description="Dataset name (optional)")):
-    # For backward compatibility, use default dataset if not provided
-    from common.dataset_context import get_active_dataset_name
-    if not dataset_name:
-        dataset_name = get_active_dataset_name()
+def bm25_status(dataset_name: str = Query(..., description="Dataset name")):
     return get_bm25_status(dataset_name)
+
+
+@app.post("/index/build-all")
+def build_all(
+    dataset_name: str = Query(..., description="Dataset name to build indices for"),
+    force_rebuild: bool = Query(False, description="Force rebuild all indices"),
+    body: Optional[dict] = Body(None)
+):
+    """
+    Build all indices (TF-IDF, BM25, Embedding) with shared preprocessing.
+    This is more efficient than building indices separately.
+    """
+    preprocessing_config = body.get("preprocessing_config") if body else None
+    return build_all_indices(dataset_name, force_rebuild, preprocessing_config)
 
 
 # ── Inverted Index Analysis ───────────────────────────────────────────────

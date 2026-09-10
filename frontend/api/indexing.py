@@ -6,20 +6,37 @@ import streamlit as st
 import config
 from api.client import APIResponse, get, health_check, post, _request
 
-INDEX_TYPES = ("tfidf", "bm25", "embedding")
+INDEX_TYPES = ("tfidf", "bm25", "embedding", "all")
 
 
-def build_index(index_type: str, force_rebuild: bool = False, preprocessing_config: dict = None) -> APIResponse:
+def build_index(index_type: str, force_rebuild: bool = False, preprocessing_config: dict = None, dataset_name: str = None) -> APIResponse:
     if index_type not in INDEX_TYPES:
         raise ValueError(f"Unknown index type: {index_type!r}")
+    
+    # Get dataset name from gateway if not provided
+    if not dataset_name:
+        import api.gateway as gateway
+        info = gateway.get_dataset_info_cached()
+        dataset_name = info.get("dataset_name") if info else None
+        if not dataset_name:
+            raise ValueError("No active dataset. Please select a dataset first.")
+    
+    # Use build-all endpoint for 'all' type
+    if index_type == "all":
+        endpoint = f"{config.INDEXING_URL}/index/build-all"
+    else:
+        endpoint = f"{config.INDEXING_URL}/index/{index_type}/build"
     
     json_data = None
     if preprocessing_config:
         json_data = {"preprocessing_config": preprocessing_config}
     
     return post(
-        f"{config.INDEXING_URL}/index/{index_type}/build",
-        params={"force_rebuild": str(force_rebuild).lower()},
+        endpoint,
+        params={
+            "dataset_name": dataset_name,
+            "force_rebuild": str(force_rebuild).lower()
+        },
         json=json_data,
         timeout=config.BUILD_TIMEOUT,
         max_retries=1,
@@ -27,10 +44,22 @@ def build_index(index_type: str, force_rebuild: bool = False, preprocessing_conf
 
 
 @st.cache_data(ttl=config.CACHE_TTL_INDEX_STATUS, show_spinner=False)
-def index_status(index_type: str) -> APIResponse:
+def index_status(index_type: str, dataset_name: str = None) -> APIResponse:
     if index_type not in INDEX_TYPES:
         raise ValueError(f"Unknown index type: {index_type!r}")
-    return get(f"{config.INDEXING_URL}/index/{index_type}/status")
+    
+    # Get dataset name from gateway if not provided
+    if not dataset_name:
+        import api.gateway as gateway
+        info = gateway.get_dataset_info_cached()
+        dataset_name = info.get("dataset_name") if info else None
+        if not dataset_name:
+            return APIResponse(ok=False, error="No active dataset", data=None)
+    
+    return get(
+        f"{config.INDEXING_URL}/index/{index_type}/status",
+        params={"dataset_name": dataset_name}
+    )
 
 
 def clear_single_index_status_cache() -> None:
@@ -102,9 +131,15 @@ def health() -> APIResponse:
 
 @st.cache_data(ttl=config.CACHE_TTL_INDEX_STATUS, show_spinner=False)
 def get_all_index_status_cached() -> dict:
+    import api.gateway as gateway
+    info = gateway.get_dataset_info_cached()
+    dataset_name = info.get("dataset_name") if info else None
+    
     summary = {}
     for index_type in INDEX_TYPES:
-        resp = index_status(index_type)
+        if index_type == "all":
+            continue
+        resp = index_status(index_type, dataset_name)
         if resp.ok and isinstance(resp.data, dict):
             summary[index_type] = resp.data
         else:

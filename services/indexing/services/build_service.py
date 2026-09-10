@@ -86,13 +86,18 @@ def _check_dataset_in_database(dataset_name: str, table_name: str) -> None:
                 raise FileNotFoundError(error_msg)
 
 
-def _preprocess_documents(dataset_name: str, preprocessing_config: Optional[dict] = None) -> str:
+def _preprocess_documents(
+    dataset_name: str, 
+    preprocessing_config: Optional[dict] = None,
+    shared_path: Optional[str] = None
+) -> str:
     """
     Preprocess documents from database using the provided config.
     
     Args:
         dataset_name: Dataset identifier (REQUIRED)
         preprocessing_config: Preprocessing configuration dictionary
+        shared_path: If provided, use this path instead of creating temporary file
         
     Returns:
         Path to the preprocessed documents file
@@ -125,8 +130,15 @@ def _preprocess_documents(dataset_name: str, preprocessing_config: Optional[dict
     
     logger.info(f"Reading documents from table: {table_name}")
     
-    processed_file = NamedTemporaryFile(mode='w', delete=False, suffix='.jsonl', encoding='utf-8')
-    processed_path = processed_file.name
+    # Use shared path if provided, otherwise create temporary file
+    if shared_path:
+        processed_path = shared_path
+        processed_file = open(processed_path, 'w', encoding='utf-8')
+        logger.info(f"Using shared preprocessing file: {processed_path}")
+    else:
+        processed_file = NamedTemporaryFile(mode='w', delete=False, suffix='.jsonl', encoding='utf-8')
+        processed_path = processed_file.name
+        logger.info(f"Using temporary preprocessing file: {processed_path}")
     
     try:
         from common.database import get_db_connection
@@ -204,7 +216,13 @@ class IndexBuilder:
 class TFIDFIndexBuilder(IndexBuilder):
     """Builds TF-IDF index from documents."""
     
-    def build(self, dataset_name: str, force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
+    def build(
+        self, 
+        dataset_name: str, 
+        force_rebuild: bool = False, 
+        preprocessing_config: Optional[dict] = None,
+        preprocessed_path: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Build TF-IDF index.
         
@@ -212,6 +230,7 @@ class TFIDFIndexBuilder(IndexBuilder):
             dataset_name: Dataset identifier (REQUIRED)
             force_rebuild: Force rebuild even if index exists
             preprocessing_config: Custom preprocessing configuration
+            preprocessed_path: Path to pre-built preprocessed file (skips preprocessing)
             
         Returns:
             Dictionary with build status and index statistics
@@ -227,10 +246,16 @@ class TFIDFIndexBuilder(IndexBuilder):
         if skip_result:
             return skip_result
         
-        processed_path = None
+        should_cleanup = False
         try:
-            # Always preprocess documents from database
-            processed_path = _preprocess_documents(dataset_name, preprocessing_config)
+            # Use provided preprocessed file or create new one
+            if preprocessed_path:
+                logger.info(f"Using existing preprocessed file: {preprocessed_path}")
+                processed_path = preprocessed_path
+            else:
+                processed_path = _preprocess_documents(dataset_name, preprocessing_config)
+                should_cleanup = True
+            
             indexer.build(processed_path=processed_path)
             
             indexer.save()
@@ -263,14 +288,20 @@ class TFIDFIndexBuilder(IndexBuilder):
                 "message": str(e)
             }
         finally:
-            if processed_path:
+            if should_cleanup and processed_path:
                 Path(processed_path).unlink(missing_ok=True)
 
 
 class EmbeddingIndexBuilder(IndexBuilder):
     """Builds embedding-based index from documents."""
     
-    def build(self, dataset_name: str, force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
+    def build(
+        self, 
+        dataset_name: str, 
+        force_rebuild: bool = False, 
+        preprocessing_config: Optional[dict] = None,
+        preprocessed_path: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Build Embedding index.
         
@@ -278,6 +309,7 @@ class EmbeddingIndexBuilder(IndexBuilder):
             dataset_name: Dataset identifier (REQUIRED)
             force_rebuild: Force rebuild even if index exists
             preprocessing_config: Custom preprocessing configuration
+            preprocessed_path: Path to pre-built preprocessed file (skips preprocessing)
             
         Returns:
             Dictionary with build status and index statistics
@@ -293,10 +325,16 @@ class EmbeddingIndexBuilder(IndexBuilder):
         if skip_result:
             return skip_result
         
-        processed_path = None
+        should_cleanup = False
         try:
-            # Always preprocess documents from database
-            processed_path = _preprocess_documents(dataset_name, preprocessing_config)
+            # Use provided preprocessed file or create new one
+            if preprocessed_path:
+                logger.info(f"Using existing preprocessed file: {preprocessed_path}")
+                processed_path = preprocessed_path
+            else:
+                processed_path = _preprocess_documents(dataset_name, preprocessing_config)
+                should_cleanup = True
+            
             indexer.build(processed_path=processed_path)
             
             indexer.save()
@@ -330,14 +368,20 @@ class EmbeddingIndexBuilder(IndexBuilder):
                 "message": str(e)
             }
         finally:
-            if processed_path:
+            if should_cleanup and processed_path:
                 Path(processed_path).unlink(missing_ok=True)
 
 
 class BM25IndexBuilder(IndexBuilder):
     """Builds BM25 index from documents."""
     
-    def build(self, dataset_name: str, force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
+    def build(
+        self, 
+        dataset_name: str, 
+        force_rebuild: bool = False, 
+        preprocessing_config: Optional[dict] = None,
+        preprocessed_path: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Build BM25 index.
         
@@ -345,6 +389,7 @@ class BM25IndexBuilder(IndexBuilder):
             dataset_name: Dataset identifier (REQUIRED)
             force_rebuild: Force rebuild even if index exists
             preprocessing_config: Custom preprocessing configuration
+            preprocessed_path: Path to pre-built preprocessed file (skips preprocessing)
             
         Returns:
             Dictionary with build status and index statistics
@@ -360,10 +405,16 @@ class BM25IndexBuilder(IndexBuilder):
         if skip_result:
             return skip_result
         
-        processed_path = None
+        should_cleanup = False
         try:
-            # Always preprocess documents from database
-            processed_path = _preprocess_documents(dataset_name, preprocessing_config)
+            # Use provided preprocessed file or create new one
+            if preprocessed_path:
+                logger.info(f"Using existing preprocessed file: {preprocessed_path}")
+                processed_path = preprocessed_path
+            else:
+                processed_path = _preprocess_documents(dataset_name, preprocessing_config)
+                should_cleanup = True
+            
             indexer.build(processed_path=processed_path)
             
             indexer.save()
@@ -392,7 +443,7 @@ class BM25IndexBuilder(IndexBuilder):
                 "message": str(e)
             }
         finally:
-            if processed_path:
+            if should_cleanup and processed_path:
                 Path(processed_path).unlink(missing_ok=True)
 
 
@@ -444,10 +495,106 @@ def build_bm25_index(dataset_name: str, force_rebuild: bool = False, preprocessi
     return builder.build(dataset_name, force_rebuild, preprocessing_config)
 
 
+def build_all_indices(dataset_name: str, force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
+    """
+    Public API: Build all indices (TF-IDF, BM25, Embedding) with shared preprocessing.
+    
+    This function builds preprocessing once and reuses it for all three indices,
+    significantly reducing build time.
+    
+    Args:
+        dataset_name: Dataset identifier (REQUIRED)
+        force_rebuild: Force rebuild even if indices exist
+        preprocessing_config: Custom preprocessing configuration
+        
+    Returns:
+        Dictionary with build status for all indices
+    """
+    if not dataset_name:
+        raise ValueError("dataset_name is required")
+    
+    logger.info(f"Building all indices for dataset: {dataset_name} with shared preprocessing")
+    
+    results = {
+        "dataset": dataset_name,
+        "preprocessing_shared": True,
+        "indices": {}
+    }
+    
+    # Step 1: Build preprocessing once and save to shared location
+    processed_data_dir = Path(get_config("paths.processed", "data/processed"))
+    processed_data_dir.mkdir(parents=True, exist_ok=True)
+    
+    safe_dataset_name = dataset_name.replace('/', '_').replace('-', '_').replace('.', '_')
+    shared_preprocessed_path = processed_data_dir / f"{safe_dataset_name}_shared.jsonl"
+    
+    try:
+        logger.info("Step 1/4: Building shared preprocessing file...")
+        _preprocess_documents(
+            dataset_name=dataset_name,
+            preprocessing_config=preprocessing_config,
+            shared_path=str(shared_preprocessed_path)
+        )
+        logger.info(f"Shared preprocessing complete: {shared_preprocessed_path}")
+        
+        # Step 2: Build TF-IDF using shared file
+        logger.info("Step 2/4: Building TF-IDF index...")
+        tfidf_builder = TFIDFIndexBuilder()
+        results["indices"]["tfidf"] = tfidf_builder.build(
+            dataset_name=dataset_name,
+            force_rebuild=force_rebuild,
+            preprocessing_config=preprocessing_config,
+            preprocessed_path=str(shared_preprocessed_path)
+        )
+        
+        # Step 3: Build BM25 using shared file
+        logger.info("Step 3/4: Building BM25 index...")
+        bm25_builder = BM25IndexBuilder()
+        results["indices"]["bm25"] = bm25_builder.build(
+            dataset_name=dataset_name,
+            force_rebuild=force_rebuild,
+            preprocessing_config=preprocessing_config,
+            preprocessed_path=str(shared_preprocessed_path)
+        )
+        
+        # Step 4: Build Embedding using shared file
+        logger.info("Step 4/4: Building Embedding index...")
+        embedding_builder = EmbeddingIndexBuilder()
+        results["indices"]["embedding"] = embedding_builder.build(
+            dataset_name=dataset_name,
+            force_rebuild=force_rebuild,
+            preprocessing_config=preprocessing_config,
+            preprocessed_path=str(shared_preprocessed_path)
+        )
+        
+        logger.info("All indices built successfully with shared preprocessing")
+        results["status"] = "success"
+        
+        # Count successful builds
+        success_count = sum(1 for idx_result in results["indices"].values() 
+                          if idx_result.get("status") in ("success", "skipped"))
+        results["success_count"] = success_count
+        results["total_count"] = 3
+        
+    except Exception as e:
+        logger.error(f"Failed to build all indices: {e}", exc_info=True)
+        results["status"] = "error"
+        results["message"] = str(e)
+    
+    finally:
+        # Clean up shared preprocessing file
+        if shared_preprocessed_path.exists():
+            logger.info(f"Cleaning up shared preprocessing file: {shared_preprocessed_path}")
+            shared_preprocessed_path.unlink(missing_ok=True)
+    
+    return results
+
+
 __all__ = [
     "build_tfidf_index",
     "build_embedding_index",
     "build_bm25_index",
+    "build_all_indices",
     "TFIDFIndexBuilder",
     "EmbeddingIndexBuilder",
     "BM25IndexBuilder",

@@ -153,9 +153,15 @@ def _render_preprocessing_config() -> dict | None:
     return None
 
 
-def _build_single(index_type: str, force: bool, preprocessing_config: dict | None = None, dataset_in_db: bool = True) -> None:
-    label = config.RETRIEVAL_MODEL_LABELS.get(index_type, index_type)
-    estimate = config.BUILD_TIME_ESTIMATES.get(index_type, "a few minutes")
+def _build_single(index_type: str, force: bool, preprocessing_config: dict | None = None, dataset_in_db: bool = True, dataset_name: str = None) -> None:
+    # Special handling for 'all' index type
+    if index_type == "all":
+        label = "All Indices"
+        estimate = "~18 min (combined)"
+    else:
+        label = config.RETRIEVAL_MODEL_LABELS.get(index_type, index_type)
+        estimate = config.BUILD_TIME_ESTIMATES.get(index_type, "a few minutes")
+    
     log: list = st.session_state.get(SS_BUILD_LOG, [])
 
     with st.status(f"Building {label} index (est. {estimate})", expanded=True) as s:
@@ -166,6 +172,19 @@ def _build_single(index_type: str, force: bool, preprocessing_config: dict | Non
         status_container = st.empty()
         
         stages = {
+            "all": [
+                (5, "Preprocessing documents from database..."),
+                (10, "Building shared preprocessing file..."),
+                (20, "Preprocessing complete, starting TF-IDF..."),
+                (35, "Building TF-IDF index..."),
+                (45, "TF-IDF complete, starting BM25..."),
+                (60, "Building BM25 inverted index..."),
+                (70, "BM25 complete, starting Embedding..."),
+                (75, "Loading sentence transformer model..."),
+                (85, "Generating embeddings (batch 5/10)..."),
+                (95, "Saving all indices..."),
+                (100, "Complete!")
+            ],
             "tfidf": [
                 (10, "Loading preprocessed documents..."),
                 (30, "Building vocabulary..."),
@@ -205,7 +224,8 @@ def _build_single(index_type: str, force: bool, preprocessing_config: dict | Non
                 result_holder["resp"] = indexing_api.build_index(
                     index_type, 
                     force_rebuild=force, 
-                    preprocessing_config=preprocessing_config
+                    preprocessing_config=preprocessing_config,
+                    dataset_name=dataset_name
                 )
             except Exception as e:
                 result_holder["resp"] = type('obj', (object,), {
@@ -250,28 +270,56 @@ def _build_single(index_type: str, force: bool, preprocessing_config: dict | Non
         resp = result_holder["resp"]
         
         if resp and resp.ok and isinstance(resp.data, dict):
-            status_val = resp.data.get("status", "unknown")
-            index_size = resp.data.get("index_size_mb", "N/A")
-            vocab_size = resp.data.get("vocab_size", "N/A")
-            
-            if status_val == "skipped":
-                s.update(
-                    label=f"{label} already built - use Force Rebuild to overwrite.",
-                    state="complete",
-                )
-                log.append(f"[SKIP] {label}: {resp.data.get('message')}")
-            else:
-                success_msg = f"{label} built successfully!"
-                if index_size != "N/A":
-                    success_msg += f" | Size: {index_size} MB"
-                if vocab_size != "N/A":
-                    success_msg += f" | Terms: {vocab_size:,}"
+            # Handle "all" index type differently
+            if index_type == "all":
+                indices_results = resp.data.get("indices", {})
+                success_count = resp.data.get("success_count", 0)
+                total_count = resp.data.get("total_count", 3)
                 
-                s.update(label=success_msg, state="complete")
-                st.balloons()
-                log.append(f"[OK] {label}: size={index_size}MB, vocab={vocab_size}")
-            
-            indexing_api.clear_index_status_cache()
+                if success_count == total_count:
+                    success_msg = f"All {total_count} indices built successfully!"
+                    s.update(label=success_msg, state="complete")
+                    st.balloons()
+                    log.append(f"[OK] All indices: {success_count}/{total_count} built")
+                else:
+                    warning_msg = f"Built {success_count}/{total_count} indices"
+                    s.update(label=warning_msg, state="complete")
+                    log.append(f"[WARN] Partial build: {success_count}/{total_count}")
+                
+                # Log individual results
+                for idx_name, idx_result in indices_results.items():
+                    if idx_result.get("status") == "success":
+                        log.append(f"[OK] {idx_name}: built successfully")
+                    elif idx_result.get("status") == "skipped":
+                        log.append(f"[SKIP] {idx_name}: {idx_result.get('message', 'already exists')}")
+                    else:
+                        log.append(f"[ERR] {idx_name}: {idx_result.get('message', 'unknown error')}")
+                
+                indexing_api.clear_index_status_cache()
+            else:
+                # Original single-index logic
+                status_val = resp.data.get("status", "unknown")
+                index_size = resp.data.get("index_size_mb", "N/A")
+                vocab_size = resp.data.get("vocab_size", "N/A")
+                
+                if status_val == "skipped":
+                    s.update(
+                        label=f"{label} already built - use Force Rebuild to overwrite.",
+                        state="complete",
+                    )
+                    log.append(f"[SKIP] {label}: {resp.data.get('message')}")
+                else:
+                    success_msg = f"{label} built successfully!"
+                    if index_size != "N/A":
+                        success_msg += f" | Size: {index_size} MB"
+                    if vocab_size != "N/A":
+                        success_msg += f" | Terms: {vocab_size:,}"
+                    
+                    s.update(label=success_msg, state="complete")
+                    st.balloons()
+                    log.append(f"[OK] {label}: size={index_size}MB, vocab={vocab_size}")
+                
+                indexing_api.clear_index_status_cache()
         else:
             error_msg = resp.error if resp else "Unknown error from indexing service."
             s.update(label=f"{label} build failed", state="error")
@@ -455,12 +503,54 @@ def render() -> None:
     with hdr_c2:
         # Disable button if dataset is not in database
         build_all_disabled = not dataset_in_db
-        build_all_help = "Upload dataset to database first" if not dataset_in_db else "Build all three indices (TF-IDF, BM25, Embedding)"
+        build_all_help = "Upload dataset to database first" if not dataset_in_db else "Build all three indices (TF-IDF, BM25, Embedding) with shared preprocessing"
         
         if st.button("Build All Indices", type="primary", use_container_width=True,
                      key="idx_build_all", disabled=build_all_disabled, help=build_all_help):
+            
+            # Check if any indices already exist
+            existing_indices = []
             for itype in ("tfidf", "bm25", "embedding"):
-                _build_single(itype, force, preprocessing_config, dataset_in_db)
+                resp = indexing_api.index_status(itype, selected_dataset)
+                if resp.ok and isinstance(resp.data, dict):
+                    status = resp.data.get("status")
+                    if status in ("ready", "built", "available"):
+                        existing_indices.append(config.RETRIEVAL_MODEL_LABELS.get(itype, itype))
+            
+            # If indices exist and force rebuild is not enabled, show confirmation
+            if existing_indices and not force:
+                st.warning(f"⚠️ The following indices already exist: **{', '.join(existing_indices)}**")
+                
+                col1, col2, col3 = st.columns([1, 1, 1])
+                
+                with col1:
+                    if st.button("✅ Rebuild All", type="primary", key="confirm_rebuild_all", use_container_width=True):
+                        st.session_state["_confirmed_rebuild_all"] = True
+                        st.rerun()
+                
+                with col2:
+                    if st.button("🔄 Build Missing Only", key="skip_existing", use_container_width=True):
+                        # Build only missing indices individually
+                        for itype in ("tfidf", "bm25", "embedding"):
+                            resp = indexing_api.index_status(itype, selected_dataset)
+                            if resp.ok and isinstance(resp.data, dict):
+                                status = resp.data.get("status")
+                                if status not in ("ready", "built", "available"):
+                                    _build_single(itype, False, preprocessing_config, dataset_in_db, selected_dataset)
+                        st.rerun()
+                
+                with col3:
+                    if st.button("❌ Cancel", key="cancel_rebuild", use_container_width=True):
+                        st.info("Build cancelled")
+            else:
+                # No existing indices or force rebuild enabled - proceed directly
+                st.session_state["_confirmed_rebuild_all"] = True
+                st.rerun()
+        
+        # Execute build if confirmed
+        if st.session_state.get("_confirmed_rebuild_all", False):
+            st.session_state["_confirmed_rebuild_all"] = False
+            _build_single("all", force, preprocessing_config, dataset_in_db, selected_dataset)
             st.rerun()
     with hdr_c3:
         if st.button("Refresh Status", use_container_width=True, key="idx_refresh"):
@@ -478,7 +568,7 @@ def render() -> None:
     cols = st.columns(3)
     for col, itype in zip(cols, ("tfidf", "bm25", "embedding")):
         with col:
-            resp = indexing_api.index_status(itype)
+            resp = indexing_api.index_status(itype, selected_dataset)
             status_data = resp.data if resp.ok and isinstance(resp.data, dict) else {}
             if not resp.ok:
                 status_data = {"status": "unknown", "error": resp.error}
@@ -491,7 +581,7 @@ def render() -> None:
                 disabled=not dataset_in_db
             )
             if rebuild_clicked and dataset_in_db:
-                _build_single(itype, force, preprocessing_config, dataset_in_db)
+                _build_single(itype, force, preprocessing_config, dataset_in_db, selected_dataset)
                 st.rerun()
 
     st.divider()
