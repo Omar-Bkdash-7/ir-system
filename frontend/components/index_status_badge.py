@@ -46,16 +46,23 @@ def render_index_badge_compact(index_type: str, status_data: dict) -> None:
     )
 
 
-def render_index_card(index_type: str, status_data: dict, on_rebuild_key: str, disabled: bool = False) -> bool:
+def render_index_card(
+    index_type: str, 
+    status_data: dict, 
+    on_rebuild_key: str, 
+    on_delete_key: str = None,
+    disabled: bool = False
+) -> tuple[bool, bool]:
     """
-    Full card for the Index Management page: title, status, stats, Rebuild button.
-    Returns True if the Rebuild button was clicked this run.
+    Full card for the Index Management page: title, status, stats, Rebuild and Delete buttons.
+    Returns (rebuild_clicked, delete_clicked) - True if respective button was clicked this run.
     
     Args:
         index_type: Type of index (tfidf, bm25, embedding)
         status_data: Dictionary containing index status information
         on_rebuild_key: Unique key for the rebuild button
-        disabled: Whether the rebuild button should be disabled
+        on_delete_key: Unique key for the delete button (optional)
+        disabled: Whether the buttons should be disabled
     """
     status = _status_of(status_data)
     with st.container(border=True):
@@ -101,5 +108,21 @@ def render_index_card(index_type: str, status_data: dict, on_rebuild_key: str, d
             st.caption(f"⚠️ {status_data['error']}")
 
         st.write("")
+        
+        # Buttons row
         button_help = "Upload dataset to database first" if disabled else None
-        return st.button("🔨 Rebuild", key=on_rebuild_key, use_container_width=True, disabled=disabled, help=button_help)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            rebuild_clicked = st.button("🔨 Rebuild", key=on_rebuild_key, use_container_width=True, 
+                                       disabled=disabled, help=button_help)
+        with col2:
+            delete_clicked = False
+            if on_delete_key:
+                # Only show delete button if index exists (status is ready)
+                delete_disabled = disabled or status != "ready"
+                delete_help = "No index to delete" if status != "ready" else "Delete this index"
+                delete_clicked = st.button("🗑️ Delete", key=on_delete_key, use_container_width=True,
+                                         disabled=delete_disabled, help=delete_help, type="secondary")
+        
+        return rebuild_clicked, delete_clicked

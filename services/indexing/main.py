@@ -375,3 +375,98 @@ def search_vocabulary(
 def vocabulary_sample(sample_size: int = Query(100, description="Sample size")):
     """Get a random sample of vocabulary terms."""
     return get_vocabulary_sample(sample_size)
+
+
+# ── Index Deletion ────────────────────────────────────────────────────────
+
+@app.delete("/index/{index_type}/delete")
+def delete_index(
+    index_type: str,
+    dataset_name: str = Query(..., description="Dataset name")
+):
+    """Delete a specific index type for a dataset."""
+    from pathlib import Path
+    
+    if index_type not in ["tfidf", "bm25", "embedding"]:
+        raise HTTPException(status_code=400, detail=f"Invalid index type: {index_type}")
+    
+    try:
+        safe_dataset_name = dataset_name.replace('/', '_').replace('-', '_').replace('.', '_')
+        
+        # The indices are stored in subdirectories: data/indices/{dataset}/{index_type}/
+        indices_base = Path("data/indices")
+        index_dir = indices_base / safe_dataset_name / index_type
+        
+        deleted_files = []
+        
+        if index_dir.exists() and index_dir.is_dir():
+            # Delete all files in the index directory
+            for file_path in index_dir.iterdir():
+                if file_path.is_file():
+                    file_path.unlink()
+                    deleted_files.append(file_path.name)
+                    logger.info(f"Deleted: {file_path}")
+            
+            # Try to remove the directory itself if empty
+            try:
+                index_dir.rmdir()
+                logger.info(f"Removed empty directory: {index_dir}")
+            except OSError:
+                pass  # Directory not empty or permission issue
+        
+        if deleted_files:
+            return {
+                "status": "success",
+                "message": f"Deleted {index_type} index",
+                "deleted_files": deleted_files,
+                "count": len(deleted_files)
+            }
+        else:
+            return {
+                "status": "not_found",
+                "message": f"No {index_type} index files found",
+                "deleted_files": [],
+                "count": 0
+            }
+    
+    except Exception as e:
+        logger.error(f"Failed to delete {index_type} index: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/index/delete-all")
+def delete_all_indices_endpoint(dataset_name: str = Query(..., description="Dataset name")):
+    """Delete all index files for a dataset."""
+    from pathlib import Path
+    import shutil
+    
+    try:
+        safe_dataset_name = dataset_name.replace('/', '_').replace('-', '_').replace('.', '_')
+        
+        # The dataset indices directory contains subdirectories for each index type
+        dataset_indices_dir = Path("data/indices") / safe_dataset_name
+        
+        if dataset_indices_dir.exists() and dataset_indices_dir.is_dir():
+            # Count files recursively
+            file_count = sum(1 for _ in dataset_indices_dir.rglob('*') if _.is_file())
+            
+            # Delete the entire directory
+            shutil.rmtree(dataset_indices_dir)
+            
+            logger.info(f"Deleted {file_count} index files for dataset: {dataset_name}")
+            
+            return {
+                "status": "success",
+                "message": f"Deleted all indices for {dataset_name}",
+                "deleted_count": file_count
+            }
+        else:
+            return {
+                "status": "not_found",
+                "message": "No index directory found",
+                "deleted_count": 0
+            }
+    
+    except Exception as e:
+        logger.error(f"Failed to delete all indices: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

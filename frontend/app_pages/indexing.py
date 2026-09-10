@@ -396,6 +396,113 @@ def _on_dataset_change():
             st.session_state["dataset_change_error"] = resp.error
 
 
+def _delete_all_indices(dataset_name: str) -> None:
+    """Delete all index files for a dataset using indexing service API."""
+    log: list = st.session_state.get(SS_BUILD_LOG, [])
+    
+    with st.status("Deleting indices...", expanded=True) as s:
+        if not dataset_name:
+            st.warning("No dataset selected")
+            s.update(label="No dataset selected", state="complete")
+            return
+        
+        st.write(f"Deleting indices for dataset: {dataset_name}")
+        
+        try:
+            # Call the indexing service API
+            resp = indexing_api.delete_all_indices_api(dataset_name)
+            
+            if resp.ok and isinstance(resp.data, dict):
+                status = resp.data.get("status")
+                deleted_count = resp.data.get("deleted_count", 0)
+                
+                if status == "success" and deleted_count > 0:
+                    log.append(f"[DELETE] Removed {deleted_count} index files for {dataset_name}")
+                    st.write(f"✓ Deleted {deleted_count} files")
+                    
+                    s.update(label=f"Successfully deleted {deleted_count} index files", state="complete")
+                    st.success(f"✅ All indices deleted successfully! ({deleted_count} files removed)")
+                elif status == "not_found":
+                    log.append(f"[DELETE] No indices found for {dataset_name}")
+                    s.update(label="No indices found to delete", state="complete")
+                    st.info("ℹ️ No index files were found")
+                else:
+                    log.append(f"[DELETE] Unexpected status: {status}")
+                    s.update(label="Deletion completed with unknown status", state="complete")
+                    st.info(resp.data.get("message", "Operation completed"))
+            else:
+                error_msg = resp.error if resp else "Unknown error from indexing service"
+                log.append(f"[ERR] Delete failed: {error_msg}")
+                s.update(label="Deletion failed", state="error")
+                st.error(f"❌ {error_msg}")
+            
+            # Clear cache
+            indexing_api.clear_index_status_cache()
+                
+        except Exception as e:
+            error_msg = f"Failed to delete indices: {str(e)}"
+            log.append(f"[ERR] Delete failed: {error_msg}")
+            s.update(label="Deletion failed", state="error")
+            st.error(f"❌ {error_msg}")
+    
+    st.session_state[SS_BUILD_LOG] = log[-50:]
+
+
+def _delete_single_index(dataset_name: str, index_type: str) -> None:
+    """Delete a specific index type for a dataset using indexing service API."""
+    log: list = st.session_state.get(SS_BUILD_LOG, [])
+    label = config.RETRIEVAL_MODEL_LABELS.get(index_type, index_type)
+    
+    with st.status(f"Deleting {label} index...", expanded=True) as s:
+        if not dataset_name:
+            st.warning("No dataset selected")
+            s.update(label="No dataset selected", state="complete")
+            return
+        
+        st.write(f"Deleting {label} index for dataset: {dataset_name}")
+        
+        try:
+            # Call the indexing service API
+            resp = indexing_api.delete_single_index(index_type, dataset_name)
+            
+            if resp.ok and isinstance(resp.data, dict):
+                status = resp.data.get("status")
+                deleted_count = resp.data.get("count", 0)
+                deleted_files = resp.data.get("deleted_files", [])
+                
+                if status == "success" and deleted_count > 0:
+                    log.append(f"[DELETE] Removed {label} index files: {', '.join(deleted_files)}")
+                    for f in deleted_files:
+                        st.write(f"  ✓ Deleted: {f}")
+                    
+                    s.update(label=f"Successfully deleted {label} index", state="complete")
+                    st.success(f"✅ {label} index deleted successfully! ({deleted_count} files removed)")
+                elif status == "not_found":
+                    log.append(f"[DELETE] No {label} index files found for {dataset_name}")
+                    s.update(label=f"No {label} index found", state="complete")
+                    st.info(f"ℹ️ No {label} index files were found")
+                else:
+                    log.append(f"[DELETE] Unexpected status for {label}: {status}")
+                    s.update(label="Deletion completed with unknown status", state="complete")
+                    st.info(resp.data.get("message", "Operation completed"))
+            else:
+                error_msg = resp.error if resp else "Unknown error from indexing service"
+                log.append(f"[ERR] Delete {label} failed: {error_msg}")
+                s.update(label="Deletion failed", state="error")
+                st.error(f"❌ {error_msg}")
+            
+            # Clear cache
+            indexing_api.clear_index_status_cache()
+                
+        except Exception as e:
+            error_msg = f"Failed to delete {label} index: {str(e)}"
+            log.append(f"[ERR] Delete {label} failed: {error_msg}")
+            s.update(label="Deletion failed", state="error")
+            st.error(f"❌ {error_msg}")
+    
+    st.session_state[SS_BUILD_LOG] = log[-50:]
+
+
 def render() -> None:
     st.markdown("## Index Management")
     
@@ -491,10 +598,10 @@ def render() -> None:
     
     st.divider()
 
-    hdr_c1, hdr_c2, hdr_c3 = st.columns([3, 2, 2])
+    hdr_c1, hdr_c2, hdr_c3, hdr_c4 = st.columns([2, 2, 2, 2])
     with hdr_c1:
         force = st.checkbox(
-            "Force rebuild (overwrite existing)",
+            "Force rebuild",
             value=st.session_state.get(SS_FORCE_REBUILD, False),
             key="idx_force_rebuild",
             disabled=not dataset_in_db
@@ -558,6 +665,70 @@ def render() -> None:
             _get_datasets_in_db.clear()
             _get_dataset_metadata.clear()
             st.rerun()
+    
+    with hdr_c4:
+        if st.button("🗑️ Delete All Indices", use_container_width=True, 
+                     key="idx_delete_all", type="secondary"):
+            st.session_state["_show_delete_confirmation"] = True
+            st.rerun()
+    
+    # Show delete confirmation dialog if triggered
+    if st.session_state.get("_show_delete_confirmation", False):
+        st.divider()
+        st.error("### ⚠️ Confirm Deletion of Indices")
+        
+        if selected_dataset:
+            st.markdown(f"**Dataset:** `{selected_dataset}`")
+        
+        # Check which indices exist
+        existing_indices = []
+        indices_info = []
+        
+        for itype in ("tfidf", "bm25", "embedding"):
+            label = config.RETRIEVAL_MODEL_LABELS.get(itype, itype)
+            resp = indexing_api.index_status(itype, selected_dataset) if selected_dataset else None
+            
+            if resp and resp.ok and isinstance(resp.data, dict):
+                status = resp.data.get("status")
+                size = resp.data.get("index_size_mb", "N/A")
+                
+                if status in ("ready", "built", "available"):
+                    existing_indices.append(label)
+                    indices_info.append(f"- ✓ **{label}** ({size} MB) - **Will be deleted**")
+                else:
+                    indices_info.append(f"- ✗ {label} - Not built")
+            else:
+                indices_info.append(f"- ✗ {label} - Not built")
+        
+        if existing_indices:
+            st.markdown("**Indices status:**")
+            for info in indices_info:
+                st.markdown(info)
+            
+            st.warning(f"⚠️ **{len(existing_indices)} index file(s) will be permanently deleted from disk.** This action cannot be undone.")
+        else:
+            st.info("ℹ️ No indices found to delete. The operation will only clean up any remaining files.")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("✅ Confirm Delete", type="primary", key="confirm_delete_indices", use_container_width=True):
+                st.session_state["_show_delete_confirmation"] = False
+                st.session_state["_confirmed_delete"] = True
+                st.rerun()
+        
+        with col2:
+            if st.button("❌ Cancel", key="cancel_delete_indices", use_container_width=True):
+                st.session_state["_show_delete_confirmation"] = False
+                st.rerun()
+        
+        st.divider()
+    
+    # Execute deletion if confirmed
+    if st.session_state.get("_confirmed_delete", False):
+        st.session_state["_confirmed_delete"] = False
+        _delete_all_indices(selected_dataset)
+        st.rerun()
 
     st.divider()
 
@@ -573,16 +744,52 @@ def render() -> None:
             if not resp.ok:
                 status_data = {"status": "unknown", "error": resp.error}
             
-            # Pass dataset_in_db status to disable rebuild button if needed
-            rebuild_clicked = render_index_card(
+            # Pass dataset_in_db status to disable buttons if needed
+            rebuild_clicked, delete_clicked = render_index_card(
                 index_type=itype,
                 status_data=status_data,
                 on_rebuild_key=f"idx_rebuild_{itype}",
+                on_delete_key=f"idx_delete_{itype}",
                 disabled=not dataset_in_db
             )
+            
             if rebuild_clicked and dataset_in_db:
                 _build_single(itype, force, preprocessing_config, dataset_in_db, selected_dataset)
                 st.rerun()
+            
+            if delete_clicked and dataset_in_db:
+                st.session_state[f"_confirm_delete_{itype}"] = True
+                st.rerun()
+    
+    # Show delete confirmation for individual indices
+    for itype in ("tfidf", "bm25", "embedding"):
+        if st.session_state.get(f"_confirm_delete_{itype}", False):
+            st.divider()
+            label = config.RETRIEVAL_MODEL_LABELS.get(itype, itype)
+            st.warning(f"### ⚠️ Confirm Deletion: {label}")
+            
+            resp = indexing_api.index_status(itype, selected_dataset)
+            if resp.ok and isinstance(resp.data, dict):
+                size = resp.data.get("index_size_mb", "N/A")
+                st.markdown(f"**Index:** {label}")
+                st.markdown(f"**Size:** {size} MB")
+                st.markdown(f"**Dataset:** `{selected_dataset}`")
+            
+            st.error("⚠️ This index will be permanently deleted from disk. This action cannot be undone.")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button(f"✅ Delete {label}", type="primary", key=f"confirm_delete_single_{itype}", use_container_width=True):
+                    st.session_state[f"_confirm_delete_{itype}"] = False
+                    _delete_single_index(selected_dataset, itype)
+                    st.rerun()
+            with col2:
+                if st.button("❌ Cancel", key=f"cancel_delete_single_{itype}", use_container_width=True):
+                    st.session_state[f"_confirm_delete_{itype}"] = False
+                    st.rerun()
+            
+            st.divider()
+            break  # Only show one dialog at a time
 
     st.divider()
 

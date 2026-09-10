@@ -210,3 +210,22 @@ def fix_corrupted_dataset(dataset_id: str) -> APIResponse:
         max_retries=1,
     )
 
+
+def delete_single_index(index_type: str, dataset_name: str) -> APIResponse:
+    """Delete a specific index type for a dataset."""
+    return _request(
+        "DELETE",
+        f"{config.INDEXING_URL}/index/{index_type}/delete",
+        params={"dataset_name": dataset_name},
+        max_retries=1,
+    )
+
+
+def delete_all_indices_api(dataset_name: str) -> APIResponse:
+    """Delete all index files for a dataset."""
+    return _request(
+        "DELETE",
+        f"{config.INDEXING_URL}/index/delete-all",
+        params={"dataset_name": dataset_name},
+        max_retries=1,
+    )
