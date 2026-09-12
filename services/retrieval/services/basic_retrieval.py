@@ -13,8 +13,12 @@ logger = logging.getLogger(__name__)
 
 def retrieve(request: RetrievalRequest) -> list[dict]:
     model = request.model.lower()
+    dataset = request.dataset
 
-    logger.info(f"Retrieving with model: {model}, top_k: {request.top_k}")
+    if not dataset:
+        raise InvalidQueryError("dataset parameter is required")
+
+    logger.info(f"Retrieving with model: {model}, dataset: {dataset}, top_k: {request.top_k}")
 
     try:
         if model == "tfidf":
@@ -27,7 +31,7 @@ def retrieve(request: RetrievalRequest) -> list[dict]:
             raise InvalidQueryError(f"Unknown retrieval model: {model}")
 
         if request.include_text and results:
-            add_document_texts(results)
+            add_document_texts(results, dataset)
 
         logger.info(f"Retrieved {len(results)} documents successfully")
         return results
@@ -43,7 +47,7 @@ def _retrieve_tfidf(request: RetrievalRequest) -> list[dict]:
     if not request.query_tokens:
         raise InvalidQueryError("query_tokens is required for TF-IDF retrieval")
 
-    retriever = get_tfidf_retriever()
+    retriever = get_tfidf_retriever(request.dataset)
     candidates_k = min(request.top_k * 20, len(retriever.doc_ids))
 
     logger.debug(f"TF-IDF: retrieving {candidates_k} candidates for {len(request.query_tokens)} tokens")
@@ -59,7 +63,7 @@ def _retrieve_embedding(request: RetrievalRequest) -> list[dict]:
     if not request.query_text or not request.query_text.strip():
         raise InvalidQueryError("query_text is required for embedding retrieval")
 
-    retriever = get_embedding_retriever()
+    retriever = get_embedding_retriever(request.dataset)
     candidates_k = min(request.top_k * 20, len(retriever.doc_ids))
 
     logger.debug(f"Embedding: retrieving {candidates_k} candidates")
@@ -75,7 +79,7 @@ def _retrieve_bm25(request: RetrievalRequest) -> list[dict]:
     if not request.query_tokens:
         raise InvalidQueryError("query_tokens is required for BM25 retrieval")
 
-    retriever = get_bm25_retriever()
+    retriever = get_bm25_retriever(request.dataset)
     candidates_k = min(request.top_k * 20, len(retriever.doc_ids))
     
     k1 = getattr(request, 'bm25_k1', 1.5)
@@ -90,13 +94,13 @@ def _retrieve_bm25(request: RetrievalRequest) -> list[dict]:
     return results
 
 
-def add_document_texts(results: list[dict]) -> None:
+def add_document_texts(results: list[dict], dataset: str) -> None:
     doc_ids = [r["doc_id"] for r in results]
 
-    logger.debug(f"Fetching texts for {len(doc_ids)} documents from database")
+    logger.debug(f"Fetching texts for {len(doc_ids)} documents from database for dataset {dataset}")
 
     try:
-        texts = get_documents_by_ids(doc_ids)
+        texts = get_documents_by_ids(doc_ids, dataset)
 
         for result in results:
             result["text"] = texts.get(result["doc_id"], "")

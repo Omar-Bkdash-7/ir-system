@@ -28,14 +28,14 @@ paths:
 
 indices:
   base_dir: "data/indices"
-  # Multi-dataset support: {dataset} will be replaced with dataset slug (e.g., beir-quora)
-  bm25_index: "data/indices/{dataset}/bm25_index.pkl"
-  inverted_index: "data/indices/{dataset}/bm25_index.pkl"
-  tfidf_vectorizer: "data/indices/{dataset}/tfidf_vectorizer.pkl"
-  tfidf_matrix: "data/indices/{dataset}/tfidf_matrix.npz"
-  tfidf_doc_ids: "data/indices/{dataset}/tfidf_doc_ids.json"
-  embeddings: "data/indices/{dataset}/embeddings.npy"
-  doc_id_map: "data/indices/{dataset}/doc_id_map.json"
+  # Multi-dataset support: {dataset} will be replaced with dataset slug (e.g., beir_quora)
+  bm25_index: "data/indices/{dataset}/bm25/bm25_index.pkl"
+  inverted_index: "data/indices/{dataset}/bm25/bm25_index.pkl"
+  tfidf_vectorizer: "data/indices/{dataset}/tfidf/tfidf_vectorizer.pkl"
+  tfidf_matrix: "data/indices/{dataset}/tfidf/tfidf_matrix.npz"
+  tfidf_doc_ids: "data/indices/{dataset}/tfidf/tfidf_doc_ids.json"
+  embeddings: "data/indices/{dataset}/embedding/embeddings.npy"
+  doc_id_map: "data/indices/{dataset}/embedding/doc_id_map.json"
 
 models:
   embedding:

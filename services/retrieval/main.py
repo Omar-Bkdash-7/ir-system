@@ -28,25 +28,8 @@ register_exception_handlers(app)
 
 @app.on_event("startup")
 def startup_event():
-    logger.info("Loading indices on startup...")
-    try:
-        get_tfidf_retriever()
-        logger.info("TF-IDF retriever loaded successfully")
-    except Exception as e:
-        logger.warning(f"TF-IDF retriever not available: {e}")
-    
-    try:
-        get_embedding_retriever()
-        logger.info("Embedding retriever loaded successfully")
-    except Exception as e:
-        logger.warning(f"Embedding retriever not available: {e}")
-    
-    try:
-        get_bm25_retriever()
-        logger.info("BM25 retriever loaded successfully")
-    except Exception as e:
-        logger.warning(f"BM25 retriever not available: {e}")
-    
+    logger.info("Retrieval service starting up...")
+    logger.info("Retrievers will be loaded on-demand per dataset")
     logger.info("Startup complete")
 
 
@@ -80,96 +63,84 @@ def retrieve_bm25_endpoint(req: RetrievalRequest):
 
 
 @app.get("/status/tfidf")
-def tfidf_status():
+def tfidf_status(dataset: str = None):
+    if not dataset:
+        return {"error": "dataset parameter is required"}
+    
     try:
-        retriever = get_tfidf_retriever()
+        retriever = get_tfidf_retriever(dataset)
         return {
             "status": "ready",
+            "dataset": dataset,
             "total_docs": len(retriever.doc_ids),
             "vocab_size": len(retriever.vectorizer.vocabulary_),
             "loaded": retriever.loaded
         }
     except FileNotFoundError as e:
-        logger.warning(f"TF-IDF index not found: {e}")
+        logger.warning(f"TF-IDF index not found for dataset {dataset}: {e}")
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error(f"Error getting TF-IDF status: {e}")
+        logger.error(f"Error getting TF-IDF status for dataset {dataset}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/status/embedding")
-def embedding_status():
+def embedding_status(dataset: str = None):
+    if not dataset:
+        return {"error": "dataset parameter is required"}
+    
     try:
-        retriever = get_embedding_retriever()
+        retriever = get_embedding_retriever(dataset)
         stats = retriever.get_statistics()
         return {
             "status": "ready",
+            "dataset": dataset,
             "loaded": retriever.loaded,
             **stats
         }
     except FileNotFoundError as e:
-        logger.warning(f"Embedding index not found: {e}")
+        logger.warning(f"Embedding index not found for dataset {dataset}: {e}")
         return {
             "status": "not_built",
+            "dataset": dataset,
             "message": "Embedding index has not been built yet. Build it via /index/embedding/build endpoint on indexing service."
         }
     except Exception as e:
-        logger.error(f"Error getting embedding status: {e}")
+        logger.error(f"Error getting embedding status for dataset {dataset}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/status")
 def overall_status():
-    tfidf_ok = False
-    embedding_ok = False
-    bm25_ok = False
-
-    try:
-        get_tfidf_retriever()
-        tfidf_ok = True
-    except:
-        pass
-
-    try:
-        get_embedding_retriever()
-        embedding_ok = True
-    except:
-        pass
-
-    try:
-        get_bm25_retriever()
-        bm25_ok = True
-    except:
-        pass
-
     return {
         "service": "retrieval",
-        "models": {
-            "tfidf": "ready" if tfidf_ok else "unavailable",
-            "embedding": "ready" if embedding_ok else "unavailable",
-            "bm25": "ready" if bm25_ok else "unavailable"
-        }
+        "message": "Retrievers loaded on-demand per dataset. Use /status/{model}?dataset=<name> for specific status."
     }
 
 
 @app.get("/status/bm25")
-def bm25_status():
+def bm25_status(dataset: str = None):
+    if not dataset:
+        return {"error": "dataset parameter is required"}
+    
     try:
-        retriever = get_bm25_retriever()
+        retriever = get_bm25_retriever(dataset)
         stats = retriever.get_statistics()
         return {
             "status": "ready",
+            "dataset": dataset,
             "loaded": retriever.loaded,
             **stats
         }
     except FileNotFoundError as e:
-        logger.warning(f"BM25 index not found: {e}")
+        logger.warning(f"BM25 index not found for dataset {dataset}: {e}")
         return {
             "status": "not_built",
+            "dataset": dataset,
             "message": "BM25 index has not been built yet. Build it via /index/bm25/build endpoint on indexing service."
         }
     except Exception as e:
-        logger.error(f"Error getting BM25 status: {e}")
+        logger.error(f"Error getting BM25 status for dataset {dataset}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

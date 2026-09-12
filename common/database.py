@@ -89,11 +89,16 @@ def insert_documents(documents: list[dict]):
     conn.close()
     logger.info(f"Inserted {len(documents)} documents into database")
 
-def get_documents_by_ids(doc_ids: list[str]) -> dict:
-    conn = get_connection()
+def get_documents_by_ids(doc_ids: list[str], dataset: str = None) -> dict:
+    conn = get_db_connection()
     cur = conn.cursor()
     
-    table_name = get_config("database.table", "documents")
+    # Use dataset-specific table if dataset is provided
+    if dataset:
+        safe_dataset = dataset.replace("/", "_").replace("-", "_")
+        table_name = f"dataset_{safe_dataset}"
+    else:
+        table_name = get_config("database.table", "documents")
     
     cur.execute(
         f"SELECT doc_id, text FROM {table_name} WHERE doc_id = ANY(%s)",

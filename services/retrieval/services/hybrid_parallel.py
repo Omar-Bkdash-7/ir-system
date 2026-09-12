@@ -14,8 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 def retrieve_hybrid_parallel(request: HybridParallelRequest) -> list[dict]:
+    dataset = request.dataset
+    
+    if not dataset:
+        raise InvalidQueryError("dataset parameter is required")
+    
     logger.info(f"Hybrid Parallel: models={request.models}, fusion={request.fusion_method}, "
-                f"candidates_per_model={request.candidates_per_model}, final_k={request.top_k}")
+                f"dataset={dataset}, candidates_per_model={request.candidates_per_model}, final_k={request.top_k}")
     
     if len(request.models) < 2:
         raise InvalidQueryError("Parallel mode requires at least 2 models")
@@ -27,7 +32,8 @@ def retrieve_hybrid_parallel(request: HybridParallelRequest) -> list[dict]:
             query_text=request.query_text,
             top_k=request.candidates_per_model,
             bm25_k1=request.bm25_k1,
-            bm25_b=request.bm25_b
+            bm25_b=request.bm25_b,
+            dataset=dataset
         )
         
         logger.info(f"Retrieved from {len(results_list)} models, now fusing results")
@@ -49,7 +55,7 @@ def retrieve_hybrid_parallel(request: HybridParallelRequest) -> list[dict]:
                    f"returning top {len(final_results)}")
         
         if request.include_text and final_results:
-            add_document_texts(final_results)
+            add_document_texts(final_results, dataset)
         
         return final_results
     
@@ -66,7 +72,8 @@ def _retrieve_from_models_parallel(
     query_text: str,
     top_k: int,
     bm25_k1: float,
-    bm25_b: float
+    bm25_b: float,
+    dataset: str
 ) -> list[list[dict]]:
     results_list = []
     
@@ -81,7 +88,8 @@ def _retrieve_from_models_parallel(
                 top_k=top_k,
                 include_text=False,
                 bm25_k1=bm25_k1,
-                bm25_b=bm25_b
+                bm25_b=bm25_b,
+                dataset=dataset
             )
             future = executor.submit(_retrieve_single_model, req, model)
             future_to_model[future] = model

@@ -12,8 +12,13 @@ logger = logging.getLogger(__name__)
 
 
 def retrieve_hybrid_serial(request: HybridSerialRequest) -> list[dict]:
+    dataset = request.dataset
+    
+    if not dataset:
+        raise InvalidQueryError("dataset parameter is required")
+    
     logger.info(f"Hybrid Serial: {request.first_model} -> {request.second_model}, "
-                f"first_k={request.first_stage_k}, final_k={request.final_top_k}")
+                f"dataset={dataset}, first_k={request.first_stage_k}, final_k={request.final_top_k}")
     
     if request.first_model == request.second_model:
         logger.warning(f"Same model for both stages: {request.first_model}. This is not recommended.")
@@ -26,7 +31,8 @@ def retrieve_hybrid_serial(request: HybridSerialRequest) -> list[dict]:
             top_k=request.first_stage_k,
             include_text=False,
             bm25_k1=request.bm25_k1,
-            bm25_b=request.bm25_b
+            bm25_b=request.bm25_b,
+            dataset=dataset
         )
         
         logger.info(f"Stage 1: Retrieving {request.first_stage_k} candidates using {request.first_model}")
@@ -47,7 +53,8 @@ def retrieve_hybrid_serial(request: HybridSerialRequest) -> list[dict]:
             query_text=request.query_text,
             model=request.second_model,
             bm25_k1=request.bm25_k1,
-            bm25_b=request.bm25_b
+            bm25_b=request.bm25_b,
+            dataset=dataset
         )
         
         final_results = stage2_results[:request.final_top_k]
@@ -55,7 +62,7 @@ def retrieve_hybrid_serial(request: HybridSerialRequest) -> list[dict]:
         logger.info(f"Stage 2 completed: returning top {len(final_results)} results")
         
         if request.include_text and final_results:
-            add_document_texts(final_results)
+            add_document_texts(final_results, dataset)
         
         return final_results
     
@@ -72,16 +79,17 @@ def _rerank_candidates(
     query_text: str,
     model: str,
     bm25_k1: float = 1.5,
-    bm25_b: float = 0.75
+    bm25_b: float = 0.75,
+    dataset: str = None
 ) -> list[dict]:
     if model == "tfidf":
-        retriever = get_tfidf_retriever()
+        retriever = get_tfidf_retriever(dataset)
         scores = retriever.score_documents(query_tokens, candidate_doc_ids)
     elif model == "embedding":
-        retriever = get_embedding_retriever()
+        retriever = get_embedding_retriever(dataset)
         scores = retriever.score_documents(query_text, candidate_doc_ids)
     elif model == "bm25":
-        retriever = get_bm25_retriever()
+        retriever = get_bm25_retriever(dataset)
         scores = retriever.score_documents(query_tokens, candidate_doc_ids, k1=bm25_k1, b=bm25_b)
     else:
         raise InvalidQueryError(f"Unknown model for re-ranking: {model}")
