@@ -38,36 +38,62 @@ def render_result_card(doc: Dict, rank: int, model_label: str = "") -> None:
         "border-color:var(--ctp-subtext0)" if rank == 2 else (
         "border-color:var(--ctp-peach)" if rank == 3 else ""))
 
-    expand_key = f"expand_{model_label}_{doc_id}_{rank}"
-    is_expanded = expand_key in st.session_state.get(SS_EXPANDED_DOCS, set())
-
     snippet = text[:_SNIPPET_LEN] + ("…" if len(text) > _SNIPPET_LEN else "")
-    display_text = text if is_expanded else snippet
-
-    st.markdown(
-        f'<div class="result-card {f"result-card--{rank_css}" if rank_css else ""}" '
-        f'style="{border_extra}">'
-        f'<div class="result-card__header">'
-        f'<span class="result-card__rank">{rank_icon} &nbsp;'
-        f'<span class="result-card__docid">doc {doc_id}</span></span>'
-        f'<span class="result-card__score">⭐ {score:.4f}</span>'
-        f'</div>'
-        f'<div class="result-card__snippet">{display_text}</div>'
-        f'{_score_bar(score)}'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
-
+    
+    # Escape HTML special characters to prevent rendering issues
+    snippet_html = snippet.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    full_text_html = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    
+    # Use CSS for show/hide functionality without page refresh
+    expand_id = f"expand_{model_label}_{doc_id}_{rank}".replace(" ", "_").replace("/", "_")
+    
     if len(text) > _SNIPPET_LEN:
-        label = "▲ Show less" if is_expanded else "▼ Show more"
-        if st.button(label, key=f"btn_{expand_key}", use_container_width=False):
-            expanded = set(st.session_state.get(SS_EXPANDED_DOCS, set()))
-            if is_expanded:
-                expanded.discard(expand_key)
-            else:
-                expanded.add(expand_key)
-            st.session_state[SS_EXPANDED_DOCS] = expanded
-            st.rerun()
+        # Collapsible card with pure CSS
+        st.markdown(
+            f'<div class="result-card {f"result-card--{rank_css}" if rank_css else ""}" '
+            f'style="{border_extra}">'
+            f'<div class="result-card__header">'
+            f'<span class="result-card__rank">{rank_icon} &nbsp;'
+            f'<span class="result-card__docid">doc {doc_id}</span></span>'
+            f'<span class="result-card__score">⭐ {score:.4f}</span>'
+            f'</div>'
+            f'<details class="result-card__details">'
+            f'<summary class="result-card__summary">'
+            f'<div class="result-card__snippet">{snippet_html}</div>'
+            f'<span class="result-card__toggle">▼ Show more</span>'
+            f'</summary>'
+            f'<div class="result-card__full-text">{full_text_html}</div>'
+            f'</details>'
+            f'{_score_bar(score)}'
+            f'</div>'
+            f'<style>'
+            f'.result-card__details {{ margin: 0; }}'
+            f'.result-card__summary {{ list-style: none; cursor: pointer; }}'
+            f'.result-card__summary::-webkit-details-marker {{ display: none; }}'
+            f'.result-card__toggle {{ display: inline-block; margin-top: 8px; color: var(--ctp-blue); font-size: 0.85em; font-weight: 500; }}'
+            f'.result-card__details[open] .result-card__snippet {{ display: none; }}'
+            f'.result-card__details[open] .result-card__toggle::before {{ content: "▲ Show less"; }}'
+            f'.result-card__details[open] .result-card__toggle {{ content: ""; }}'
+            f'.result-card__details:not([open]) .result-card__full-text {{ display: none; }}'
+            f'.result-card__full-text {{ margin-top: 8px; white-space: pre-wrap; }}'
+            f'</style>',
+            unsafe_allow_html=True,
+        )
+    else:
+        # Simple card without expand/collapse
+        st.markdown(
+            f'<div class="result-card {f"result-card--{rank_css}" if rank_css else ""}" '
+            f'style="{border_extra}">'
+            f'<div class="result-card__header">'
+            f'<span class="result-card__rank">{rank_icon} &nbsp;'
+            f'<span class="result-card__docid">doc {doc_id}</span></span>'
+            f'<span class="result-card__score">⭐ {score:.4f}</span>'
+            f'</div>'
+            f'<div class="result-card__snippet">{snippet_html}</div>'
+            f'{_score_bar(score)}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
 
 def render_results_grid(
