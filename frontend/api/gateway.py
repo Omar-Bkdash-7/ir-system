@@ -66,7 +66,7 @@ def refine_query(
     """
     return post(
         f"{config.API_GATEWAY_URL}/query/refine",
-        json_body={
+        json={
             "query": query,
             "history": history,
             "enabled": enabled,
@@ -109,7 +109,7 @@ def search_basic(
     
     return post(
         f"{config.API_GATEWAY_URL}/search",
-        json_body=payload,
+        json=payload,
     )
 
 
@@ -147,7 +147,7 @@ def search_hybrid_serial(
     
     return post(
         f"{config.API_GATEWAY_URL}/search/hybrid/serial",
-        json_body=payload,
+        json=payload,
         timeout=60,
     )
 
@@ -191,6 +191,6 @@ def search_hybrid_parallel(
     
     return post(
         f"{config.API_GATEWAY_URL}/search/hybrid/parallel",
-        json_body=payload,
+        json=payload,
         timeout=90,
     )

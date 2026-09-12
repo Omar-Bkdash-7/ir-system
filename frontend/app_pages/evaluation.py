@@ -127,7 +127,7 @@ def _run_evaluation_panel():
                         "include_per_query": False
                     }
                     
-                    response = post(f"{config.EVALUATION_URL}/evaluate", json_body=payload)
+                    response = post(f"{config.EVALUATION_URL}/evaluate", json=payload)
                     
                     if response.ok:
                         st.success(f"✅ Evaluation completed!")

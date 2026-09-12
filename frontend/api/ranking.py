@@ -14,7 +14,7 @@ def rerank(query: str, candidate_doc_ids: list, model: str = "embedding",
     if top_k is not None:
         payload["top_k"] = top_k
     payload.update(extra_params)
-    return post(f"{config.RANKING_URL}/rerank", json_body=payload)
+    return post(f"{config.RANKING_URL}/rerank", json=payload)
 
 
 def health() -> APIResponse:
