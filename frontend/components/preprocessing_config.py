@@ -125,23 +125,43 @@ def render_preprocessing_config(key_prefix: str = "prep") -> dict:
             cfg["max_token_length"] = None
 
     st.markdown(
+        """
+        <style>
+        div[role="radiogroup"] label[data-baseweb="radio"] > div:first-child {
+            display: none !important;
+        }
+        
+        div[role="radiogroup"] label[data-baseweb="radio"] > div:nth-child(2) {
+            margin-left: 0 !important;
+            padding-left: 5px !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
         '<div class="ir-eyebrow" style="margin-top:10px">Morphological Processing</div>',
         unsafe_allow_html=True,
     )
     morph_options = ["Lemmatization", "Stemming", "Neither"]
-    if cfg.get("use_lemmatization"):
-        morph_default = 0
-    elif cfg.get("use_stemming"):
-        morph_default = 1
-    else:
-        morph_default = 2
+    morph_key = f"{key_prefix}_morph"
+    
+    # Determine default only if not in session state yet
+    if morph_key not in st.session_state:
+        if cfg.get("use_lemmatization"):
+            morph_default = 0
+        elif cfg.get("use_stemming"):
+            morph_default = 1
+        else:
+            morph_default = 2
+        st.session_state[morph_key] = morph_options[morph_default]
 
     morph = st.radio(
         "Method",
         morph_options,
-        index=morph_default,
         horizontal=True,
-        key=f"{key_prefix}_morph",
+        key=morph_key,
         help=(
             "Lemmatization (spaCy/WordNet): slower, more accurate. "
             "Stemming (Porter): faster, more aggressive."
