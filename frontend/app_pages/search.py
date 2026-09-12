@@ -585,13 +585,18 @@ def render() -> None:
     # ── Retrieval mode segmented control ───────────────────────────────────
     st.markdown("### Retrieval Mode")
     
+    # Callback to update mode immediately
+    def _on_mode_change():
+        st.session_state[SS_RETRIEVAL_MODE] = st.session_state["mode_radio"]
+    
+    # Get current mode
+    current_mode = st.session_state.get(SS_RETRIEVAL_MODE, "individual")
+    
     # Segmented control using radio buttons with custom styling
     mode_choice = st.radio(
         "Active mode",
         ["individual", "hybrid_serial", "hybrid_parallel"],
-        index=["individual", "hybrid_serial", "hybrid_parallel"].index(
-            st.session_state.get(SS_RETRIEVAL_MODE, "individual")
-        ),
+        index=["individual", "hybrid_serial", "hybrid_parallel"].index(current_mode),
         horizontal=True,
         key="mode_radio",
         label_visibility="collapsed",
@@ -599,9 +604,9 @@ def render() -> None:
             "individual": "📊 Individual Models",
             "hybrid_serial": "🔗 Hybrid Serial",
             "hybrid_parallel": "🔀 Hybrid Parallel"
-        }[x]
+        }[x],
+        on_change=_on_mode_change
     )
-    st.session_state[SS_RETRIEVAL_MODE] = mode_choice
 
     # Render the appropriate configuration panel based on selected mode
     if mode_choice == "individual":
