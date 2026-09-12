@@ -146,7 +146,7 @@ services:
   query_refinement:
     build:
       context: .
-      dockerfile: docker/service-nlp.Dockerfile
+      dockerfile: docker/ml.Dockerfile
       target: runtime
     command: python -m uvicorn services.query_refinement.main:app --host 0.0.0.0 --port 8005 --reload
     volumes:

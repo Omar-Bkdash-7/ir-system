@@ -444,6 +444,13 @@ def render() -> None:
     
     st.caption("Choose a dataset with all indices built")
     
+    def on_dataset_change():
+        """Callback when dataset selection changes"""
+        new_dataset = st.session_state.dataset_selector
+        if new_dataset:  # Only update if not None (placeholder)
+            st.session_state[SS_SELECTED_DATASET] = new_dataset
+            st.session_state[SS_SEARCH_RESULTS] = None
+    
     if available_datasets:
         # Find index if dataset is selected and valid
         current_dataset = st.session_state.get(SS_SELECTED_DATASET)
@@ -451,20 +458,16 @@ def render() -> None:
         if current_dataset and current_dataset in available_datasets:
             default_index = available_datasets.index(current_dataset)
         
-        selected_dataset = st.selectbox(
+        st.selectbox(
             "Dataset",
-            options=available_datasets,
-            format_func=get_dataset_display_name,
-            index=default_index,
+            options=[None] + available_datasets,  # Add None as first option
+            format_func=lambda x: "Select a dataset..." if x is None else get_dataset_display_name(x),
+            index=0 if default_index is None else default_index + 1,  # +1 because of None
             key="dataset_selector",
             help="Only datasets with all indices (TF-IDF, BM25, Embedding) built are shown",
             label_visibility="collapsed",
+            on_change=on_dataset_change,
         )
-        
-        if st.session_state.get(SS_SELECTED_DATASET) != selected_dataset:
-            st.session_state[SS_SELECTED_DATASET] = selected_dataset
-            st.session_state[SS_SEARCH_RESULTS] = None
-            st.rerun()
     else:
         st.selectbox(
             "Dataset",
@@ -511,7 +514,9 @@ def render() -> None:
             label_visibility="collapsed",
             key="search_query_input",
         )
-        st.session_state[SS_CURRENT_QUERY] = query
+        # Store query value for next render
+        if query != st.session_state.get(SS_CURRENT_QUERY, ""):
+            st.session_state[SS_CURRENT_QUERY] = query
 
     with rcol:
         if st.button("✨ Refine", use_container_width=True, key="btn_refine"):
@@ -531,26 +536,33 @@ def render() -> None:
                 st.warning("Enter a query first.")
 
     # ── Refinement preview ─────────────────────────────────────────────────
-    refinement_result = st.session_state.get(SS_REFINEMENT_RESULT)
-    if refinement_result and refinement_result.get("applied"):
-        with st.expander("✨ Refinement Suggestion — click to review", expanded=True):
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("**Original**")
-                st.info(refinement_result.get("original_query", ""))
-            with c2:
-                st.markdown("**Suggested**")
-                st.success(refinement_result.get("refined_query", ""))
-            a1, a2 = st.columns(2)
-            with a1:
-                if st.button("✅ Accept refined query", use_container_width=True, key="btn_accept_ref"):
-                    st.session_state[SS_CURRENT_QUERY] = refinement_result.get("refined_query", query)
-                    st.session_state[SS_REFINEMENT_RESULT] = None
-                    st.rerun()
-            with a2:
-                if st.button("❌ Keep original", use_container_width=True, key="btn_reject_ref"):
-                    st.session_state[SS_REFINEMENT_RESULT] = None
-                    st.rerun()
+    # Check if we should show refinement expander
+    show_refinement = st.session_state.get(SS_REFINEMENT_RESULT) is not None
+    
+    if show_refinement:
+        refinement_result = st.session_state[SS_REFINEMENT_RESULT]
+        if refinement_result.get("applied"):
+            with st.expander("✨ Refinement Suggestion — click to review", expanded=True):
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown("**Original**")
+                    st.info(refinement_result.get("original_query", ""))
+                with c2:
+                    st.markdown("**Suggested**")
+                    st.success(refinement_result.get("refined_query", ""))
+                
+                a1, a2 = st.columns(2)
+                with a1:
+                    if st.button("✅ Accept refined query", use_container_width=True, key="btn_accept_ref"):
+                        # Update query and clear refinement
+                        st.session_state[SS_CURRENT_QUERY] = refinement_result.get("refined_query", query)
+                        st.session_state[SS_REFINEMENT_RESULT] = None
+                        st.rerun()
+                with a2:
+                    if st.button("❌ Keep original", use_container_width=True, key="btn_reject_ref"):
+                        # Just clear refinement
+                        st.session_state[SS_REFINEMENT_RESULT] = None
+                        st.rerun()
 
     # ── Preprocessing config ────────────────────────────────────────────────
     with st.expander("⚙️ Preprocessing Configuration", expanded=False):
@@ -622,7 +634,9 @@ def render() -> None:
     # ── Search button ───────────────────────────────────────────────────────
     st.divider()
     if st.button("🚀 Search", type="primary", use_container_width=True, key="btn_search"):
-        if not query.strip():
+        if not st.session_state.get(SS_SELECTED_DATASET):
+            st.error("⚠️ Please select a dataset first before searching.")
+        elif not query.strip():
             st.error("❌ Enter a query.")
         else:
             _run_search(query.strip(), active_mode, active_mode_cfg)

@@ -12,7 +12,7 @@ import streamlit as st
 
 from constants import SS_EXPANDED_DOCS
 
-_RANK_BADGES = {1: ("🥇", "top1"), 2: ("🥈", "top2"), 3: ("🥉", "top3")}
+_RANK_BADGES = {1: ("#1 🥇", "top1"), 2: ("#2 🥈", "top2"), 3: ("#3 🥉", "top3")}
 _SNIPPET_LEN = 420
 
 
