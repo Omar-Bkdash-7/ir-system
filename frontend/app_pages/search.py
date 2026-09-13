@@ -439,6 +439,21 @@ def _tab_hybrid_parallel() -> dict:
 def render() -> None:
     st.markdown("## 🔍 Search")
 
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stSelectbox"] {
+            margin-bottom: -10px;
+        }
+        hr {
+            margin-top: 0rem !important;
+            margin-bottom: 0.8rem !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
     # ── Dataset selector ───────────────────────────────────────────────────
     available_datasets = get_available_datasets()
     
@@ -447,7 +462,7 @@ def render() -> None:
     def on_dataset_change():
         """Callback when dataset selection changes"""
         new_dataset = st.session_state.dataset_selector
-        if new_dataset:  # Only update if not None (placeholder)
+        if new_dataset:  # Only update if not None
             st.session_state[SS_SELECTED_DATASET] = new_dataset
             st.session_state[SS_SEARCH_RESULTS] = None
     
@@ -457,12 +472,13 @@ def render() -> None:
         default_index = None
         if current_dataset and current_dataset in available_datasets:
             default_index = available_datasets.index(current_dataset)
-        
+
         st.selectbox(
             "Dataset",
-            options=[None] + available_datasets,  # Add None as first option
-            format_func=lambda x: "Select a dataset..." if x is None else get_dataset_display_name(x),
-            index=0 if default_index is None else default_index + 1,  # +1 because of None
+            options=available_datasets,
+            index=default_index,
+            placeholder="Select a dataset...",
+            format_func=get_dataset_display_name,
             key="dataset_selector",
             help="Only datasets with all indices (TF-IDF, BM25, Embedding) built are shown",
             label_visibility="collapsed",
