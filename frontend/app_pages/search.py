@@ -332,6 +332,23 @@ def _tab_hybrid_serial() -> dict:
 
 def _tab_hybrid_parallel() -> dict:
     """Render Hybrid Parallel tab, return mode_cfg dict."""
+    st.markdown(
+        """
+        <style>
+        span[data-baseweb="tag"] span {
+            color: #0f172a !important;
+            font-weight: 600 !important;
+        }
+
+        span[data-baseweb="tag"] svg {
+            fill: #0f172a !important;
+            color: #0f172a !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
     st.markdown("##### Parallel fusion across multiple models")
 
     models = st.multiselect(
@@ -389,6 +406,13 @@ def _tab_hybrid_parallel() -> dict:
 
     if fusion == "weighted" and len(models) >= 2:
         st.markdown("**Weight per model** (must sum to 1.0)")
+        
+        # Auto-balance callback
+        def auto_balance_weights():
+            balanced = round(1.0 / len(models), 4)
+            for m in models:
+                st.session_state[f"hp_w_{m}"] = balanced
+        
         weights: dict = {}
         wcols = st.columns(len(models))
         default_w = round(1.0 / len(models), 2)
@@ -401,12 +425,8 @@ def _tab_hybrid_parallel() -> dict:
                 )
         total = sum(weights.values())
         if abs(total - 1.0) > 0.01:
-            st.error(f"⚠️ Weights sum to {total:.2f} — must equal 1.0")
-            if st.button("⚖️ Auto-balance", key="hp_autobalance"):
-                balanced = round(1.0 / len(models), 4)
-                for m in models:
-                    st.session_state[f"hp_w_{m}"] = balanced
-                st.rerun()
+            st.warning(f"⚠️ Weights sum to {total:.2f} — must equal 1.0")
+            st.button("⚖️ Auto-balance", key="hp_autobalance", on_click=auto_balance_weights)
         else:
             st.success(f"✅ Sum = {total:.2f}")
         cfg["model_weights"] = weights
