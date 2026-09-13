@@ -223,38 +223,43 @@ def _tab_individual() -> dict:
     st.markdown("##### Select & configure models")
     mode_cfg: dict = {}
     
-    # Horizontal layout for model cards
-    cols = st.columns(3)
-
-    for col, model in zip(cols, config.RETRIEVAL_MODELS):
+    for model in config.RETRIEVAL_MODELS:
         icon = config.RETRIEVAL_MODEL_ICONS[model]
         label = config.RETRIEVAL_MODEL_LABELS[model]
-        with col:
-            with st.container(border=True):
-                enabled = st.checkbox(f"{icon} {label}", value=True, key=f"ind_ena_{model}")
+        
+        with st.container(border=True):
+            enabled = st.checkbox(f"{icon} {label}", value=True, key=f"ind_ena_{model}")
+            col_topk, col_disp = st.columns(2)
+            
+            with col_topk:
                 top_k = st.slider(
                     "Retrieve top_k",
                     config.MIN_TOP_K, config.MAX_TOP_K,
                     config.DEFAULT_TOP_K, 10,
                     key=f"ind_topk_{model}",
                 )
+                
+            with col_disp:
                 disp_k = st.slider(
                     "Display",
                     config.MIN_DISPLAY_K, config.MAX_DISPLAY_K,
                     config.DEFAULT_DISPLAY_K, 5,
                     key=f"ind_disp_{model}",
                 )
-                mcfg: dict = {"enabled": enabled, "top_k": top_k, "display_k": disp_k}
-                if model == "bm25":
-                    k1, b = render_bm25_params(key_prefix=f"ind_{model}")
-                    mcfg.update({"k1": k1, "b": b})
-                elif model == "embedding":
-                    st.caption(f"Model: `{config.EMBEDDING_MODEL_NAME}` ({config.EMBEDDING_DIMENSIONS}d)")
-                elif model == "tfidf":
-                    st.caption(f"Config: `{config.TFIDF_DESCRIPTION}`")
-                mode_cfg[model] = mcfg
+            
+            mcfg: dict = {"enabled": enabled, "top_k": top_k, "display_k": disp_k}
+            
+            if model == "bm25":
+                k1, b = render_bm25_params(key_prefix=f"ind_{model}")
+                mcfg.update({"k1": k1, "b": b})
+            elif model == "embedding":
+                st.caption(f"Model: `{config.EMBEDDING_MODEL_NAME}` ({config.EMBEDDING_DIMENSIONS}d)")
+            elif model == "tfidf":
+                st.caption(f"Config: `{config.TFIDF_DESCRIPTION}`")
+            
+            mode_cfg[model] = mcfg
+            
     return mode_cfg
-
 
 def _tab_hybrid_serial() -> dict:
     """Render Hybrid Serial tab, return mode_cfg dict."""
