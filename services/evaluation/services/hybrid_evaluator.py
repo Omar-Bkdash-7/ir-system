@@ -77,7 +77,8 @@ class HybridEvaluator:
                     "first_model": first_model,
                     "second_model": second_model,
                     "top_k": top_k,
-                    "include_text": False
+                    "include_text": False,
+                    "dataset": dataset_name
                 }
                 
                 response = requests.post(
@@ -183,7 +184,8 @@ class HybridEvaluator:
                     "models": models,
                     "fusion_method": fusion_method,
                     "top_k": top_k,
-                    "include_text": False
+                    "include_text": False,
+                    "dataset": dataset_name
                 }
                 
                 response = requests.post(

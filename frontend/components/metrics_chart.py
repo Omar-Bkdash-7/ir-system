@@ -88,15 +88,22 @@ def render_radar_chart(metrics: Dict[str, Dict[str, float]]) -> None:
     fig = go.Figure()
     for idx, (model_name, vals) in enumerate(metrics.items()):
         values = [vals.get(k, 0.0) for k in _METRIC_LABELS]
-        values.append(values[0])  # close the polygon
+        values.append(values[0])
+        
+        color_hex = _COLORS[idx % len(_COLORS)]
+        r = int(color_hex[1:3], 16)
+        g = int(color_hex[3:5], 16)
+        b = int(color_hex[5:7], 16)
+        fillcolor = f"rgba({r},{g},{b},0.15)"
+        
         fig.add_trace(
             go.Scatterpolar(
                 r=values,
                 theta=categories + [categories[0]],
                 fill="toself",
                 name=model_name,
-                line_color=_COLORS[idx % len(_COLORS)],
-                fillcolor=_COLORS[idx % len(_COLORS)].replace("#", "rgba(") + ",0.15)",
+                line_color=color_hex,
+                fillcolor=fillcolor,
             )
         )
     fig.update_layout(
@@ -128,23 +135,40 @@ def render_precision_at_k_curve(
 
     k_values = k_values or [1, 3, 5, 10, 20, 50, 100]
     fig = go.Figure()
+    
+    all_values = []
     for idx, (model_name, pk_vals) in enumerate(pk_data.items()):
+        y_values = [pk_vals.get(k, None) for k in k_values]
+        all_values.extend([v for v in y_values if v is not None])
+        
         fig.add_trace(
             go.Scatter(
                 x=k_values,
-                y=[pk_vals.get(k, None) for k in k_values],
+                y=y_values,
                 mode="lines+markers",
                 name=model_name,
-                line=dict(color=_COLORS[idx % len(_COLORS)], width=2),
-                marker=dict(size=7),
+                line=dict(color=_COLORS[idx % len(_COLORS)], width=3),
+                marker=dict(size=8),
                 connectgaps=True,
             )
         )
+    
+    # Auto-scale y-axis based on actual values with some padding
+    if all_values:
+        min_val = min(all_values)
+        max_val = max(all_values)
+        padding = (max_val - min_val) * 0.15
+        y_min = max(0, min_val - padding)
+        y_max = min(1, max_val + padding)
+    else:
+        y_min, y_max = 0, 1
+    
     fig.update_layout(
         title="Precision@K Curve",
-        xaxis_title="K",
+        xaxis_title="K (Number of Retrieved Documents)",
         yaxis_title="Precision",
-        yaxis_range=[0, 1],
+        yaxis_range=[y_min, y_max],
+        height=550,
         **_base_layout(),
     )
     st.plotly_chart(fig, use_container_width=True)

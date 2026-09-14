@@ -78,7 +78,8 @@ class RetrievalEvaluator:
                     model=model,
                     top_k=top_k,
                     bm25_k1=bm25_k1,
-                    bm25_b=bm25_b
+                    bm25_b=bm25_b,
+                    dataset_name=dataset_name
                 )
                 
                 if not retrieved_docs:
@@ -136,7 +137,8 @@ class RetrievalEvaluator:
         model: str,
         top_k: int,
         bm25_k1: float,
-        bm25_b: float
+        bm25_b: float,
+        dataset_name: str
     ) -> List[Dict]:
         """
         Retrieve documents using the specified model.
@@ -147,6 +149,7 @@ class RetrievalEvaluator:
             top_k: Number of documents to retrieve
             bm25_k1: BM25 k1 parameter
             bm25_b: BM25 b parameter
+            dataset_name: Dataset name
             
         Returns:
             List of retrieved documents
@@ -155,7 +158,8 @@ class RetrievalEvaluator:
             payload = {
                 "query_text": query_text,
                 "top_k": top_k,
-                "include_text": False
+                "include_text": False,
+                "dataset": dataset_name
             }
             endpoint = f"{self.retrieval_service_url}/retrieve/embedding"
         
@@ -167,7 +171,8 @@ class RetrievalEvaluator:
                 "top_k": top_k,
                 "include_text": False,
                 "bm25_k1": bm25_k1,
-                "bm25_b": bm25_b
+                "bm25_b": bm25_b,
+                "dataset": dataset_name
             }
             endpoint = f"{self.retrieval_service_url}/retrieve/bm25"
         
@@ -176,7 +181,8 @@ class RetrievalEvaluator:
             payload = {
                 "query_tokens": query_tokens,
                 "top_k": top_k,
-                "include_text": False
+                "include_text": False,
+                "dataset": dataset_name
             }
             endpoint = f"{self.retrieval_service_url}/retrieve/tfidf"
         

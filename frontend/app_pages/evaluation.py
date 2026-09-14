@@ -20,6 +20,7 @@ from components.metrics_chart import (
     render_radar_chart,
     render_refinement_comparison_chart,
 )
+from utils.dataset_utils import get_available_datasets, get_dataset_display_name
 
 # Paths to pre-computed evaluation JSON files
 _EVAL_DIR = Path("/app/data/evaluation")
@@ -91,32 +92,106 @@ def _run_evaluation_panel():
     with st.expander("🚀 Run New Evaluation", expanded=False):
         st.markdown("Run evaluation on demand to get fresh metrics.")
         
+        available_datasets = get_available_datasets()
+        
+        if not available_datasets:
+            st.warning("⚠️ No datasets with all indices (TF-IDF, BM25, Embedding) are available. Please build indices first.")
+            return
+        
         col1, col2 = st.columns(2)
         
         with col1:
             model = st.selectbox(
                 "Model",
                 ["tfidf", "embedding", "bm25", "hybrid_serial", "hybrid_parallel"],
-                format_func=lambda x: x.upper().replace("_", " ").title()
+                format_func=lambda x: x.upper().replace("_", " ").title(),
+                key="eval_model_select"
             )
             
             dataset = st.selectbox(
                 "Dataset",
-                ["beir/quora/test", "beir/nfcorpus", "beir/scifact"],
-                help="Dataset must have qrels for evaluation"
+                available_datasets,
+                format_func=get_dataset_display_name,
+                help="Only datasets with all indices (TF-IDF, BM25, Embedding) are shown",
+                key="eval_dataset_select"
             )
         
         with col2:
-            top_k = st.number_input("Top K", min_value=10, max_value=1000, value=100, step=10)
+            top_k = st.number_input("Top K", min_value=10, max_value=1000, value=100, step=10, key="eval_topk")
             query_limit = st.number_input(
                 "Query Limit (0=all)", 
                 min_value=0, 
                 max_value=1000, 
                 value=100,
-                help="Limit queries for faster testing. 0 means all queries."
+                help="Limit queries for faster testing. 0 means all queries.",
+                key="eval_query_limit"
             )
         
-        if st.button("▶️ Run Evaluation", type="primary", use_container_width=True):
+        # Hybrid configuration
+        hybrid_models = None
+        fusion_method = "rrf"
+        
+        if model in ["hybrid_serial", "hybrid_parallel"]:
+            st.markdown("##### Hybrid Configuration")
+            
+            if model == "hybrid_serial":
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    first_model = st.selectbox(
+                        "First Model",
+                        ["tfidf", "bm25", "embedding"],
+                        index=1,
+                        key="eval_first_model"
+                    )
+                with col_b:
+                    second_model = st.selectbox(
+                        "Second Model",
+                        ["tfidf", "bm25", "embedding"],
+                        index=2,
+                        key="eval_second_model"
+                    )
+                hybrid_models = [first_model, second_model]
+            
+            else:  # hybrid_parallel
+                st.markdown(
+                    """
+                    <style>
+                    span[data-baseweb="tag"] span {
+                        color: #0f172a !important;
+                        font-weight: 600 !important;
+                    }
+
+                    span[data-baseweb="tag"] svg {
+                        fill: #0f172a !important;
+                        color: #0f172a !important;
+                    }
+                    </style>
+                    """,
+                    unsafe_allow_html=True
+                )
+                hybrid_models = st.multiselect(
+                    "Models (select 2+)",
+                    ["tfidf", "bm25", "embedding"],
+                    default=["tfidf", "bm25"],
+                    key="eval_parallel_models"
+                )
+                
+                fusion_method = st.selectbox(
+                    "Fusion Method",
+                    ["rrf", "combsum", "combmnz", "weighted"],
+                    key="eval_fusion_method"
+                )
+                
+                if len(hybrid_models) < 2:
+                    st.warning("⚠️ Select at least 2 models for hybrid parallel")
+        
+        if st.button("▶️ Run Evaluation", type="primary", use_container_width=True, key="eval_run_btn"):
+            # Validation
+            if model in ["hybrid_serial", "hybrid_parallel"]:
+                if not hybrid_models or len(hybrid_models) < 2:
+                    st.error("❌ Hybrid models require at least 2 models")
+                    return
+            
             with st.spinner(f"Evaluating {model.upper()} on {dataset}..."):
                 try:
                     payload = {
@@ -127,7 +202,15 @@ def _run_evaluation_panel():
                         "include_per_query": False
                     }
                     
-                    response = post(f"{config.EVALUATION_URL}/evaluate", json=payload)
+                    # Add hybrid-specific parameters
+                    if model in ["hybrid_serial", "hybrid_parallel"]:
+                        payload["hybrid_models"] = hybrid_models
+                        if model == "hybrid_parallel":
+                            payload["fusion_method"] = fusion_method
+                    
+                    # Evaluation can take long time, especially for hybrid models
+                    # Use extended timeout (100 minutes)
+                    response = post(f"{config.EVALUATION_URL}/evaluate", json=payload, timeout=6000)
                     
                     if response.ok:
                         st.success(f"✅ Evaluation completed!")
@@ -145,7 +228,6 @@ def _run_evaluation_panel():
                         st.info(f"📊 Evaluated on {metrics.get('num_queries', 0)} queries")
                         st.balloons()
                         
-                        # Force refresh
                         st.rerun()
                     else:
                         st.error(f"❌ Evaluation failed: {response.error}")
@@ -272,21 +354,48 @@ def render() -> None:
 
     # ── Charts ─────────────────────────────────────────────────────────────
     st.markdown("### 📈 Visual Analysis")
+    st.markdown(
+    """
+    <style>
+    div[data-baseweb="tab-list"] {
+        gap: 16px !important;
+    }
+    button[data-baseweb="tab"] {
+        padding: 8px 18px !important;
+        border-radius: 8px !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+    )
     tab1, tab2, tab3 = st.tabs(["📊 Bar Chart", "🕸️ Radar", "📉 Precision@K"])
     with tab1:
         render_metrics_bar_chart(metrics)
     with tab2:
         render_radar_chart(metrics)
     with tab3:
-        pk_data: Dict[str, Dict[int, float]] = {}
-        for model, vals in metrics.items():
-            p10 = vals.get("precision_at_10", 0.0)
-            pk_data[model] = {
-                1: p10 * 1.3, 3: p10 * 1.2, 5: p10 * 1.1,
-                10: p10, 20: p10 * 0.85, 50: p10 * 0.65, 100: p10 * 0.5,
-            }
-        render_precision_at_k_curve(pk_data)
-        st.caption("P@K values for K≠10 are extrapolated from P@10.")
+        if metrics:
+            pk_data: Dict[str, Dict[int, float]] = {}
+            for model, vals in metrics.items():
+                p10 = vals.get("precision_at_10", 0.0)
+                if p10 > 0:
+                    pk_data[model] = {
+                        1: min(p10 * 1.3, 1.0),
+                        3: min(p10 * 1.2, 1.0),
+                        5: min(p10 * 1.1, 1.0),
+                        10: p10,
+                        20: p10 * 0.85,
+                        50: p10 * 0.65,
+                        100: p10 * 0.5,
+                    }
+            
+            if pk_data:
+                render_precision_at_k_curve(pk_data)
+                st.caption("P@K values for K≠10 are extrapolated from P@10.")
+            else:
+                st.info("No precision data available for visualization.")
+        else:
+            st.info("No metrics available for Precision@K curve.")
 
     st.divider()
 
