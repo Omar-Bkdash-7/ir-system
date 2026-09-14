@@ -46,9 +46,7 @@ def render() -> None:
     # ── Configuration ──────────────────────────────────────────────────────
     with st.expander("⚙️ Refinement Configuration", expanded=False):
         st.caption(
-            "These values are informational — they reflect the server-side defaults "
-            "from `configs/config.yaml`. The server does not currently accept per-request "
-            "config overrides; this panel documents the active configuration."
+            "This panel documents the active configuration. These values are informational — they reflect the server-side defaults."
         )
         c1, c2 = st.columns(2)
         with c1:
@@ -127,6 +125,20 @@ def render() -> None:
         if not applied:
             st.info("No refinements applied — query was already optimal.")
         else:
+            st.markdown(
+            """
+            <style>
+            div[data-baseweb="tab-list"] {
+                gap: 16px !important;
+            }
+            button[data-baseweb="tab"] {
+                padding: 8px 18px !important;
+                border-radius: 8px !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+            )
             tab1, tab2, tab3, tab4 = st.tabs([
                 "🔤 Spelling", "📚 Synonyms", "🧠 Semantic History", "✅ Final Result"
             ])
