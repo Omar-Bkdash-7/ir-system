@@ -279,6 +279,7 @@ class HybridEvaluator:
     def _refine_query(self, query_text: str) -> str:
         """
         Refine query text using query refinement service.
+        Uses evaluation mode (spelling only) for deterministic results.
         
         Args:
             query_text: Original query text
@@ -292,7 +293,8 @@ class HybridEvaluator:
                 json={
                     "query": query_text,
                     "history": [],
-                    "enabled": True
+                    "enabled": True,
+                    "is_evaluation": True  # Evaluation mode: spelling only
                 },
                 timeout=10
             )
@@ -301,7 +303,7 @@ class HybridEvaluator:
             refined = result.get("refined_query", query_text)
             
             if refined != query_text:
-                logger.debug(f"Query refined: '{query_text}' -> '{refined}'")
+                logger.info(f"Query refined: '{query_text}' -> '{refined}'")
             
             return refined
         except Exception as e:

@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 class SpellingCorrectionEngine:
     def __init__(self, max_edit_distance: int = 2, confidence_threshold: float = 0.7):
         self.spell_checker = SpellChecker()
-        self.max_edit_distance = 1  # Only correct single-character typos
-        self.confidence_threshold = 0.85  # High confidence required
+        self.max_edit_distance = 2  # Allow up to 2 character edits
+        self.confidence_threshold = 0.7  # Balanced confidence threshold
         self.stop_words = self._load_stopwords()
         self.protected_terms = self._load_protected_terms()
     
@@ -72,23 +72,28 @@ class SpellingCorrectionEngine:
                 if corrected and corrected != word:
                     distance = self._levenshtein_distance(word, corrected)
                     
-                    # Only accept corrections with distance = 1 (single typo) and very high confidence
-                    if distance == 1:
-                        confidence = 1.0 - (distance / max(len(word), len(corrected)))
+                    # Accept corrections with distance <= 2
+                    if distance <= self.max_edit_distance:
+                        # Calculate confidence based on edit distance and string similarity
+                        length_factor = max(len(word), len(corrected))
+                        confidence = 1.0 - (distance / length_factor)
                         
-                        # Require very high confidence (0.9+) to avoid over-correction
-                        if confidence >= 0.9:
+                        # Additional similarity check to avoid unrelated corrections
+                        char_similarity = self._character_similarity(word, corrected)
+                        
+                        # Require confidence >= threshold and char similarity >= 0.6
+                        if confidence >= self.confidence_threshold and char_similarity >= 0.6:
                             corrections[word] = corrected
                             corrected_words.append(corrected)
-                            logger.info(f"Corrected: '{word}' -> '{corrected}' (distance={distance}, confidence={confidence:.2f})")
+                            logger.info(f"Corrected: '{word}' -> '{corrected}' (distance={distance}, confidence={confidence:.2f}, similarity={char_similarity:.2f})")
                         else:
-                            # Keep original word if confidence is not high enough
+                            # Keep original word if confidence or similarity is not high enough
                             corrected_words.append(word)
-                            logger.debug(f"Low confidence: '{word}' -> '{corrected}' (confidence={confidence:.2f} < 0.9)")
+                            logger.debug(f"Low confidence/similarity: '{word}' -> '{corrected}' (confidence={confidence:.2f}, similarity={char_similarity:.2f})")
                     else:
-                        # Don't correct if distance > 1 (might not be a typo, could be domain term)
+                        # Don't correct if distance > max_edit_distance
                         corrected_words.append(word)
-                        logger.debug(f"Distance too high: '{word}' -> '{corrected}' (distance={distance}), keeping original")
+                        logger.debug(f"Distance too high: '{word}' -> '{corrected}' (distance={distance} > {self.max_edit_distance})")
                 else:
                     corrected_words.append(word)
             except Exception as e:
@@ -101,6 +106,20 @@ class SpellingCorrectionEngine:
             logger.info(f"Query spelling corrected: '{query}' -> '{corrected_query}' (corrections: {corrections})")
         
         return corrected_query, corrections
+    
+    @staticmethod
+    def _character_similarity(s1: str, s2: str) -> float:
+        """Calculate character-level similarity to avoid unrelated corrections."""
+        if not s1 or not s2:
+            return 0.0
+        
+        s1_chars = set(s1.lower())
+        s2_chars = set(s2.lower())
+        
+        intersection = len(s1_chars & s2_chars)
+        union = len(s1_chars | s2_chars)
+        
+        return intersection / union if union > 0 else 0.0
     
     @staticmethod
     def _levenshtein_distance(s1: str, s2: str) -> int:

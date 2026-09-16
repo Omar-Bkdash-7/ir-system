@@ -40,7 +40,13 @@ def refine_endpoint(req: RefineRequest):
         if not req.query or not req.query.strip():
             raise HTTPException(status_code=400, detail="Query cannot be empty")
         
-        result = refine_query(req.query, req.history, req.enabled, req.session_id)
+        result = refine_query(
+            req.query, 
+            req.history, 
+            req.enabled, 
+            req.session_id,
+            req.is_evaluation
+        )
         return RefineResponse(**result)
     
     except HTTPException:

@@ -1,7 +1,7 @@
 from nltk.corpus import stopwords
 import numpy as np
 import logging
-from typing import List, Set
+from typing import List, Set, Tuple
 from collections import Counter
 from common.device import get_torch_device
 from common.config import get_config
@@ -28,13 +28,18 @@ class SemanticRefinementEngine:
         logger.info(f"Semantic refinement engine initialized on {device}")
     
     def compute_similarity(self, query: str, history: List[str]) -> float:
+        """
+        Compute semantic similarity between query and recent history.
+        Uses last 5 queries for better context.
+        """
         if not query or not query.strip() or not history:
             return 0.0
         
         try:
             query_embedding = self._get_embedding_cached(query)
             
-            recent_history = history[-3:]
+            # Use last 5 queries (not just 3) for richer history
+            recent_history = history[-5:]
             history_text = " ".join(recent_history)
             history_embedding = self._get_embedding_cached(history_text)
             
@@ -64,8 +69,12 @@ class SemanticRefinementEngine:
         query: str, 
         history: List[str], 
         similarity: float,
-        threshold: float = 0.35
+        threshold: float = 0.25
     ) -> List[str]:
+        """
+        Extract relevant terms from history with frequency-based filtering.
+        Lower threshold (0.25) to be more inclusive.
+        """
         if not history or similarity < threshold:
             logger.debug(f"History expansion skipped: similarity={similarity:.3f} < {threshold}")
             return []
@@ -74,16 +83,17 @@ class SemanticRefinementEngine:
         stop_words = self._get_stopwords()
         
         history_word_freq = Counter()
-        for hist_query in history[-3:]:
+        for hist_query in history[-5:]:  # Use last 5 queries (not just 3)
             for word in hist_query.lower().split():
                 if word.isalpha() and len(word) > 3 and word not in stop_words:
                     history_word_freq[word] += 1
         
         relevant_terms = []
         for word, freq in history_word_freq.most_common():
+            # Include terms that appear at least twice
             if word not in query_words and freq >= 2:
                 relevant_terms.append(word)
-                if len(relevant_terms) >= 2:
+                if len(relevant_terms) >= 3:  # Max 3 history terms
                     break
         
         if relevant_terms:
@@ -97,3 +107,55 @@ class SemanticRefinementEngine:
             return set(stopwords.words("english"))
         except:
             return set()
+
+    
+    def validate_semantic_drift(
+        self, 
+        original_query: str, 
+        refined_query: str, 
+        max_drift: float = 0.25
+    ) -> Tuple[bool, float]:
+        """
+        Validate that refined query hasn't drifted too far from original.
+        
+        Args:
+            original_query: Original query text
+            refined_query: Refined query text
+            max_drift: Maximum allowed drift (default 0.25)
+            
+        Returns:
+            Tuple of (is_valid, drift_score)
+        """
+        if not original_query or not refined_query:
+            return True, 0.0
+        
+        # If queries are identical, no drift
+        if original_query == refined_query:
+            return True, 0.0
+        
+        try:
+            original_emb = self._get_embedding_cached(original_query)
+            refined_emb = self._get_embedding_cached(refined_query)
+            
+            # Compute cosine similarity (higher is better)
+            similarity = float(np.dot(original_emb, refined_emb))
+            
+            # Drift is inverse of similarity
+            drift = 1.0 - similarity
+            
+            is_valid = drift <= max_drift
+            
+            if not is_valid:
+                logger.warning(
+                    f"Semantic drift too high: {drift:.3f} > {max_drift} "
+                    f"(original: '{original_query}', refined: '{refined_query}')"
+                )
+            else:
+                logger.debug(f"Semantic drift acceptable: {drift:.3f} <= {max_drift}")
+            
+            return is_valid, drift
+            
+        except Exception as e:
+            logger.error(f"Drift validation failed: {e}")
+            # On error, reject the refinement to be safe
+            return False, 1.0

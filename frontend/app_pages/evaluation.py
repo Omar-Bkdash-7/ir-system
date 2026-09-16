@@ -130,7 +130,7 @@ def _run_evaluation_panel():
                 "Query Limit", 
                 min_value=0, 
                 max_value=1000, 
-                value=0,
+                value=100,
                 help="Limit queries for faster testing. 0 means all queries.",
                 key="eval_query_limit"
             )
@@ -198,9 +198,14 @@ def _run_evaluation_panel():
             "✨ Enable Query Refinement",
             value=False,
             key="eval_refinement_toggle",
-            help="Apply query refinement (high-confidence spelling correction only) during evaluation"
+            help="Apply intelligent query refinement (spelling correction only in evaluation mode)"
         )
         
+        if enable_refinement:
+            st.info(
+                "ℹ️ **Evaluation Mode**: Only high-confidence spelling correction is applied. "
+                "Expansion and history features are disabled for deterministic results."
+            )
         
         if st.button("▶️ Run Evaluation", type="primary", use_container_width=True, key="eval_run_btn"):
             # Validation
@@ -600,13 +605,13 @@ def render() -> None:
     if table_rows:
         df = pd.DataFrame(table_rows)
         
-        # Sort by Model name, then by Dataset, then by Refinement (Without first, then With)
+        # Sort by Model name first, then by Refinement (Without first, then With), then by Dataset
         df["sort_refinement"] = df["Refinement"].apply(
             lambda x: 0 if "Without" in x else (1 if "With" in x else 2)
         )
-        df = df.sort_values(by=["Model", "Dataset", "sort_refinement"]).drop(columns=["sort_refinement"])
+        df = df.sort_values(by=["Model", "sort_refinement", "Dataset"]).drop(columns=["sort_refinement"])
         df = df.reset_index(drop=True)
-        
+
         st.dataframe(
             df,
             use_container_width=True,
