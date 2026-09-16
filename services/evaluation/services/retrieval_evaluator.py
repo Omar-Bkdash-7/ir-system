@@ -27,6 +27,10 @@ class RetrievalEvaluator:
             "services.preprocessing_url",
             "http://preprocessing:8001"
         )
+        self.query_refinement_service_url = get_config(
+            "services.query_refinement_url",
+            "http://query_refinement:8005"
+        )
         self.metrics_calculator = MetricsCalculator()
         self.dataset_loader = DatasetLoader()
     
@@ -37,7 +41,8 @@ class RetrievalEvaluator:
         top_k: int = 100,
         query_limit: Optional[int] = None,
         bm25_k1: float = 1.5,
-        bm25_b: float = 0.75
+        bm25_b: float = 0.75,
+        enable_refinement: bool = False
     ) -> Tuple[Dict, Dict]:
         """
         Evaluate a single retrieval model.
@@ -49,11 +54,12 @@ class RetrievalEvaluator:
             query_limit: Limit number of queries (for testing)
             bm25_k1: BM25 k1 parameter
             bm25_b: BM25 b parameter
+            enable_refinement: Apply query refinement
             
         Returns:
             Tuple of (results, metrics)
         """
-        logger.info(f"Evaluating {model} model on {dataset_name}")
+        logger.info(f"Evaluating {model} model on {dataset_name} (refinement={'enabled' if enable_refinement else 'disabled'})")
         
         queries, qrels = self.dataset_loader.load_queries_and_qrels(dataset_name)
         
@@ -73,8 +79,13 @@ class RetrievalEvaluator:
                 continue
             
             try:
+                # Apply query refinement if enabled
+                refined_query = query_text
+                if enable_refinement:
+                    refined_query = self._refine_query(query_text)
+                
                 retrieved_docs = self._retrieve(
-                    query_text=query_text,
+                    query_text=refined_query,
                     model=model,
                     top_k=top_k,
                     bm25_k1=bm25_k1,
@@ -213,3 +224,35 @@ class RetrievalEvaluator:
         except Exception as e:
             logger.error(f"Preprocessing failed: {e}")
             return query_text.lower().split()
+    
+    def _refine_query(self, query_text: str) -> str:
+        """
+        Refine query text using query refinement service.
+        
+        Args:
+            query_text: Original query text
+            
+        Returns:
+            Refined query text
+        """
+        try:
+            response = requests.post(
+                f"{self.query_refinement_service_url}/refine",
+                json={
+                    "query": query_text,
+                    "history": [],
+                    "enabled": True
+                },
+                timeout=10
+            )
+            response.raise_for_status()
+            result = response.json()
+            refined = result.get("refined_query", query_text)
+            
+            if refined != query_text:
+                logger.debug(f"Query refined: '{query_text}' -> '{refined}'")
+            
+            return refined
+        except Exception as e:
+            logger.warning(f"Query refinement failed, using original query: {e}")
+            return query_text

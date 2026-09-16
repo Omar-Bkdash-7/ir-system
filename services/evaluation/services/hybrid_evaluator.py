@@ -27,6 +27,10 @@ class HybridEvaluator:
             "services.preprocessing_url",
             "http://preprocessing:8001"
         )
+        self.query_refinement_service_url = get_config(
+            "services.query_refinement_url",
+            "http://query_refinement:8005"
+        )
         self.metrics_calculator = MetricsCalculator()
         self.dataset_loader = DatasetLoader()
     
@@ -36,7 +40,8 @@ class HybridEvaluator:
         first_model: str = "tfidf",
         second_model: str = "embedding",
         top_k: int = 100,
-        query_limit: Optional[int] = None
+        query_limit: Optional[int] = None,
+        enable_refinement: bool = False
     ) -> Tuple[Dict, Dict]:
         """
         Evaluate hybrid serial retrieval.
@@ -47,11 +52,12 @@ class HybridEvaluator:
             second_model: Second model to use
             top_k: Number of documents to retrieve
             query_limit: Limit number of queries
+            enable_refinement: Apply query refinement
             
         Returns:
             Tuple of (results, metrics)
         """
-        logger.info(f"Evaluating hybrid serial: {first_model} -> {second_model}")
+        logger.info(f"Evaluating hybrid serial: {first_model} -> {second_model} (refinement={'enabled' if enable_refinement else 'disabled'})")
         
         queries, qrels = self.dataset_loader.load_queries_and_qrels(dataset_name)
         
@@ -69,10 +75,15 @@ class HybridEvaluator:
                 continue
             
             try:
-                query_tokens = self._preprocess(query_text)
+                # Apply query refinement if enabled
+                refined_query = query_text
+                if enable_refinement:
+                    refined_query = self._refine_query(query_text)
+                
+                query_tokens = self._preprocess(refined_query)
                 
                 payload = {
-                    "query_text": query_text,
+                    "query_text": refined_query,
                     "query_tokens": query_tokens,
                     "first_model": first_model,
                     "second_model": second_model,
@@ -143,7 +154,8 @@ class HybridEvaluator:
         models: List[str],
         fusion_method: str = "rrf",
         top_k: int = 100,
-        query_limit: Optional[int] = None
+        query_limit: Optional[int] = None,
+        enable_refinement: bool = False
     ) -> Tuple[Dict, Dict]:
         """
         Evaluate hybrid parallel retrieval.
@@ -154,11 +166,12 @@ class HybridEvaluator:
             fusion_method: Fusion method ('rrf' or 'weighted')
             top_k: Number of documents to retrieve
             query_limit: Limit number of queries
+            enable_refinement: Apply query refinement
             
         Returns:
             Tuple of (results, metrics)
         """
-        logger.info(f"Evaluating hybrid parallel: {models} with {fusion_method}")
+        logger.info(f"Evaluating hybrid parallel: {models} with {fusion_method} (refinement={'enabled' if enable_refinement else 'disabled'})")
         
         queries, qrels = self.dataset_loader.load_queries_and_qrels(dataset_name)
         
@@ -176,10 +189,15 @@ class HybridEvaluator:
                 continue
             
             try:
-                query_tokens = self._preprocess(query_text)
+                # Apply query refinement if enabled
+                refined_query = query_text
+                if enable_refinement:
+                    refined_query = self._refine_query(query_text)
+                
+                query_tokens = self._preprocess(refined_query)
                 
                 payload = {
-                    "query_text": query_text,
+                    "query_text": refined_query,
                     "query_tokens": query_tokens,
                     "models": models,
                     "fusion_method": fusion_method,
@@ -257,3 +275,35 @@ class HybridEvaluator:
         except Exception as e:
             logger.error(f"Preprocessing failed: {e}")
             return query_text.lower().split()
+    
+    def _refine_query(self, query_text: str) -> str:
+        """
+        Refine query text using query refinement service.
+        
+        Args:
+            query_text: Original query text
+            
+        Returns:
+            Refined query text
+        """
+        try:
+            response = requests.post(
+                f"{self.query_refinement_service_url}/refine",
+                json={
+                    "query": query_text,
+                    "history": [],
+                    "enabled": True
+                },
+                timeout=10
+            )
+            response.raise_for_status()
+            result = response.json()
+            refined = result.get("refined_query", query_text)
+            
+            if refined != query_text:
+                logger.debug(f"Query refined: '{query_text}' -> '{refined}'")
+            
+            return refined
+        except Exception as e:
+            logger.warning(f"Query refinement failed, using original query: {e}")
+            return query_text

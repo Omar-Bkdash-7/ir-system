@@ -55,6 +55,11 @@ class EvaluationRequest(BaseModel):
         default="rrf",
         description="Fusion method for hybrid parallel: 'rrf', 'weighted'"
     )
+    
+    enable_refinement: bool = Field(
+        default=False,
+        description="Enable query refinement during evaluation"
+    )
 
     @field_validator("model")
     @classmethod

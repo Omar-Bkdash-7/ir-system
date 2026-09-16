@@ -51,7 +51,8 @@ class EvaluationService:
                 top_k=request.top_k,
                 query_limit=request.query_limit,
                 bm25_k1=request.bm25_k1,
-                bm25_b=request.bm25_b
+                bm25_b=request.bm25_b,
+                enable_refinement=request.enable_refinement
             )
         
         elif request.model == "hybrid_serial":
@@ -63,7 +64,8 @@ class EvaluationService:
                 first_model=request.hybrid_models[0],
                 second_model=request.hybrid_models[1],
                 top_k=request.top_k,
-                query_limit=request.query_limit
+                query_limit=request.query_limit,
+                enable_refinement=request.enable_refinement
             )
         
         elif request.model == "hybrid_parallel":
@@ -75,7 +77,8 @@ class EvaluationService:
                 models=request.hybrid_models,
                 fusion_method=request.fusion_method,
                 top_k=request.top_k,
-                query_limit=request.query_limit
+                query_limit=request.query_limit,
+                enable_refinement=request.enable_refinement
             )
         
         else:
@@ -93,7 +96,8 @@ class EvaluationService:
         try:
             metadata = {
                 "dataset": request.dataset_name,
-                "query_limit": request.query_limit
+                "query_limit": request.query_limit,
+                "enable_refinement": request.enable_refinement
             }
             if request.model in ["hybrid_serial", "hybrid_parallel"]:
                 metadata["hybrid_models"] = request.hybrid_models

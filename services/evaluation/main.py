@@ -162,3 +162,88 @@ def run_evaluation(
     except Exception as e:
         logger.error(f"Evaluation run failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/result/{result_id}")
+def delete_result(result_id: int):
+    """
+    Delete a specific evaluation result by ID.
+    """
+    try:
+        storage = evaluation_service.results_storage
+        success = storage.delete_result(result_id)
+        
+        if success:
+            return {"success": True, "message": f"Evaluation result {result_id} deleted successfully"}
+        else:
+            raise HTTPException(status_code=404, detail=f"Evaluation result {result_id} not found")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete result {result_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/results")
+def delete_results(model: str = None, dataset: str = None, before_date: str = None):
+    """
+    Delete evaluation results by filters.
+    At least one filter parameter is required.
+    
+    Query parameters:
+    - model: Filter by model name
+    - dataset: Filter by dataset name
+    - before_date: Delete results before this date (ISO format: YYYY-MM-DD)
+    """
+    try:
+        if not model and not dataset and not before_date:
+            raise HTTPException(
+                status_code=400,
+                detail="At least one filter parameter (model, dataset, or before_date) is required"
+            )
+        
+        storage = evaluation_service.results_storage
+        count = storage.delete_by_filters(
+            model=model,
+            dataset=dataset,
+            before_date=before_date
+        )
+        
+        return {
+            "success": True,
+            "message": f"Deleted {count} evaluation results",
+            "count": count,
+            "filters": {
+                "model": model,
+                "dataset": dataset,
+                "before_date": before_date
+            }
+        }
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete results by filters: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/results/clear-all")
+def clear_all_results():
+    """
+    Delete ALL evaluation results.
+    WARNING: This action cannot be undone!
+    """
+    try:
+        storage = evaluation_service.results_storage
+        count = storage.clear_all()
+        
+        return {
+            "success": True,
+            "message": f"All evaluation results cleared",
+            "count": count
+        }
+            
+    except Exception as e:
+        logger.error(f"Failed to clear all results: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

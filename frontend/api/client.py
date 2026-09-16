@@ -105,6 +105,12 @@ def post(url: str, *, json: Optional[dict] = None, params: Optional[dict] = None
     return _request("POST", url, json=json, params=params, timeout=timeout, max_retries=max_retries)
 
 
+def delete(url: str, *, params: Optional[dict] = None, timeout: Optional[int] = None,
+           max_retries: Optional[int] = None) -> APIResponse:
+    """Perform a DELETE request through the shared retry/error pipeline."""
+    return _request("DELETE", url, params=params, timeout=timeout, max_retries=max_retries)
+
+
 def health_check(base_url: str) -> APIResponse:
     """Single-attempt, short-timeout probe used for liveness badges."""
     return get(f"{base_url}/health", timeout=config.HEALTH_TIMEOUT, max_retries=1)

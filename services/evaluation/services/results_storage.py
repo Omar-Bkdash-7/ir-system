@@ -62,6 +62,7 @@ class ResultsStorage:
     ) -> int:
         """
         Save evaluation results to database.
+        Replaces existing result if same model, dataset, and refinement setting exists.
         
         Args:
             model: Model name
@@ -72,19 +73,24 @@ class ResultsStorage:
             recall_score: Recall score
             precision_score: Precision score
             num_queries: Number of queries evaluated
-            metadata: Additional metadata (optional)
+            metadata: Additional metadata (must include enable_refinement)
             
         Returns:
             ID of saved record
         """
         import json
         
-        query = """
-        INSERT INTO evaluation_results 
-        (model, dataset, top_k, map_score, ndcg_score, recall_score, 
-         precision_score, num_queries, metadata)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING id;
+        # Extract refinement setting from metadata
+        enable_refinement = False
+        if metadata and isinstance(metadata, dict):
+            enable_refinement = metadata.get("enable_refinement", False)
+        
+        # Check if record exists with same model, dataset, and refinement setting
+        check_query = """
+        SELECT id FROM evaluation_results 
+        WHERE model = %s AND dataset = %s 
+        AND (metadata->>'enable_refinement')::boolean = %s
+        LIMIT 1;
         """
         
         metadata_json = json.dumps(metadata) if metadata else None
@@ -92,16 +98,47 @@ class ResultsStorage:
         try:
             conn = get_db_connection()
             cursor = conn.cursor()
-            cursor.execute(query, (
-                model, dataset, top_k, map_score, ndcg_score,
-                recall_score, precision_score, num_queries, metadata_json
-            ))
-            result_id = cursor.fetchone()[0]
+            
+            # Check for existing record
+            cursor.execute(check_query, (model, dataset, enable_refinement))
+            existing = cursor.fetchone()
+            
+            if existing:
+                # Update existing record
+                update_query = """
+                UPDATE evaluation_results 
+                SET top_k = %s, map_score = %s, ndcg_score = %s, 
+                    recall_score = %s, precision_score = %s, num_queries = %s,
+                    metadata = %s, created_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+                RETURNING id;
+                """
+                cursor.execute(update_query, (
+                    top_k, map_score, ndcg_score, recall_score, 
+                    precision_score, num_queries, metadata_json, existing[0]
+                ))
+                result_id = cursor.fetchone()[0]
+                logger.info(f"Updated existing evaluation result with ID: {result_id}")
+            else:
+                # Insert new record
+                insert_query = """
+                INSERT INTO evaluation_results 
+                (model, dataset, top_k, map_score, ndcg_score, recall_score, 
+                 precision_score, num_queries, metadata)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id;
+                """
+                cursor.execute(insert_query, (
+                    model, dataset, top_k, map_score, ndcg_score,
+                    recall_score, precision_score, num_queries, metadata_json
+                ))
+                result_id = cursor.fetchone()[0]
+                logger.info(f"Saved new evaluation result with ID: {result_id}")
+            
             conn.commit()
             cursor.close()
             conn.close()
             
-            logger.info(f"Saved evaluation results with ID: {result_id}")
             return result_id
             
         except Exception as e:
@@ -127,7 +164,7 @@ class ResultsStorage:
         """
         query = """
         SELECT id, model, dataset, top_k, map_score, ndcg_score,
-               recall_score, precision_score, num_queries, created_at
+               recall_score, precision_score, num_queries, metadata, created_at
         FROM evaluation_results
         WHERE 1=1
         """
@@ -161,7 +198,8 @@ class ResultsStorage:
                     "recall": row[6],
                     "precision": row[7],
                     "num_queries": row[8],
-                    "created_at": row[9].isoformat() if row[9] else None
+                    "metadata": row[9],
+                    "created_at": row[10].isoformat() if row[10] else None
                 })
             
             cursor.close()
@@ -225,3 +263,113 @@ class ResultsStorage:
         except Exception as e:
             logger.error(f"Failed to compare models: {e}")
             return []
+    
+    def delete_result(self, result_id: int) -> bool:
+        """
+        Delete a specific evaluation result by ID.
+        
+        Args:
+            result_id: ID of the result to delete
+            
+        Returns:
+            True if deleted successfully, False otherwise
+        """
+        query = "DELETE FROM evaluation_results WHERE id = %s RETURNING id;"
+        
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(query, (result_id,))
+            deleted = cursor.fetchone()
+            conn.commit()
+            cursor.close()
+            conn.close()
+            
+            if deleted:
+                logger.info(f"Deleted evaluation result with ID: {result_id}")
+                return True
+            else:
+                logger.warning(f"Evaluation result with ID {result_id} not found")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Failed to delete evaluation result {result_id}: {e}")
+            return False
+    
+    def delete_by_filters(
+        self,
+        model: Optional[str] = None,
+        dataset: Optional[str] = None,
+        before_date: Optional[str] = None
+    ) -> int:
+        """
+        Delete evaluation results by filters.
+        
+        Args:
+            model: Filter by model name
+            dataset: Filter by dataset name
+            before_date: Delete results before this date (ISO format)
+            
+        Returns:
+            Number of deleted records
+        """
+        query = "DELETE FROM evaluation_results WHERE 1=1"
+        params = []
+        
+        if model:
+            query += " AND model = %s"
+            params.append(model)
+        
+        if dataset:
+            query += " AND dataset = %s"
+            params.append(dataset)
+        
+        if before_date:
+            query += " AND created_at < %s"
+            params.append(before_date)
+        
+        query += " RETURNING id;"
+        
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(query, params)
+            deleted_ids = cursor.fetchall()
+            count = len(deleted_ids)
+            conn.commit()
+            cursor.close()
+            conn.close()
+            
+            logger.info(f"Deleted {count} evaluation results with filters: model={model}, dataset={dataset}, before={before_date}")
+            return count
+            
+        except Exception as e:
+            logger.error(f"Failed to delete evaluation results by filters: {e}")
+            return 0
+    
+    def clear_all(self) -> int:
+        """
+        Delete all evaluation results.
+        WARNING: This cannot be undone!
+        
+        Returns:
+            Number of deleted records
+        """
+        query = "DELETE FROM evaluation_results RETURNING id;"
+        
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(query)
+            deleted_ids = cursor.fetchall()
+            count = len(deleted_ids)
+            conn.commit()
+            cursor.close()
+            conn.close()
+            
+            logger.warning(f"Cleared all evaluation results: {count} records deleted")
+            return count
+            
+        except Exception as e:
+            logger.error(f"Failed to clear all evaluation results: {e}")
+            return 0

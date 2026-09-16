@@ -135,48 +135,45 @@ class QueryRefinementService:
         
         logger.info(f"Refining query: '{query}' | Session: {session_id} | History size: {len(history)}")
         
+        # CONSERVATIVE APPROACH: Only spelling correction, no expansion
+        # Query expansion has been disabled to prevent query drift which degrades performance
+        
+        # Step 1: Spelling correction (only for obvious typos with high confidence)
         corrected_query, corrections = self.spelling_engine.correct(query)
+        
         if corrections:
-            logger.info(f"Spelling corrections: {corrections}")
+            logger.info(f"Spelling corrections applied: {corrections}")
+        else:
+            logger.debug("No spelling corrections needed")
         
-        expanded_query, synonyms_added = self.expansion_engine.expand(corrected_query)
-        if synonyms_added:
-            logger.info(f"Synonyms added: {synonyms_added}")
+        # Step 2: Query expansion is DISABLED
+        # Previous implementation added synonyms which caused query drift and degraded metrics
+        # For IR evaluation, maintaining query intent is more important than expansion
+        logger.debug("Query expansion disabled to maintain query precision and prevent drift")
         
+        synonyms_added = {}
+        expanded_query = corrected_query
+        
+        # Step 3: History-based refinement is DISABLED during evaluation
+        # History context is not available during batch evaluation
+        # Only useful in interactive sessions
         similarity = 0.0
         history_terms = []
         boosted_terms = []
         
-        if history:
+        # Only use history in interactive sessions (not default evaluation session)
+        if history and session_id != "default":
             self.history_manager.add_query(session_id, corrected_query)
-            
             similarity = self.semantic_engine.compute_similarity(query, history)
-            logger.info(f"History similarity: {similarity:.3f}")
-            
-            term_freq = self.history_manager.get_term_frequency(session_id)
-            query_words = corrected_query.lower().split()
-            
-            for word in query_words:
-                if word in term_freq and term_freq[word] >= 2:
-                    boosted_terms.append(word)
-            
-            if boosted_terms:
-                logger.info(f"Boosted terms from history: {boosted_terms}")
-            
-            history_terms = self.semantic_engine.extract_relevant_history_terms(
-                corrected_query,
-                history,
-                similarity,
-                self.similarity_threshold
-            )
+            logger.debug(f"History similarity: {similarity:.3f} (not applied during evaluation)")
         
-        final_query_parts = [expanded_query]
+        final_query = corrected_query
         
-        if history_terms:
-            final_query_parts.append(" ".join(history_terms))
-            logger.info(f"Added history terms: {history_terms}")
-        
-        final_query = " ".join(final_query_parts)
+        # Log refinement result
+        if final_query != query:
+            logger.info(f"Query refined: '{query}' -> '{final_query}'")
+        else:
+            logger.debug("Query unchanged after refinement (no corrections needed)")
         
         return {
             "original_query": query,

@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 class SpellingCorrectionEngine:
     def __init__(self, max_edit_distance: int = 2, confidence_threshold: float = 0.7):
         self.spell_checker = SpellChecker()
-        self.max_edit_distance = max_edit_distance
-        self.confidence_threshold = confidence_threshold
+        self.max_edit_distance = 1  # Only correct single-character typos
+        self.confidence_threshold = 0.85  # High confidence required
         self.stop_words = self._load_stopwords()
         self.protected_terms = self._load_protected_terms()
     
@@ -50,32 +50,45 @@ class SpellingCorrectionEngine:
         corrections = {}
         
         for word in words:
-            if not word.isalpha() or word in self.stop_words or len(word) <= 2:
+            # Don't correct: non-alphabetic, stopwords, or very short words
+            if not word.isalpha() or word in self.stop_words or len(word) <= 3:
                 corrected_words.append(word)
                 continue
             
+            # Don't correct protected technical/domain terms
             if word in self.protected_terms:
                 corrected_words.append(word)
                 continue
             
             try:
+                # Check if word exists in dictionary first
+                if word in self.spell_checker:
+                    corrected_words.append(word)
+                    continue
+                
+                # Get correction suggestion
                 corrected = self.spell_checker.correction(word)
                 
                 if corrected and corrected != word:
                     distance = self._levenshtein_distance(word, corrected)
                     
-                    if distance <= self.max_edit_distance:
+                    # Only accept corrections with distance = 1 (single typo) and very high confidence
+                    if distance == 1:
                         confidence = 1.0 - (distance / max(len(word), len(corrected)))
                         
-                        if confidence >= self.confidence_threshold:
+                        # Require very high confidence (0.9+) to avoid over-correction
+                        if confidence >= 0.9:
                             corrections[word] = corrected
                             corrected_words.append(corrected)
-                            logger.debug(f"Corrected: '{word}' -> '{corrected}' (distance={distance}, confidence={confidence:.2f})")
+                            logger.info(f"Corrected: '{word}' -> '{corrected}' (distance={distance}, confidence={confidence:.2f})")
                         else:
+                            # Keep original word if confidence is not high enough
                             corrected_words.append(word)
-                            logger.debug(f"Low confidence: '{word}' -> '{corrected}' (confidence={confidence:.2f} < {self.confidence_threshold})")
+                            logger.debug(f"Low confidence: '{word}' -> '{corrected}' (confidence={confidence:.2f} < 0.9)")
                     else:
+                        # Don't correct if distance > 1 (might not be a typo, could be domain term)
                         corrected_words.append(word)
+                        logger.debug(f"Distance too high: '{word}' -> '{corrected}' (distance={distance}), keeping original")
                 else:
                     corrected_words.append(word)
             except Exception as e:
@@ -83,6 +96,10 @@ class SpellingCorrectionEngine:
                 corrected_words.append(word)
         
         corrected_query = " ".join(corrected_words)
+        
+        if corrections:
+            logger.info(f"Query spelling corrected: '{query}' -> '{corrected_query}' (corrections: {corrections})")
+        
         return corrected_query, corrections
     
     @staticmethod

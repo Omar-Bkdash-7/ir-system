@@ -30,43 +30,9 @@ class QueryExpansionEngine:
             return query, {}
         
         words = query.lower().split()
-        original_words_set = set(words)
-        synonyms_map = {}
-        all_synonyms = []
         
-        for word in words:
-            if not self._is_expandable(word):
-                continue
-            
-            try:
-                synsets = self._get_synsets_cached(word)
-                if not synsets:
-                    continue
-                
-                primary_synset = synsets[0]
-
-                word_synonyms = self._extract_ranked_synonyms(
-                    word, 
-                    synsets[:self.max_synsets],
-                    original_words_set,
-                    primary_synset
-                )
-                
-                if word_synonyms:
-                    selected = word_synonyms[:self.max_synonyms_per_word]
-                    synonyms_map[word] = selected
-                    all_synonyms.extend(selected)
-                    logger.debug(f"Expanded '{word}' with: {selected}")
-            
-            except Exception as e:
-                logger.debug(f"Expansion failed for '{word}': {e}")
-                continue
-        
-        if not all_synonyms:
-            return query, {}
-        
-        expanded_query = query + " " + " ".join(all_synonyms)
-        return expanded_query, synonyms_map
+        logger.debug(f"Query expansion disabled - conservative approach to prevent query drift")
+        return query, {}
     
     def _get_synsets_cached(self, word: str) -> List:
         if word not in self._synset_cache:
@@ -92,12 +58,28 @@ class QueryExpansionEngine:
         for synset in synsets:
             similarity_to_primary = self._synset_similarity(synset, primary_synset)
             
+            # Require very high similarity (>0.85) to avoid query drift
+            if similarity_to_primary < 0.85:
+                continue
+            
             for lemma in synset.lemmas():
                 lemma_name = lemma.name().replace('_', ' ').lower()
 
                 if self._is_valid_synonym(lemma_name, original_word, existing_words):
                     frequency = lemma.count()
-                    score = similarity_to_primary * (1 + np.log1p(frequency))
+                    
+                    # Require minimum frequency (common words only)
+                    if frequency < 10:
+                        continue
+                    
+                    # Prefer synonyms with similar length (avoid too short/long)
+                    length_diff = abs(len(lemma_name) - len(original_word))
+                    if length_diff > 3:
+                        continue
+                    
+                    # Score: high similarity + high frequency + similar length
+                    length_penalty = 1.0 / (1 + length_diff * 0.3)
+                    score = similarity_to_primary * np.log1p(frequency) * length_penalty
                     synonym_scores.append((lemma_name, score))
         
         synonym_scores.sort(key=lambda x: x[1], reverse=True)
