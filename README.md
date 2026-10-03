@@ -78,14 +78,11 @@ cp .env.example .env
 # Edit .env if needed (passwords, ports, etc.)
 nano .env
 
-# Build base image (required first)
-make build-python-base
-
-# Build all services
+# Build all services (one command, no manual steps)
 make build
 ```
 
-**Build time**: ~15 minutes (first time), ~2-3 minutes (subsequent)
+**Build time**: ~30 minutes (first time with cold cache), ~7 seconds (incremental rebuild)
 
 ### 2. Start Database & Initialize
 
@@ -342,6 +339,50 @@ make clear-cache
 # Check cache stats
 make cache-stats
 ```
+
+## 💾 Disk Management
+
+The Docker restructure achieves ~79% disk savings (39GB → 8GB after pruning).
+
+### Check Disk Usage
+
+```bash
+# Overview
+docker system df
+
+# Detailed breakdown
+docker system df -v
+```
+
+### Recommended Maintenance
+
+```bash
+# Prune old images (safe - only removes unused images)
+docker image prune -a -f
+
+# Prune build cache, keep 5GB of recent cache for fast rebuilds
+docker builder prune --keep-storage=5gb
+
+# Full cleanup (WARNING: next build will re-download everything)
+docker system prune -a -f
+docker builder prune -a -f
+```
+
+### Current Disk Usage (after restructure)
+
+- **Images**: 2.7GB (5 shared tier images)
+- **Build Cache**: 5GB (cached pip wheels for incremental builds)
+- **Volumes**: 539MB (models, datasets, indices)
+- **Total**: ~8GB (vs. 39GB baseline, 79% reduction)
+
+### BuildKit Cache Strategy
+
+The unified Dockerfile uses BuildKit cache mounts for pip installs. This means:
+- First build: ~30 minutes (downloads all dependencies)
+- Incremental builds: ~7 seconds (reuses cached wheels)
+- Adding a library: downloads only the new package
+
+Cache is preserved across builds until you run `docker builder prune`.
 
 ## 📈 Monitoring
 
