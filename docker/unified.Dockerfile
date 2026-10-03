@@ -73,14 +73,38 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     /opt/venv/bin/pip install scikit-learn==1.4.2 scipy==1.13.0
 
 # =============================================================================
+# Stage: nlp-builder
+# NLP libraries and resources (spaCy, NLTK)
+# =============================================================================
+FROM scientific-builder AS nlp-builder
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /opt/venv/bin/pip install \
+    nltk==3.8.1 \
+    spacy==3.7.5 \
+    https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl \
+    pyspellchecker==0.8.1
+
+RUN mkdir -p /opt/nltk_data
+
+RUN python -c "import nltk; \
+nltk.download('wordnet', download_dir='/opt/nltk_data', quiet=True); \
+nltk.download('stopwords', download_dir='/opt/nltk_data', quiet=True); \
+nltk.download('omw-1.4', download_dir='/opt/nltk_data', quiet=True); \
+nltk.download('punkt', download_dir='/opt/nltk_data', quiet=True); \
+nltk.download('punkt_tab', download_dir='/opt/nltk_data', quiet=True); \
+print('NLTK resources downloaded')"
+
+# =============================================================================
 # Stage: torch-builder
 # PyTorch CPU-only stack
 # =============================================================================
-FROM scientific-builder AS torch-builder
+FROM nlp-builder AS torch-builder
 
 RUN --mount=type=cache,target=/root/.cache/pip \
     /opt/venv/bin/pip install \
     --extra-index-url https://download.pytorch.org/whl/cpu \
+    --timeout=300 \
     torch==2.3.0
 
 RUN python -c 'import torch; print(f"PyTorch {torch.__version__} installed"); assert not torch.cuda.is_available(), "CUDA should not be available"; print("CPU-only verified")'
@@ -111,30 +135,6 @@ from sentence_transformers import SentenceTransformer; \
 model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2', device='cpu', trust_remote_code=False); \
 print(f'Embedding model downloaded: {model.get_sentence_embedding_dimension()}d'); \
 "
-
-# =============================================================================
-# Stage: nlp-builder
-# NLP libraries and resources (spaCy, NLTK)
-# =============================================================================
-FROM base-builder AS nlp-builder
-
-RUN --mount=type=cache,target=/root/.cache/pip \
-    /opt/venv/bin/pip install \
-    nltk>=3.8 \
-    spacy>=3.7 \
-    pyspellchecker>=0.8
-
-RUN mkdir -p /opt/nltk_data
-
-RUN python -c "import nltk; \
-nltk.download('wordnet', download_dir='/opt/nltk_data', quiet=True); \
-nltk.download('stopwords', download_dir='/opt/nltk_data', quiet=True); \
-nltk.download('omw-1.4', download_dir='/opt/nltk_data', quiet=True); \
-nltk.download('punkt', download_dir='/opt/nltk_data', quiet=True); \
-nltk.download('punkt_tab', download_dir='/opt/nltk_data', quiet=True); \
-print('NLTK resources downloaded')"
-
-RUN python -m spacy download en_core_web_sm
 
 # =============================================================================
 # Stage: clustering-builder
