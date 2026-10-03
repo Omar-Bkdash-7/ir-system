@@ -1,0 +1,7 @@
+-c constraints.txt
+# Clustering and topic modeling
+-r 05-transformers.txt
+
+hdbscan
+bertopic
+umap-learn

@@ -1,0 +1,11 @@
+# Master requirements file for pip-compile
+# This aggregates all dependency tiers for lock file generation
+
+-r 01-base.txt
+-r 02-scientific.txt
+-r 03-nlp.txt
+-r 04-torch.txt
+-r 05-transformers.txt
+-r 06-clustering.txt
+-r 07-ir.txt
+-r 08-frontend.txt

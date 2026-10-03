@@ -1,0 +1,7 @@
+-c constraints.txt
+# Information Retrieval specific libraries
+-r 02-scientific.txt
+
+ir-datasets>=0.5
+rank-bm25>=0.2
+ir-measures>=0.3

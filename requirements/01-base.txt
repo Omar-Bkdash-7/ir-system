@@ -1,0 +1,27 @@
+-c constraints.txt
+# Core API and HTTP dependencies
+fastapi
+uvicorn[standard]
+httpx
+pydantic>=2.0
+
+# Data handling
+numpy
+pandas
+
+# System monitoring
+psutil
+
+# Utilities
+pyyaml
+jsonlines
+tqdm
+
+# Database
+psycopg2-binary
+
+# Redis for caching
+redis
+
+# Logging
+loguru
