@@ -25,6 +25,7 @@ _PAGES = [
     {"key": "dataset", "label": "Dataset", "icon": "📊"},
     {"key": "indexing", "label": "Indexing", "icon": "🗂️"},
     {"key": "preprocessing", "label": "Preprocessing", "icon": "⚙️"},
+    {"key": "clustering", "label": "Clustering & Topics", "icon": "🗂️"},
     {"key": "evaluation", "label": "Evaluation", "icon": "📈"},
     {"key": "query_refinement", "label": "Query Refinement", "icon": "🔬"},
     {"key": "system_status", "label": "System Status", "icon": "🖥️"},

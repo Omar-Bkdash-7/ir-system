@@ -30,6 +30,7 @@ RETRIEVAL_URL = _env_str("RETRIEVAL_URL", "http://retrieval:8003")
 RANKING_URL = _env_str("RANKING_URL", "http://ranking:8004")
 QUERY_REFINEMENT_URL = _env_str("QUERY_REFINEMENT_URL", "http://query_refinement:8005")
 EVALUATION_URL = _env_str("EVALUATION_URL", "http://evaluation:8006")
+CLUSTERING_URL = _env_str("CLUSTERING_URL", "http://clustering:8007")
 
 # Ordered registry used by the System Monitor page and the sidebar health grid.
 SERVICES = {
@@ -40,6 +41,7 @@ SERVICES = {
     "Ranking": {"url": RANKING_URL, "port": 8004, "health_path": "/health"},
     "Query Refinement": {"url": QUERY_REFINEMENT_URL, "port": 8005, "health_path": "/health"},
     "Evaluation": {"url": EVALUATION_URL, "port": 8006, "health_path": "/health"},
+    "Clustering": {"url": CLUSTERING_URL, "port": 8007, "health_path": "/health"},
 }
 
 # ---------------------------------------------------------------------------
@@ -207,3 +209,14 @@ EVALUATION_FALLBACK_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "data", "evaluation", "precomputed_metrics.json"
 )
 AUTO_REFRESH_INTERVAL_OPTIONS = [5, 10, 30]
+
+# ---------------------------------------------------------------------------
+# Clustering defaults
+# ---------------------------------------------------------------------------
+CLUSTERING_MIN_CLUSTER_SIZE_DEFAULT = 5
+CLUSTERING_MIN_CLUSTER_SIZE_RANGE = (2, 20)
+
+CLUSTERING_MIN_SAMPLES_DEFAULT = 3
+CLUSTERING_MIN_SAMPLES_RANGE = (1, 10)
+
+CLUSTERING_METRICS = ["euclidean", "cosine", "manhattan"]

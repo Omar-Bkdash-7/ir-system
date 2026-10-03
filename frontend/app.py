@@ -120,6 +120,8 @@ def _get_page_module(page_key: str):
         import app_pages.evaluation as page
     elif page_key == "query_refinement":
         import app_pages.query_refinement as page
+    elif page_key == "clustering":
+        import app_pages.clustering as page
     elif page_key == "system_status":
         import app_pages.system_status as page
     else:
