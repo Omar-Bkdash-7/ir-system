@@ -23,11 +23,11 @@ services:
   api_gateway:
     build:
       context: .
-      dockerfile: docker/base.Dockerfile
-      target: runtime
+      dockerfile: docker/unified.Dockerfile
+      target: runtime-light
     command: python -m uvicorn services.api_gateway.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
-      - ./services/api_gateway:/app/services/api_gateway
+      - ./services:/app/services
       - ./common:/app/common
       - ./configs:/app/configs
       - ./logs:/app/logs
@@ -47,11 +47,11 @@ services:
   preprocessing:
     build:
       context: .
-      dockerfile: docker/service-nlp.Dockerfile
-      target: runtime
+      dockerfile: docker/unified.Dockerfile
+      target: runtime-nlp
     command: python -m uvicorn services.preprocessing.api.main:app --host 0.0.0.0 --port 8001 --reload
     volumes:
-      - ./services/preprocessing:/app/services/preprocessing
+      - ./services:/app/services
       - ./common:/app/common
       - ./configs:/app/configs
       - ./logs:/app/logs
@@ -71,11 +71,11 @@ services:
   indexing:
     build:
       context: .
-      dockerfile: docker/ml.Dockerfile
-      target: runtime
+      dockerfile: docker/unified.Dockerfile
+      target: runtime-ml
     command: python -m uvicorn services.indexing.main:app --host 0.0.0.0 --port 8002 --reload
     volumes:
-      - ./services/indexing:/app/services/indexing
+      - ./services:/app/services
       - ./common:/app/common
       - ./configs:/app/configs
       - ./logs:/app/logs
@@ -96,11 +96,11 @@ services:
   retrieval:
     build:
       context: .
-      dockerfile: docker/ml.Dockerfile
-      target: runtime
+      dockerfile: docker/unified.Dockerfile
+      target: runtime-ml
     command: python -m uvicorn services.retrieval.main:app --host 0.0.0.0 --port 8003 --reload
     volumes:
-      - ./services/retrieval:/app/services/retrieval
+      - ./services:/app/services
       - ./common:/app/common
       - ./configs:/app/configs
       - ./logs:/app/logs
@@ -121,11 +121,11 @@ services:
   ranking:
     build:
       context: .
-      dockerfile: docker/ml.Dockerfile
-      target: runtime
+      dockerfile: docker/unified.Dockerfile
+      target: runtime-light
     command: python -m uvicorn services.ranking.main:app --host 0.0.0.0 --port 8004 --reload
     volumes:
-      - ./services/ranking:/app/services/ranking
+      - ./services:/app/services
       - ./common:/app/common
       - ./configs:/app/configs
       - ./logs:/app/logs
@@ -146,11 +146,11 @@ services:
   query_refinement:
     build:
       context: .
-      dockerfile: docker/ml.Dockerfile
-      target: runtime
+      dockerfile: docker/unified.Dockerfile
+      target: runtime-ml
     command: python -m uvicorn services.query_refinement.main:app --host 0.0.0.0 --port 8005 --reload
     volumes:
-      - ./services/query_refinement:/app/services/query_refinement
+      - ./services:/app/services
       - ./common:/app/common
       - ./configs:/app/configs
       - ./logs:/app/logs
@@ -171,11 +171,36 @@ services:
   evaluation:
     build:
       context: .
-      dockerfile: docker/ml.Dockerfile
-      target: runtime
+      dockerfile: docker/unified.Dockerfile
+      target: runtime-ml
     command: python -m uvicorn services.evaluation.main:app --host 0.0.0.0 --port 8006 --reload
     volumes:
-      - ./services/evaluation:/app/services/evaluation
+      - ./services:/app/services
+      - ./common:/app/common
+      - ./configs:/app/configs
+      - ./logs:/app/logs
+      - ./data/datasets:/app/data/datasets
+      - ./data/indices:/app/data/indices
+      - ./data/cache:/app/data/cache
+      - ./data/models:/app/data/models
+      - ./data/processed:/app/data/processed
+      - ./data/evaluation:/app/data/evaluation
+      - ./data/metadata:/app/data/metadata
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+      RELOAD: "true"
+      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
+
+  clustering:
+    build:
+      context: .
+      dockerfile: docker/unified.Dockerfile
+      target: runtime-clustering
+    command: python -m uvicorn services.clustering.main:app --host 0.0.0.0 --port 8007 --reload
+    volumes:
+      - ./services:/app/services
       - ./common:/app/common
       - ./configs:/app/configs
       - ./logs:/app/logs
@@ -196,10 +221,11 @@ services:
   frontend:
     build:
       context: .
-      dockerfile: docker/frontend.Dockerfile
-      target: runtime
+      dockerfile: docker/unified.Dockerfile
+      target: runtime-frontend
     command: streamlit run frontend/app.py --server.port=8501 --server.fileWatcherType=poll --server.runOnSave=true
     volumes:
+      - ./services:/app/services
       - ./frontend:/app/frontend
       - ./common:/app/common
       - ./configs:/app/configs
@@ -218,3 +244,27 @@ services:
       LOG_LEVEL: DEBUG
       IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
 
+  rag:
+    build:
+      context: .
+      dockerfile: docker/unified.Dockerfile
+      target: runtime-ml
+    command: python -m uvicorn services.rag.main:app --host 0.0.0.0 --port 8008 --reload
+    volumes:
+      - ./services:/app/services
+      - ./common:/app/common
+      - ./configs:/app/configs
+      - ./logs:/app/logs
+      - ./data/datasets:/app/data/datasets
+      - ./data/indices:/app/data/indices
+      - ./data/cache:/app/data/cache
+      - ./data/models:/app/data/models
+      - ./data/processed:/app/data/processed
+      - ./data/evaluation:/app/data/evaluation
+      - ./data/metadata:/app/data/metadata
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+      RELOAD: "true"
+      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
