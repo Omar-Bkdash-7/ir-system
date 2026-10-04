@@ -1,5 +1,0 @@
-# Full installation - all dependencies
--r base.txt
--r ml.txt
--r nlp.txt
--r ir.txt

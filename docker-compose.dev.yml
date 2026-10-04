@@ -86,6 +86,7 @@ services:
       - ./data/processed:/app/data/processed
       - ./data/evaluation:/app/data/evaluation
       - ./data/metadata:/app/data/metadata
+      - ./data/clusters:/app/data/clusters
     environment:
       ENVIRONMENT: development
       DEBUG: "true"
@@ -111,6 +112,7 @@ services:
       - ./data/processed:/app/data/processed
       - ./data/evaluation:/app/data/evaluation
       - ./data/metadata:/app/data/metadata
+      - ./data/clusters:/app/data/clusters
     environment:
       ENVIRONMENT: development
       DEBUG: "true"
@@ -136,6 +138,7 @@ services:
       - ./data/processed:/app/data/processed
       - ./data/evaluation:/app/data/evaluation
       - ./data/metadata:/app/data/metadata
+      - ./data/clusters:/app/data/clusters
     environment:
       ENVIRONMENT: development
       DEBUG: "true"
@@ -161,6 +164,7 @@ services:
       - ./data/processed:/app/data/processed
       - ./data/evaluation:/app/data/evaluation
       - ./data/metadata:/app/data/metadata
+      - ./data/clusters:/app/data/clusters
     environment:
       ENVIRONMENT: development
       DEBUG: "true"
@@ -186,6 +190,7 @@ services:
       - ./data/processed:/app/data/processed
       - ./data/evaluation:/app/data/evaluation
       - ./data/metadata:/app/data/metadata
+      - ./data/clusters:/app/data/clusters
     environment:
       ENVIRONMENT: development
       DEBUG: "true"
@@ -199,6 +204,32 @@ services:
       dockerfile: docker/unified.Dockerfile
       target: runtime-clustering
     command: python -m uvicorn services.clustering.main:app --host 0.0.0.0 --port 8007 --reload
+    volumes:
+      - ./services:/app/services
+      - ./common:/app/common
+      - ./configs:/app/configs
+      - ./logs:/app/logs
+      - ./data/datasets:/app/data/datasets
+      - ./data/indices:/app/data/indices
+      - ./data/cache:/app/data/cache
+      - ./data/models:/app/data/models
+      - ./data/processed:/app/data/processed
+      - ./data/evaluation:/app/data/evaluation
+      - ./data/metadata:/app/data/metadata
+      - ./data/clusters:/app/data/clusters
+    environment:
+      ENVIRONMENT: development
+      DEBUG: "true"
+      LOG_LEVEL: DEBUG
+      RELOAD: "true"
+      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
+
+  rag:
+    build:
+      context: .
+      dockerfile: docker/unified.Dockerfile
+      target: runtime-rag
+    command: python -m uvicorn services.rag.main:app --host 0.0.0.0 --port 8008 --reload
     volumes:
       - ./services:/app/services
       - ./common:/app/common
@@ -238,6 +269,7 @@ services:
       - ./data/processed:/app/data/processed
       - ./data/evaluation:/app/data/evaluation
       - ./data/metadata:/app/data/metadata
+      - ./data/clusters:/app/data/clusters
     environment:
       ENVIRONMENT: development
       DEBUG: "true"

@@ -17,6 +17,7 @@
 #   runtime-nlp:         preprocessing (ir-nlp:latest)
 #   runtime-ml:          indexing, retrieval, query_refinement, evaluation (ir-ml:latest)
 #   runtime-clustering:  clustering (ir-clustering:latest)
+#   runtime-rag:         rag (ir-rag:latest)
 #   runtime-frontend:    frontend (ir-frontend:latest)
 #
 # KEY FEATURES
@@ -110,9 +111,9 @@ FROM system AS base-builder
 RUN python -m venv /opt/venv
 ENV PATH=/opt/venv/bin:$PATH
 
-COPY requirements/base.txt /tmp/base.txt
+COPY requirements/*.txt /tmp/
 RUN --mount=type=cache,target=/root/.cache/pip \
-    /opt/venv/bin/pip install -r /tmp/base.txt
+    /opt/venv/bin/pip install -r /tmp/01-base.txt
 
 # =============================================================================
 # Stage: ir-builder
@@ -120,9 +121,8 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # =============================================================================
 FROM base-builder AS ir-builder
 
-COPY requirements/ir.txt /tmp/ir.txt
 RUN --mount=type=cache,target=/root/.cache/pip \
-    /opt/venv/bin/pip install ir-datasets>=0.5 rank-bm25>=0.2 ir-measures>=0.3
+    /opt/venv/bin/pip install -r /tmp/07-ir.txt
 
 # =============================================================================
 # Stage: scientific-builder
@@ -131,7 +131,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 FROM ir-builder AS scientific-builder
 
 RUN --mount=type=cache,target=/root/.cache/pip \
-    /opt/venv/bin/pip install scikit-learn==1.4.2 scipy==1.13.0
+    /opt/venv/bin/pip install -r /tmp/02-scientific.txt
 
 # =============================================================================
 # Stage: nlp-builder
@@ -140,11 +140,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 FROM scientific-builder AS nlp-builder
 
 RUN --mount=type=cache,target=/root/.cache/pip \
-    /opt/venv/bin/pip install \
-    nltk==3.8.1 \
-    spacy==3.7.5 \
-    https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl \
-    pyspellchecker==0.8.1
+    /opt/venv/bin/pip install -r /tmp/03-nlp.txt
 
 RUN mkdir -p /opt/nltk_data
 
@@ -166,7 +162,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     /opt/venv/bin/pip install \
     --extra-index-url https://download.pytorch.org/whl/cpu \
     --timeout=300 \
-    torch==2.3.0
+    -r /tmp/04-torch.txt
 
 RUN python -c 'import torch; print(f"PyTorch {torch.__version__} installed"); assert not torch.cuda.is_available(), "CUDA should not be available"; print("CPU-only verified")'
 
@@ -177,12 +173,7 @@ RUN python -c 'import torch; print(f"PyTorch {torch.__version__} installed"); as
 FROM torch-builder AS transformers-builder
 
 RUN --mount=type=cache,target=/root/.cache/pip \
-    /opt/venv/bin/pip install \
-    transformers==4.40.2 \
-    sentence-transformers==2.7.0 \
-    sentencepiece>=0.2.0 \
-    accelerate>=0.20.0 \
-    "protobuf>=3.20.0,<5.0"
+    /opt/venv/bin/pip install -r /tmp/05-transformers.txt
 
 ENV CUDA_VISIBLE_DEVICES=-1 \
     SENTENCE_TRANSFORMERS_HOME=/opt/models
@@ -204,10 +195,16 @@ print(f'Embedding model downloaded: {model.get_sentence_embedding_dimension()}d'
 FROM transformers-builder AS clustering-builder
 
 RUN --mount=type=cache,target=/root/.cache/pip \
-    /opt/venv/bin/pip install \
-    hdbscan \
-    bertopic \
-    umap-learn
+    /opt/venv/bin/pip install -r /tmp/06-clustering.txt
+
+# =============================================================================
+# Stage: rag-builder
+# RAG (Retrieval-Augmented Generation) dependencies: langchain, openai, faiss
+# =============================================================================
+FROM transformers-builder AS rag-builder
+
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /opt/venv/bin/pip install -r /tmp/09-rag.txt
 
 # =============================================================================
 # Stage: frontend-builder
@@ -216,9 +213,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 FROM base-builder AS frontend-builder
 
 RUN --mount=type=cache,target=/root/.cache/pip \
-    /opt/venv/bin/pip install \
-    streamlit==1.35.0 \
-    plotly==5.21.0
+    /opt/venv/bin/pip install -r /tmp/08-frontend.txt
 
 # =============================================================================
 # Stage: runtime-light
@@ -409,6 +404,48 @@ ENV PATH=/opt/venv/bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app \
     STREAMLIT_SERVER_ADDRESS=0.0.0.0
+
+WORKDIR /app
+USER appuser
+
+# =============================================================================
+# Stage: runtime-rag
+# RAG runtime with LangChain, OpenAI, and document embeddings
+# Services: rag
+# =============================================================================
+FROM python:3.11-slim AS runtime-rag
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+RUN groupadd -r appuser --gid=1000 && \
+    useradd -r -g appuser --uid=1000 --home-dir=/home/appuser --shell=/bin/bash appuser && \
+    mkdir -p /home/appuser && \
+    chown -R appuser:appuser /home/appuser
+
+RUN mkdir -p /app /app/logs /app/data /app/data/models && \
+    chown -R appuser:appuser /app
+
+COPY --from=rag-builder /opt/venv /opt/venv
+COPY --from=transformers-builder /opt/models /app/data/models
+COPY --from=nlp-builder /opt/nltk_data /app/.cache/nltk_data
+
+COPY --chown=appuser:appuser common/ /app/common/
+COPY --chown=appuser:appuser configs/ /app/configs/
+COPY --chown=appuser:appuser services/ /app/services/
+COPY --chown=appuser:appuser scripts/ /app/scripts/
+
+ENV PATH=/opt/venv/bin:$PATH \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app \
+    SENTENCE_TRANSFORMERS_HOME=/app/data/models \
+    TORCH_HOME=/app/data/cache/torch \
+    TRANSFORMERS_CACHE=/app/data/cache/transformers \
+    NLTK_DATA=/app/.cache/nltk_data \
+    CUDA_VISIBLE_DEVICES=-1
 
 WORKDIR /app
 USER appuser

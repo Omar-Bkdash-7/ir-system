@@ -1,5 +1,0 @@
-# Frontend (Streamlit)
--r base.txt
-
-streamlit==1.35.0
-plotly==5.21.0

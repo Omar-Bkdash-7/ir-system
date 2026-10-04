@@ -108,10 +108,10 @@ def _get_page_module(page_key: str):
     """Lazy load page modules only when needed."""
     if page_key == "guide":
         import app_pages.guide as page
-    elif page_key == "search":
-        import app_pages.search as page
     elif page_key == "dataset":
         import app_pages.dataset as page
+    elif page_key == "search":
+        import app_pages.search as page
     elif page_key == "indexing":
         import app_pages.indexing as page
     elif page_key == "preprocessing":
@@ -122,6 +122,8 @@ def _get_page_module(page_key: str):
         import app_pages.query_refinement as page
     elif page_key == "clustering":
         import app_pages.clustering as page
+    elif page_key == "rag":
+        import app_pages.rag as page
     elif page_key == "system_status":
         import app_pages.system_status as page
     else:

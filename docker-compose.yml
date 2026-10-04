@@ -17,6 +17,7 @@
 #   ir-nlp:latest          → preprocessing
 #   ir-ml:latest           → indexing, retrieval, query_refinement, evaluation
 #   ir-clustering:latest   → clustering
+#   ir-rag:latest          → rag
 #   ir-frontend:latest     → frontend
 #
 # Build configuration is defined ONCE per tier using x-build-* anchors. Services
@@ -55,7 +56,7 @@
 #   8001: preprocessing     8005: query_refinement   5432: postgres
 #   8002: indexing          8006: evaluation         6379: redis
 #   8003: retrieval         8007: clustering
-#   (8008: rag - reserved for future service)
+#   8008: rag
 #
 # VOLUME NAMES
 # ------------
@@ -105,6 +106,8 @@ volumes:
     name: ir_evaluation_results
   metadata:
     name: ir_metadata
+  clusters:
+    name: ir_clusters
   
   # Logs
   logs:
@@ -143,6 +146,13 @@ x-build-clustering: &build-clustering
   cache_from:
     - ir-clustering:latest
 
+x-build-rag: &build-rag
+  context: .
+  dockerfile: docker/unified.Dockerfile
+  target: runtime-rag
+  cache_from:
+    - ir-rag:latest
+
 x-build-frontend: &build-frontend
   context: .
   dockerfile: docker/unified.Dockerfile
@@ -180,6 +190,7 @@ x-common-service: &common-service
     - processed_data:/app/data/processed
     - evaluation_results:/app/data/evaluation
     - metadata:/app/data/metadata
+    - clusters:/app/data/clusters
   environment:
     <<: *common-env
   logging:
@@ -312,6 +323,8 @@ services:
         condition: service_started
       clustering:
         condition: service_started
+      rag:
+        condition: service_started
     healthcheck:
       <<: *healthcheck-defaults
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -327,6 +340,7 @@ services:
       QUERY_REFINEMENT_URL: http://query_refinement:8005
       EVALUATION_URL: http://evaluation:8006
       CLUSTERING_URL: http://clustering:8007
+      RAG_URL: http://rag:8008
     deploy:
       resources:
         limits:
@@ -554,6 +568,40 @@ services:
         reservations:
           cpus: '1.0'
           memory: 1G
+
+  # ---------------------------------------------------------------------------
+  # RAG Service - Retrieval-Augmented Generation
+  # ---------------------------------------------------------------------------
+  rag:
+    <<: *common-service
+    build: *build-rag
+    image: ir-rag:latest
+    container_name: ir_rag
+    command: python -m uvicorn services.rag.main:app --host 0.0.0.0 --port 8008
+    ports:
+      - "${RAG_PORT:-8008}:8008"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      retrieval:
+        condition: service_started
+    healthcheck:
+      <<: *healthcheck-defaults
+      test: ["CMD", "curl", "-f", "http://localhost:8008/health"]
+    environment:
+      <<: *common-env
+      SERVICE_NAME: rag
+      SERVICE_VERSION: "1.0.0"
+      RETRIEVAL_URL: http://retrieval:8003
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
   # ---------------------------------------------------------------------------
   # Frontend - Streamlit Web UI
