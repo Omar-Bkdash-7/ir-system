@@ -1,0 +1,4 @@
+-c constraints.txt
+# RAG (Retrieval-Augmented Generation) dependencies
+# Uses HuggingFace Inference API only — no local models
+# requests and httpx are already available via 01-base.txt
