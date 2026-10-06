@@ -441,8 +441,10 @@ websockets==17.1
     # via uvicorn
 win32-setctime==1.2.0
     # via loguru
-wrapt==2.5.0
-    # via smart-open
+wrapt==1.16.0
+    # via
+    #   opentelemetry-instrumentation
+    #   smart-open
 
 # The following packages are considered to be unsafe in a requirements file:
 # setuptools

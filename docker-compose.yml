@@ -585,6 +585,9 @@ services:
         condition: service_healthy
       retrieval:
         condition: service_started
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
     healthcheck:
       <<: *healthcheck-defaults
       test: ["CMD", "curl", "-f", "http://localhost:8008/health"]
@@ -593,7 +596,7 @@ services:
       SERVICE_NAME: rag
       SERVICE_VERSION: "1.0.0"
       RETRIEVAL_URL: http://retrieval:8003
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      HUGGINGFACE_API_TOKEN: ${HUGGINGFACE_API_TOKEN:-}
     deploy:
       resources:
         limits:

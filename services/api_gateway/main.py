@@ -206,3 +206,60 @@ def search_hybrid_parallel_endpoint(req: HybridParallelSearchRequest):
     except Exception as e:
         logger.error(f"Hybrid parallel search failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/rag/generate")
+async def rag_generate_endpoint(request: dict):
+    try:
+        import httpx
+        import os
+        
+        rag_url = os.getenv("RAG_URL", "http://rag:8008")
+        
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            response = await client.post(f"{rag_url}/generate", json=request)
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPStatusError as e:
+        logger.error(f"RAG service error: {e.response.status_code} - {e.response.text}")
+        raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+    except Exception as e:
+        logger.error(f"RAG request failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/rag/models")
+async def rag_models_endpoint():
+    try:
+        import httpx
+        import os
+        
+        rag_url = os.getenv("RAG_URL", "http://rag:8008")
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(f"{rag_url}/models")
+            response.raise_for_status()
+            return response.json()
+    except Exception as e:
+        logger.error(f"Error fetching RAG models: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/rag/download-model")
+async def rag_download_model_endpoint():
+    try:
+        import httpx
+        import os
+        
+        rag_url = os.getenv("RAG_URL", "http://rag:8008")
+        
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            response = await client.post(f"{rag_url}/download-model")
+            response.raise_for_status()
+            return response.json()
+    except httpx.HTTPStatusError as e:
+        logger.error(f"RAG service error: {e.response.status_code} - {e.response.text}")
+        raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+    except Exception as e:
+        logger.error(f"Error downloading model: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))

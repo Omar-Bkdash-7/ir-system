@@ -31,6 +31,7 @@ RANKING_URL = _env_str("RANKING_URL", "http://ranking:8004")
 QUERY_REFINEMENT_URL = _env_str("QUERY_REFINEMENT_URL", "http://query_refinement:8005")
 EVALUATION_URL = _env_str("EVALUATION_URL", "http://evaluation:8006")
 CLUSTERING_URL = _env_str("CLUSTERING_URL", "http://clustering:8007")
+RAG_URL = _env_str("RAG_URL", "http://rag:8008")
 
 # Ordered registry used by the System Monitor page and the sidebar health grid.
 SERVICES = {
@@ -42,6 +43,7 @@ SERVICES = {
     "Query Refinement": {"url": QUERY_REFINEMENT_URL, "port": 8005, "health_path": "/health"},
     "Evaluation": {"url": EVALUATION_URL, "port": 8006, "health_path": "/health"},
     "Clustering": {"url": CLUSTERING_URL, "port": 8007, "health_path": "/health"},
+    "RAG": {"url": RAG_URL, "port": 8008, "health_path": "/health"},
 }
 
 # ---------------------------------------------------------------------------
@@ -219,4 +221,4 @@ CLUSTERING_MIN_CLUSTER_SIZE_RANGE = (2, 20)
 CLUSTERING_MIN_SAMPLES_DEFAULT = 3
 CLUSTERING_MIN_SAMPLES_RANGE = (1, 10)
 
-CLUSTERING_METRICS = ["euclidean", "cosine", "manhattan"]
+CLUSTERING_METRICS = ["euclidean", "manhattan"]
