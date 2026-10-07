@@ -24,7 +24,7 @@ class RAGService:
         logger.info("RAGService initialized (HuggingFace remote only)")
 
     async def retrieve_context(self, request: RAGRequest) -> List[ContextDocument]:
-        url = f"{self.retrieval_url}/search"
+        url = f"{self.retrieval_url}/retrieve"
 
         payload = {
             "query": request.query,
