@@ -24,3 +24,6 @@ class ForbiddenDatasetError(IRSystemException):
 
 class ModelLoadError(IRSystemException):
     pass
+
+class ServiceError(IRSystemException):
+    pass
