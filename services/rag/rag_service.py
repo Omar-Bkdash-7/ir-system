@@ -27,10 +27,12 @@ class RAGService:
         url = f"{self.retrieval_url}/retrieve"
 
         payload = {
-            "query": request.query,
+            "query_text": request.query,  # for embedding model
+            "query_tokens": [],  # will be ignored for embedding
             "dataset": request.dataset,
             "model": request.retrieval_model,
-            "top_k": request.top_k
+            "top_k": request.top_k,
+            "include_text": True
         }
 
         if request.retrieval_model == "bm25":
