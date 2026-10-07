@@ -228,6 +228,23 @@ async def rag_generate_endpoint(request: dict):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/rag/health")
+async def rag_health_endpoint():
+    try:
+        import httpx
+        import os
+        
+        rag_url = os.getenv("RAG_URL", "http://rag:8008")
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{rag_url}/health")
+            response.raise_for_status()
+            return response.json()
+    except Exception as e:
+        logger.error(f"Error fetching RAG health: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/rag/models")
 async def rag_models_endpoint():
     try:
