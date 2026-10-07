@@ -229,7 +229,7 @@ services:
       context: .
       dockerfile: docker/unified.Dockerfile
       target: runtime-rag
-    command: python -m uvicorn services.rag.main:app --host 0.0.0.0 --port 8008 --reload
+    command: sh -c "echo 'nameserver 8.8.8.8' > /etc/resolv.conf && echo 'nameserver 8.8.4.4' >> /etc/resolv.conf && python -m uvicorn services.rag.main:app --host 0.0.0.0 --port 8008 --reload"
     dns:
       - 8.8.8.8
       - 8.8.4.4
