@@ -18,6 +18,21 @@ from constants import (
     SS_LAST_REFRESH_TIME,
     SS_SELECTED_PAGE,
 )
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebarNav"] {
+        background-position: 0px;
+    }
+    section[data-testid="stSidebar"] div.stButton > button {
+        width: 100%;
+        text-align: left;
+        justify-content: flex-start;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 _PAGES = [
     {"key": "guide", "label": "User Guide", "icon": "📘"},

@@ -213,10 +213,11 @@ async def rag_generate_endpoint(request: dict):
     try:
         import httpx
         import os
-        
+
         rag_url = os.getenv("RAG_URL", "http://rag:8008")
-        
-        async with httpx.AsyncClient(timeout=120.0) as client:
+
+        # Worst case: remote attempt(s) + loading the local model + CPU inference
+        async with httpx.AsyncClient(timeout=300.0) as client:
             response = await client.post(f"{rag_url}/generate", json=request)
             response.raise_for_status()
             return response.json()
@@ -233,9 +234,9 @@ async def rag_health_endpoint():
     try:
         import httpx
         import os
-        
+
         rag_url = os.getenv("RAG_URL", "http://rag:8008")
-        
+
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(f"{rag_url}/health")
             response.raise_for_status()
@@ -250,9 +251,9 @@ async def rag_models_endpoint():
     try:
         import httpx
         import os
-        
+
         rag_url = os.getenv("RAG_URL", "http://rag:8008")
-        
+
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(f"{rag_url}/models")
             response.raise_for_status()
@@ -262,21 +263,39 @@ async def rag_models_endpoint():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.post("/rag/download-model")
-async def rag_download_model_endpoint():
+@app.get("/rag/local-model")
+async def rag_local_model_status_endpoint():
     try:
         import httpx
         import os
-        
+
         rag_url = os.getenv("RAG_URL", "http://rag:8008")
-        
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            response = await client.post(f"{rag_url}/download-model")
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(f"{rag_url}/local-model")
+            response.raise_for_status()
+            return response.json()
+    except Exception as e:
+        logger.error(f"Error fetching RAG local model status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/rag/local-model/download")
+async def rag_local_model_download_endpoint():
+    try:
+        import httpx
+        import os
+
+        rag_url = os.getenv("RAG_URL", "http://rag:8008")
+
+        # The RAG service downloads in the background and answers immediately
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(f"{rag_url}/local-model/download")
             response.raise_for_status()
             return response.json()
     except httpx.HTTPStatusError as e:
         logger.error(f"RAG service error: {e.response.status_code} - {e.response.text}")
         raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
     except Exception as e:
-        logger.error(f"Error downloading model: {e}", exc_info=True)
+        logger.error(f"Error starting local model download: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

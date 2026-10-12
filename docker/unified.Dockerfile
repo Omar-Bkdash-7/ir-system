@@ -425,8 +425,8 @@ RUN groupadd -r appuser --gid=1000 && \
     mkdir -p /home/appuser && \
     chown -R appuser:appuser /home/appuser
 
-RUN mkdir -p /app /app/logs /app/data /app/data/models && \
-    chown -R appuser:appuser /app
+RUN mkdir -p /app /app/logs /app/data /app/data/models /models/rag /models/hf-home && \
+    chown -R appuser:appuser /app /models
 
 COPY --from=rag-builder /opt/venv /opt/venv
 COPY --from=transformers-builder /opt/models /app/data/models
@@ -441,6 +441,12 @@ ENV PATH=/opt/venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app \
+    RAG_MODELS_DIR=/models/rag \
+    HF_HOME=/models/hf-home \
+    HF_HUB_DISABLE_IMPLICIT_TOKEN=1 \
+    HF_HUB_DISABLE_TELEMETRY=1 \
+    TOKENIZERS_PARALLELISM=false \
+    TRANSFORMERS_NO_ADVISORY_WARNINGS=1 \
     SENTENCE_TRANSFORMERS_HOME=/app/data/models \
     TORCH_HOME=/app/data/cache/torch \
     TRANSFORMERS_CACHE=/app/data/cache/transformers \

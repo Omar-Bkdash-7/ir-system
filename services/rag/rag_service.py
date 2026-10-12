@@ -1,111 +1,99 @@
-import os
-import httpx
+"""Orchestrator: retrieve context -> route generation -> build a response that never lies.
+
+Contract: if retrieval worked but generation did not, we still return the documents with
+metadata.status == "generation_failed" (HTTP 200) so the IR part of the project stays useful.
+"""
+from __future__ import annotations
+
+import time
 from typing import List
-from services.rag.schemas import RAGRequest, RAGResponse, ContextDocument
-from services.rag.schemas.rag_schemas import GenerationConfig
-from services.rag.generators import HuggingFaceGenerator
-from common.logging_config import setup_logging
+
+import httpx
+
 from common.exceptions import ServiceError
+from common.logging_config import setup_logging
+from services.rag.config import RAGSettings
+from services.rag.errors import GenerationUnavailableError
+from services.rag.generators.base_generator import GenerationRequest
+from services.rag.generators.router import GeneratorRouter
+from services.rag.schemas import ContextDocument, RAGRequest, RAGResponse
 
 logger = setup_logging("rag.service")
 
 
 class RAGService:
-
-    def __init__(self):
-        self.retrieval_url = os.getenv("RETRIEVAL_URL", "http://retrieval:8003")
-        self.timeout = 120.0
-        hf_token = os.getenv("HUGGINGFACE_API_TOKEN", "")
-        if not hf_token or not hf_token.strip():
-            logger.warning(
-                "HUGGINGFACE_API_TOKEN is not set. "
-                "RAG generation will fail. Set the token in your .env file."
-            )
-        logger.info("RAGService initialized (HuggingFace remote only)")
+    def __init__(self, settings: RAGSettings, router: GeneratorRouter, retrieval_client: httpx.AsyncClient):
+        self.settings = settings
+        self.router = router
+        self.retrieval_client = retrieval_client
 
     async def retrieve_context(self, request: RAGRequest) -> List[ContextDocument]:
-        url = f"{self.retrieval_url}/retrieve"
-
+        url = f"{self.settings.retrieval_url}/retrieve"
         payload = {
-            "query_text": request.query,  # for embedding model
-            "query_tokens": [],  # will be ignored for embedding
+            "query_text": request.query,
+            "query_tokens": [],
             "dataset": request.dataset,
             "model": request.retrieval_model,
             "top_k": request.top_k,
-            "include_text": True
+            "include_text": True,
         }
-
         if request.retrieval_model == "bm25":
             payload["bm25_k1"] = request.bm25_k1
             payload["bm25_b"] = request.bm25_b
-
-        logger.info(f"Retrieving context from {url} with model {request.retrieval_model}")
-
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(url, json=payload)
-                response.raise_for_status()
-                data = response.json()
-
-            documents = []
-            for result in data.get("results", [])[:request.top_k]:
-                doc = ContextDocument(
-                    doc_id=result.get("doc_id", ""),
-                    text=result.get("text", ""),
-                    score=result.get("score", 0.0),
-                    metadata=result.get("metadata", {})
-                )
-                documents.append(doc)
-
-            logger.info(f"Retrieved {len(documents)} documents")
-            return documents
-
-        except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error retrieving context: {e.response.status_code} - {e.response.text}")
-            raise ServiceError(f"Retrieval service error: {e.response.status_code}")
-        except Exception as e:
-            logger.error(f"Error retrieving context: {e}", exc_info=True)
-            raise ServiceError(f"Failed to retrieve context: {str(e)}")
+            response = await self.retrieval_client.post(url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+        except httpx.HTTPStatusError as exc:
+            logger.error("retrieval HTTP %s: %s", exc.response.status_code, exc.response.text[:200])
+            raise ServiceError(f"Retrieval service error: {exc.response.status_code}")
+        except Exception as exc:
+            logger.error("retrieval failed: %s", exc, exc_info=True)
+            raise ServiceError(f"Failed to retrieve context: {exc}")
+        return [
+            ContextDocument(
+                doc_id=str(r.get("doc_id", "")),
+                text=r.get("text", "") or "",
+                score=float(r.get("score", 0.0) or 0.0),
+                metadata=r.get("metadata", {}),
+            )
+            for r in data.get("results", [])[: request.top_k]
+        ]
 
     async def generate_answer(self, request: RAGRequest) -> RAGResponse:
-        logger.info(f"Processing RAG request for query: '{request.query[:50]}...'")
+        started = time.perf_counter()
+        cfg = request.generation_config
+        docs: List[ContextDocument] = await self.retrieve_context(request) if cfg.use_context else []
 
-        context_docs = await self.retrieve_context(request)
-
-        if not context_docs:
-            logger.warning("No context documents retrieved")
+        if cfg.use_context and not docs:
             return RAGResponse(
-                query=request.query,
-                answer="No relevant documents found to answer this question.",
-                context_documents=[],
-                model_used="none",
-                retrieval_model=request.retrieval_model,
-                metadata={"status": "no_context"}
+                query=request.query, answer="No relevant documents found to answer this question.",
+                context_documents=[], model_used="none", retrieval_model=request.retrieval_model,
+                metadata={"status": "no_context"},
             )
 
+        base_meta = {
+            "num_docs_retrieved": len(docs),
+            "temperature": cfg.temperature,
+            "max_tokens": cfg.max_tokens,
+            "requested_mode": cfg.mode or self.settings.default_mode,
+        }
         try:
-            generator = HuggingFaceGenerator(request.generation_config)
-            answer = generator.generate(request.query, context_docs)
-            actual_model_used = f"{request.generation_config.model} (remote)"
-        except ValueError as e:
-            logger.error(f"Configuration error: {e}")
-            raise ServiceError(str(e))
-        except Exception as e:
-            logger.error(f"Error generating answer: {e}", exc_info=True)
-            raise ServiceError(f"Failed to generate answer: {str(e)}")
-
-        logger.info("RAG answer generated successfully")
-
+            result = await self.router.generate(GenerationRequest(request.query, docs, cfg), cfg.mode)
+        except GenerationUnavailableError as exc:
+            logger.error("generation unavailable: %s", exc)
+            return RAGResponse(
+                query=request.query, answer="", context_documents=docs, model_used="none",
+                retrieval_model=request.retrieval_model,
+                metadata={**base_meta, "status": "generation_failed", "errors": exc.to_list(),
+                          "latency_ms": int((time.perf_counter() - started) * 1000)},
+            )
         return RAGResponse(
-            query=request.query,
-            answer=answer,
-            context_documents=context_docs,
-            model_used=actual_model_used,
-            retrieval_model=request.retrieval_model,
-            metadata={
-                "status": "success",
-                "num_docs_retrieved": len(context_docs),
-                "temperature": request.generation_config.temperature,
-                "max_tokens": request.generation_config.max_tokens
-            }
+            query=request.query, answer=result.text, context_documents=docs,
+            model_used=f"{result.model} ({result.source})", retrieval_model=request.retrieval_model,
+            metadata={**base_meta, "status": "success", "generation_source": result.source,
+                      "generation_latency_ms": result.latency_ms, "usage": result.usage,
+                      "fallback_used": result.fallback_used, "fallback_reason": result.fallback_reason,
+                      "attempts": result.attempts,
+                      "latency_ms": int((time.perf_counter() - started) * 1000)},
         )

@@ -1,40 +1,39 @@
+"""Common contract for all generators (remote and local)."""
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
-from typing import List
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Sequence
+
 from services.rag.schemas import ContextDocument, GenerationConfig
 
 
+@dataclass
+class GenerationRequest:
+    query: str
+    documents: Sequence[ContextDocument]
+    config: GenerationConfig
+
+
+@dataclass
+class GenerationResult:
+    text: str
+    source: str  # "remote" | "local"
+    model: str
+    latency_ms: int
+    usage: Optional[Dict[str, Any]] = None
+    fallback_used: bool = False
+    fallback_reason: Optional[str] = None
+    attempts: List[Dict[str, Any]] = field(default_factory=list)
+
+
 class BaseGenerator(ABC):
-    
-    def __init__(self, config: GenerationConfig):
-        self.config = config
-    
+    source: str = "base"
+
     @abstractmethod
-    def generate(self, query: str, context_docs: List[ContextDocument]) -> str:
-        pass
-    
-    def _format_context(self, context_docs: List[ContextDocument]) -> str:
-        if not context_docs:
-            return ""
-        
-        formatted_parts = []
-        for idx, doc in enumerate(context_docs, 1):
-            formatted_parts.append(
-                f"Document {idx} (ID: {doc.doc_id}, Score: {doc.score:.4f}):\n{doc.text}\n"
-            )
-        
-        return "\n".join(formatted_parts)
-    
-    def _build_prompt(self, query: str, context: str) -> str:
-        if not self.config.use_context or not context:
-            return query
-        
-        prompt_template = """Based on the following retrieved documents, please answer the question.
+    def unavailable_reason(self) -> Optional[str]:
+        """Return None when the generator can be tried now, else a short human reason."""
 
-Retrieved Documents:
-{context}
-
-Question: {query}
-
-Answer:"""
-        
-        return prompt_template.format(context=context, query=query)
+    @abstractmethod
+    async def generate(self, request: GenerationRequest) -> GenerationResult:
+        """Return a result or raise services.rag.errors.GeneratorError. Never return error text."""

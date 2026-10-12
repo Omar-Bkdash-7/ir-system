@@ -1,7 +1,7 @@
 # =============================================================================
 # Docker Compose - Development Overrides
 # =============================================================================
-# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 # =============================================================================
 
 # Override named volumes with empty definitions to use bind mounts instead
@@ -229,12 +229,7 @@ services:
       context: .
       dockerfile: docker/unified.Dockerfile
       target: runtime-rag
-    command: sh -c "echo 'nameserver 8.8.8.8' > /etc/resolv.conf && echo 'nameserver 8.8.4.4' >> /etc/resolv.conf && python -m uvicorn services.rag.main:app --host 0.0.0.0 --port 8008 --reload"
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    command: python -m uvicorn services.rag.main:app --host 0.0.0.0 --port 8008 --reload --reload-dir /app/services --reload-dir /app/common
     volumes:
       - ./services:/app/services
       - ./common:/app/common
@@ -244,6 +239,7 @@ services:
       - ./data/indices:/app/data/indices
       - ./data/cache:/app/data/cache
       - ./data/models:/app/data/models
+      - ./data/models/rag:/models/rag
       - ./data/processed:/app/data/processed
       - ./data/evaluation:/app/data/evaluation
       - ./data/metadata:/app/data/metadata
@@ -253,6 +249,7 @@ services:
       LOG_LEVEL: DEBUG
       RELOAD: "true"
       IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
+      RAG_ENABLE_DIAGNOSTICS: "true"
 
   frontend:
     build:
