@@ -18,21 +18,6 @@ from constants import (
     SS_LAST_REFRESH_TIME,
     SS_SELECTED_PAGE,
 )
-st.markdown(
-    """
-    <style>
-    [data-testid="stSidebarNav"] {
-        background-position: 0px;
-    }
-    section[data-testid="stSidebar"] div.stButton > button {
-        width: 100%;
-        text-align: left;
-        justify-content: flex-start;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
 
 _PAGES = [
     {"key": "guide", "label": "User Guide", "icon": "📘"},
@@ -52,6 +37,34 @@ _STATUS_EMOJI = {True: "🟢", False: "🔴", None: "🟡"}
 
 def render_sidebar() -> None:
     """Renders the full sidebar. Navigation lives in session_state[SS_SELECTED_PAGE]."""
+    
+    # Apply CSS for left-aligned buttons
+    st.markdown(
+        """
+        <style>
+        /* Align sidebar navigation to left */
+        [data-testid="stSidebarNav"] {
+            background-position: 0px;
+        }
+        
+        /* Left-align all sidebar buttons */
+        section[data-testid="stSidebar"] div.stButton > button {
+            width: 100%;
+            text-align: left;
+            justify-content: flex-start;
+            padding-left: 0.75rem;
+        }
+        
+        /* Ensure button content (icon + text) stays left */
+        section[data-testid="stSidebar"] div.stButton > button > div {
+            justify-content: flex-start;
+            text-align: left;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    
     with st.sidebar:
 
         # ── Brand ──────────────────────────────────────────────────────
