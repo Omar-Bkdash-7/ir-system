@@ -78,6 +78,7 @@ services:
       - ./services:/app/services
       - ./common:/app/common
       - ./configs:/app/configs
+      - ./tests:/app/tests
       - ./logs:/app/logs
       - ./data/datasets:/app/data/datasets
       - ./data/indices:/app/data/indices

@@ -17,26 +17,26 @@ API Entry Points:
     - get_index_stats: Retrieve index statistics
 """
 
-from services.indexing.dataset_service import (
-    validate_and_store_metadata,
-    get_metadata,
-    list_local_datasets,
-    delete_local_dataset,
-    upload_dataset_to_db,
-    get_db_dataset_info,
-    DatasetService,
-)
+from services.indexing._lazy import install_lazy_exports
 
-from services.indexing.indexing_service import (
-    get_index_stats,
-    get_tfidf_stats,
-    get_embedding_stats,
-    get_bm25_stats,
-    build_tfidf_index,
-    build_embedding_index,
-    build_bm25_index,
-)
-
+# Public names are resolved on first access (PEP 562), so importing this package no longer drags in psycopg2,
+# ir_datasets, scikit-learn and numpy. Every old import path keeps working.
+install_lazy_exports(globals(), __name__, {
+    "validate_and_store_metadata": "services.indexing.dataset",
+    "get_metadata": "services.indexing.dataset",
+    "list_local_datasets": "services.indexing.dataset",
+    "delete_local_dataset": "services.indexing.dataset",
+    "upload_dataset_to_db": "services.indexing.dataset",
+    "get_db_dataset_info": "services.indexing.dataset",
+    "DatasetService": "services.indexing.dataset",
+    "get_index_stats": "services.indexing.services",
+    "get_tfidf_stats": "services.indexing.services",
+    "get_embedding_stats": "services.indexing.services",
+    "get_bm25_stats": "services.indexing.services",
+    "build_tfidf_index": "services.indexing.services",
+    "build_embedding_index": "services.indexing.services",
+    "build_bm25_index": "services.indexing.services",
+})
 
 __all__ = [
     # Dataset management

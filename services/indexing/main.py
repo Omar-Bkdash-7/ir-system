@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Body, Query
 from typing import Optional
-from services.indexing.dataset_service import (
+from services.indexing.dataset import maintenance
+from services.indexing.dataset import (
     validate_and_store_metadata,
     list_local_datasets,
     delete_local_dataset,
@@ -8,21 +9,28 @@ from services.indexing.dataset_service import (
     delete_dataset_from_db,
     get_db_dataset_info,
 )
-from services.indexing.indexing_service import (
-    get_index_stats,
+from services.indexing.errors import InvalidDatasetIdError, InvalidIndexTypeError
+from services.indexing.services.build_service import (
     build_tfidf_index,
-    get_tfidf_status,
     build_embedding_index,
-    get_embedding_status,
     build_bm25_index,
-    get_bm25_status,
-    build_all_indices
+    build_all_indices,
+)
+from services.indexing.services.index_admin import (
+    delete_all_indices,
+    delete_index as delete_index_files,
 )
 from services.indexing.services.inverted_index_service import (
     get_inverted_index_stats,
     get_term_info,
     search_terms,
-    get_vocabulary_sample
+    get_vocabulary_sample,
+)
+from services.indexing.services.stats_service import (
+    get_index_stats,
+    get_tfidf_stats,
+    get_embedding_stats,
+    get_bm25_stats,
 )
 from common.exception_handlers import register_exception_handlers
 from common.logging_config import setup_logging
@@ -53,44 +61,7 @@ def download_dataset(dataset_id: str = Query(..., description="Dataset ID to dow
     This ensures the dataset is available in the container filesystem.
     """
     try:
-        import ir_datasets
-        logger.info(f"Attempting to load dataset: {dataset_id}")
-        
-        # This will download the dataset if not present
-        ds = ir_datasets.load(dataset_id)
-        
-        # Force iteration to ensure all components are downloaded
-        doc_count = 0
-        query_count = 0
-        qrel_count = 0
-        
-        # Count documents (sample first 10 to verify)
-        if hasattr(ds, 'docs_iter'):
-            for i, _ in enumerate(ds.docs_iter()):
-                doc_count += 1
-                if i >= 10:  # Just verify first few docs
-                    break
-        
-        # Count queries
-        if hasattr(ds, 'queries_iter'):
-            query_count = sum(1 for _ in ds.queries_iter())
-        
-        # Count qrels
-        if hasattr(ds, 'qrels_iter'):
-            qrel_count = sum(1 for _ in ds.qrels_iter())
-        
-        logger.info(f"Dataset {dataset_id} loaded: docs_sampled={doc_count}, queries={query_count}, qrels={qrel_count}")
-        
-        return {
-            "status": "success",
-            "dataset_id": dataset_id,
-            "message": "Dataset downloaded and verified",
-            "sample_counts": {
-                "docs_sampled": doc_count,
-                "queries": query_count,
-                "qrels": qrel_count
-            }
-        }
+        return maintenance.download_dataset(dataset_id)
     except Exception as e:
         logger.error(f"Failed to download dataset {dataset_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -112,40 +83,7 @@ def local_datasets():
 def debug_dataset_path():
     """Debug endpoint to inspect IR_DATASETS_HOME contents."""
     try:
-        from services.indexing.dataset.path_resolver import DatasetPathResolver
-        import os
-        
-        resolver = DatasetPathResolver()
-        ir_home = resolver.get_ir_home()
-        
-        result = {
-            "ir_datasets_home": str(ir_home),
-            "exists": ir_home.exists(),
-            "env_var": os.environ.get("IR_DATASETS_HOME"),
-        }
-        
-        if ir_home.exists():
-            children = list(ir_home.iterdir())
-            result["contents"] = [
-                {
-                    "name": child.name,
-                    "type": "dir" if child.is_dir() else "file",
-                    "path": str(child)
-                }
-                for child in sorted(children)
-            ]
-            
-            # Check beir/quora specifically
-            quora_path = ir_home / "beir" / "quora"
-            if quora_path.exists():
-                result["beir_quora"] = {
-                    "exists": True,
-                    "contents": [f.name for f in quora_path.iterdir()]
-                }
-            else:
-                result["beir_quora"] = {"exists": False}
-        
-        return result
+        return maintenance.debug_path_info()
     except Exception as e:
         logger.error(f"Debug path failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -156,6 +94,8 @@ def delete_dataset(dataset_id: str = Query(..., description="Dataset ID to delet
     """Permanently delete a local dataset directory."""
     try:
         return delete_local_dataset(dataset_id)
+    except InvalidDatasetIdError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -171,6 +111,8 @@ def upload_to_db(
     """Load documents from a local ir_datasets dataset into PostgreSQL."""
     try:
         return upload_dataset_to_db(dataset_id, batch_size=batch_size)
+    except InvalidDatasetIdError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Upload to DB failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -204,6 +146,8 @@ def delete_dataset_from_db_endpoint(dataset_id: str = Query(..., description="Da
     """Delete all documents for a specific dataset from PostgreSQL."""
     try:
         return delete_dataset_from_db(dataset_id)
+    except InvalidDatasetIdError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Delete from DB failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -213,70 +157,16 @@ def delete_dataset_from_db_endpoint(dataset_id: str = Query(..., description="Da
 def fix_corrupted_dataset(dataset_id: str = Query(..., description="Dataset ID to fix")):
     """
     Fix corrupted dataset by deleting local files and re-downloading.
-    
+
     This endpoint:
-    1. Deletes the corrupted local dataset
-    2. Re-downloads it completely from ir_datasets registry
-    3. Validates the download
+    1. Validates the dataset id (an empty or unsafe id is rejected with 400 and nothing is deleted)
+    2. Deletes the corrupted local dataset
+    3. Re-downloads it completely from ir_datasets registry
     """
     try:
-        import shutil
-        from services.indexing.dataset.path_resolver import DatasetPathResolver
-        
-        logger.info(f"Attempting to fix corrupted dataset: {dataset_id}")
-        
-        # Get dataset path
-        resolver = DatasetPathResolver()
-        ir_home = resolver.get_ir_home()
-        
-        parts = dataset_id.strip("/").split("/")
-        dataset_path = ir_home
-        for part in parts:
-            dataset_path = dataset_path / part
-        
-        # Delete existing dataset
-        if dataset_path.exists():
-            logger.info(f"Deleting corrupted dataset at: {dataset_path}")
-            shutil.rmtree(dataset_path)
-            logger.info("Deleted corrupted dataset files")
-        
-        # Re-download dataset
-        logger.info(f"Re-downloading dataset '{dataset_id}'...")
-        ds = ir_datasets.load(dataset_id)
-        
-        # Force complete download by counting all items
-        doc_count = 0
-        if hasattr(ds, 'docs_iter'):
-            logger.info("Iterating documents to force complete download...")
-            for doc in ds.docs_iter():
-                doc_count += 1
-                if doc_count % 5000 == 0:
-                    logger.info(f"Downloaded {doc_count:,} documents...")
-        
-        query_count = 0
-        if hasattr(ds, 'queries_iter'):
-            query_count = sum(1 for _ in ds.queries_iter())
-        
-        qrel_count = 0
-        if hasattr(ds, 'qrels_iter'):
-            qrel_count = sum(1 for _ in ds.qrels_iter())
-        
-        logger.info(
-            f"Dataset fixed successfully: "
-            f"docs={doc_count}, queries={query_count}, qrels={qrel_count}"
-        )
-        
-        return {
-            "status": "success",
-            "dataset_id": dataset_id,
-            "message": "Dataset fixed and re-downloaded successfully",
-            "counts": {
-                "documents": doc_count,
-                "queries": query_count,
-                "qrels": qrel_count
-            }
-        }
-        
+        return maintenance.fix_corrupted_dataset(dataset_id)
+    except InvalidDatasetIdError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to fix corrupted dataset: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -285,8 +175,11 @@ def fix_corrupted_dataset(dataset_id: str = Query(..., description="Dataset ID t
 # ── Index management ──────────────────────────────────────────────────────
 
 @app.get("/index/stats")
-def index_stats():
-    return get_index_stats()
+def index_stats(
+    dataset_name: str = Query(..., description="Dataset name"),
+    doc_count: Optional[int] = Query(None, description="Total number of documents to report (optional)"),
+):
+    return get_index_stats(dataset_name, doc_count)
 
 
 @app.post("/index/tfidf/build")
@@ -301,7 +194,7 @@ def build_tfidf(
 
 @app.get("/index/tfidf/status")
 def tfidf_status(dataset_name: str = Query(..., description="Dataset name")):
-    return get_tfidf_status(dataset_name)
+    return get_tfidf_stats(dataset_name)
 
 
 @app.post("/index/embedding/build")
@@ -316,7 +209,7 @@ def build_embedding(
 
 @app.get("/index/embedding/status")
 def embedding_status(dataset_name: str = Query(..., description="Dataset name")):
-    return get_embedding_status(dataset_name)
+    return get_embedding_stats(dataset_name)
 
 
 @app.post("/index/bm25/build")
@@ -331,7 +224,7 @@ def build_bm25(
 
 @app.get("/index/bm25/status")
 def bm25_status(dataset_name: str = Query(..., description="Dataset name")):
-    return get_bm25_status(dataset_name)
+    return get_bm25_stats(dataset_name)
 
 
 @app.post("/index/build-all")
@@ -351,30 +244,34 @@ def build_all(
 # ── Inverted Index Analysis ───────────────────────────────────────────────
 
 @app.get("/index/inverted/stats")
-def inverted_stats():
+def inverted_stats(dataset_name: str = Query(..., description="Dataset name")):
     """Get comprehensive inverted index statistics."""
-    return get_inverted_index_stats()
+    return get_inverted_index_stats(dataset_name)
 
 
 @app.get("/index/inverted/term/{term}")
-def term_info(term: str):
+def term_info(term: str, dataset_name: str = Query(..., description="Dataset name")):
     """Get detailed information about a specific term."""
-    return get_term_info(term)
+    return get_term_info(dataset_name, term)
 
 
 @app.get("/index/inverted/search")
 def search_vocabulary(
     prefix: str = Query(..., description="Prefix to search for"),
-    limit: int = Query(50, description="Maximum number of results")
+    limit: int = Query(50, description="Maximum number of results"),
+    dataset_name: str = Query(..., description="Dataset name"),
 ):
     """Search for terms starting with given prefix."""
-    return search_terms(prefix, limit)
+    return search_terms(dataset_name, prefix, limit)
 
 
 @app.get("/index/inverted/sample")
-def vocabulary_sample(sample_size: int = Query(100, description="Sample size")):
+def vocabulary_sample(
+    sample_size: int = Query(100, description="Sample size"),
+    dataset_name: str = Query(..., description="Dataset name"),
+):
     """Get a random sample of vocabulary terms."""
-    return get_vocabulary_sample(sample_size)
+    return get_vocabulary_sample(dataset_name, sample_size)
 
 
 # ── Index Deletion ────────────────────────────────────────────────────────
@@ -385,50 +282,10 @@ def delete_index(
     dataset_name: str = Query(..., description="Dataset name")
 ):
     """Delete a specific index type for a dataset."""
-    from pathlib import Path
-    
-    if index_type not in ["tfidf", "bm25", "embedding"]:
-        raise HTTPException(status_code=400, detail=f"Invalid index type: {index_type}")
-    
     try:
-        safe_dataset_name = dataset_name.replace('/', '_').replace('-', '_').replace('.', '_')
-        
-        # The indices are stored in subdirectories: data/indices/{dataset}/{index_type}/
-        indices_base = Path("data/indices")
-        index_dir = indices_base / safe_dataset_name / index_type
-        
-        deleted_files = []
-        
-        if index_dir.exists() and index_dir.is_dir():
-            # Delete all files in the index directory
-            for file_path in index_dir.iterdir():
-                if file_path.is_file():
-                    file_path.unlink()
-                    deleted_files.append(file_path.name)
-                    logger.info(f"Deleted: {file_path}")
-            
-            # Try to remove the directory itself if empty
-            try:
-                index_dir.rmdir()
-                logger.info(f"Removed empty directory: {index_dir}")
-            except OSError:
-                pass  # Directory not empty or permission issue
-        
-        if deleted_files:
-            return {
-                "status": "success",
-                "message": f"Deleted {index_type} index",
-                "deleted_files": deleted_files,
-                "count": len(deleted_files)
-            }
-        else:
-            return {
-                "status": "not_found",
-                "message": f"No {index_type} index files found",
-                "deleted_files": [],
-                "count": 0
-            }
-    
+        return delete_index_files(index_type, dataset_name)
+    except (InvalidIndexTypeError, InvalidDatasetIdError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to delete {index_type} index: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -437,36 +294,10 @@ def delete_index(
 @app.delete("/index/delete-all")
 def delete_all_indices_endpoint(dataset_name: str = Query(..., description="Dataset name")):
     """Delete all index files for a dataset."""
-    from pathlib import Path
-    import shutil
-    
     try:
-        safe_dataset_name = dataset_name.replace('/', '_').replace('-', '_').replace('.', '_')
-        
-        # The dataset indices directory contains subdirectories for each index type
-        dataset_indices_dir = Path("data/indices") / safe_dataset_name
-        
-        if dataset_indices_dir.exists() and dataset_indices_dir.is_dir():
-            # Count files recursively
-            file_count = sum(1 for _ in dataset_indices_dir.rglob('*') if _.is_file())
-            
-            # Delete the entire directory
-            shutil.rmtree(dataset_indices_dir)
-            
-            logger.info(f"Deleted {file_count} index files for dataset: {dataset_name}")
-            
-            return {
-                "status": "success",
-                "message": f"Deleted all indices for {dataset_name}",
-                "deleted_count": file_count
-            }
-        else:
-            return {
-                "status": "not_found",
-                "message": "No index directory found",
-                "deleted_count": 0
-            }
-    
+        return delete_all_indices(dataset_name)
+    except InvalidDatasetIdError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to delete all indices: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

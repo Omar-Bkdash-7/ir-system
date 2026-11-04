@@ -9,6 +9,8 @@ from typing import Dict
 
 from services.indexing.dataset.path_resolver import DatasetPathResolver
 from services.indexing.dataset.metadata_manager import DatasetMetadataManager
+from services.indexing.errors import InvalidDatasetIdError
+from services.indexing.naming import safe_child_path
 
 
 logger = logging.getLogger(__name__)
@@ -45,7 +47,7 @@ class LocalDatasetDeleter:
             ValueError: If dataset_id is invalid
         """
         if not dataset_id or not dataset_id.strip():
-            raise ValueError("Dataset ID cannot be empty")
+            raise InvalidDatasetIdError("Dataset ID cannot be empty")
         
         target_path = self._resolve_dataset_path(dataset_id)
         
@@ -92,11 +94,6 @@ class LocalDatasetDeleter:
         Returns:
             Resolved Path object
         """
-        home = self.path_resolver.get_ir_home()
-        parts = dataset_id.strip("/").split("/")
-        
-        target = home
-        for part in parts:
-            target = target / part
-        
-        return target
+        # Rejects '', '.', '..' and anything that would leave the datasets directory
+        # (an id like ".." used to resolve to the PARENT of the datasets directory, which was then deleted)
+        return safe_child_path(self.path_resolver.get_ir_home(), dataset_id)

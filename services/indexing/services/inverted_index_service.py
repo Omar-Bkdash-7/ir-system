@@ -10,9 +10,30 @@ from typing import Dict, List, Any, Optional
 from collections import Counter
 
 from services.indexing.indexers import BM25Indexer
+from services.indexing.services.index_cache import load_cached
 
 
 logger = logging.getLogger(__name__)
+
+
+def _not_built() -> Dict[str, Any]:
+    return {
+        "status": "not_built",
+        "message": "BM25 index has not been built yet"
+    }
+
+
+def _load_bm25(dataset_name: str) -> Optional[BM25Indexer]:
+    """
+    The loaded BM25 index, or None when it has not been built yet.
+
+    The explorer calls these functions on every keystroke and each call used to unpickle the entire index from
+    disk; the loaded index is now cached (keyed by the file's modification time, so a rebuild is noticed).
+    """
+    indexer = BM25Indexer(dataset_name=dataset_name)
+    if not indexer.exists():
+        return None
+    return load_cached(lambda: BM25Indexer(dataset_name=dataset_name).load(), [indexer.index_path])
 
 
 def get_inverted_index_stats(dataset_name: str) -> Dict[str, Any]:
@@ -36,15 +57,10 @@ def get_inverted_index_stats(dataset_name: str) -> Dict[str, Any]:
         raise ValueError("dataset_name is required")
     
     try:
-        indexer = BM25Indexer(dataset_name=dataset_name)
+        indexer = _load_bm25(dataset_name)
         
-        if not indexer.exists():
-            return {
-                "status": "not_built",
-                "message": "BM25 index has not been built yet"
-            }
-        
-        indexer.load()
+        if indexer is None:
+            return _not_built()
         
         total_postings = sum(len(postings) for postings in indexer.inverted_index.values())
         avg_postings = total_postings / len(indexer.inverted_index) if indexer.inverted_index else 0
@@ -129,15 +145,10 @@ def get_term_info(dataset_name: str, term: str) -> Dict[str, Any]:
         raise ValueError("dataset_name is required")
     
     try:
-        indexer = BM25Indexer(dataset_name=dataset_name)
+        indexer = _load_bm25(dataset_name)
         
-        if not indexer.exists():
-            return {
-                "status": "not_built",
-                "message": "BM25 index has not been built yet"
-            }
-        
-        indexer.load()
+        if indexer is None:
+            return _not_built()
         
         if term not in indexer.inverted_index:
             return {
@@ -192,15 +203,10 @@ def search_terms(dataset_name: str, prefix: str, limit: int = 50) -> Dict[str, A
         raise ValueError("dataset_name is required")
     
     try:
-        indexer = BM25Indexer(dataset_name=dataset_name)
+        indexer = _load_bm25(dataset_name)
         
-        if not indexer.exists():
-            return {
-                "status": "not_built",
-                "message": "BM25 index has not been built yet"
-            }
-        
-        indexer.load()
+        if indexer is None:
+            return _not_built()
         
         matching_terms = [
             term for term in indexer.inverted_index.keys()
@@ -252,15 +258,10 @@ def get_vocabulary_sample(dataset_name: str, sample_size: int = 100) -> Dict[str
         raise ValueError("dataset_name is required")
     
     try:
-        indexer = BM25Indexer(dataset_name=dataset_name)
+        indexer = _load_bm25(dataset_name)
         
-        if not indexer.exists():
-            return {
-                "status": "not_built",
-                "message": "BM25 index has not been built yet"
-            }
-        
-        indexer.load()
+        if indexer is None:
+            return _not_built()
         
         import random
         

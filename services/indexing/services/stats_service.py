@@ -9,6 +9,7 @@ import logging
 from typing import Dict, Any
 
 from services.indexing.indexers import TFIDFIndexer, EmbeddingIndexer, BM25Indexer
+from services.indexing.services.index_cache import load_cached
 
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,11 @@ class TFIDFStatsRetriever:
             if not indexer.exists():
                 return {"status": "not_built"}
             
-            indexer.load()
+            # The loaded index is cached (keyed by the files' modification time): status pages poll this endpoint
+            indexer = load_cached(
+                lambda: TFIDFIndexer(dataset_name=dataset_name).load(),
+                [indexer.vectorizer_path, indexer.matrix_path, indexer.doc_ids_path],
+            )
             return {
                 "status": "ready",
                 "vocab_size": len(indexer.vectorizer.vocabulary_),
@@ -68,7 +73,7 @@ class EmbeddingStatsRetriever:
             if not indexer.exists():
                 return {"status": "not_built"}
             
-            indexer.load()
+            indexer.load(mmap=True)  # only the shape and the size are needed: do not read the whole matrix
             return {
                 "status": "ready",
                 "shape": list(indexer.embeddings.shape),
@@ -101,7 +106,7 @@ class BM25StatsRetriever:
             if not indexer.exists():
                 return {"status": "not_built"}
             
-            indexer.load()
+            indexer = load_cached(lambda: BM25Indexer(dataset_name=dataset_name).load(), [indexer.index_path])
             return {
                 "status": "ready",
                 "vocab_size": len(indexer.inverted_index),

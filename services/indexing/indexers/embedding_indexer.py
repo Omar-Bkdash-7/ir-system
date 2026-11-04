@@ -6,6 +6,8 @@ from common.config import get_config
 from common.device import get_torch_device
 from common.model_loader import load_embedding_model
 from common.exceptions import IndexNotFoundError, ModelLoadError
+from services.indexing.naming import index_dir
+from services.indexing.storage import atomic_path
 import logging
 
 logger = logging.getLogger(__name__)
@@ -16,19 +18,24 @@ class EmbeddingIndexer:
         self.model = None
         self.embeddings = None
         self.doc_ids = []
+        self._device = None
 
-        # Use dataset-specific paths
-        if dataset_name:
-            dataset_slug = dataset_name.replace('/', '_').replace('-', '_')
-            base_path = Path(get_config("indices.base_path", "data/indices")) / dataset_slug / "embedding"
-        else:
-            # Fallback to old behavior
-            base_path = Path(get_config("indices.base_path", "data/indices"))
+        # Use dataset-specific paths (no dataset name = the old single-dataset layout)
+        base_path = index_dir(dataset_name, "embedding")
         
         self.embeddings_path = base_path / "embeddings.npy"
         self.doc_id_map_path = base_path / "doc_id_map.json"
 
-        self.device = get_torch_device()
+    @property
+    def device(self):
+        """Resolved on first use: probing the GPU imports torch, which the status endpoints never need."""
+        if self._device is None:
+            self._device = get_torch_device()
+        return self._device
+
+    @device.setter
+    def device(self, value):
+        self._device = value
 
     def _load_model(self):
         if self.model is None:
@@ -120,11 +127,14 @@ class EmbeddingIndexer:
 
         self.embeddings_path.parent.mkdir(parents=True, exist_ok=True)
 
-        np.save(self.embeddings_path, self.embeddings)
+        with atomic_path(self.embeddings_path) as tmp:  # temporary name + rename: never a truncated file
+            with open(tmp, "wb") as f:
+                np.save(f, self.embeddings)
         logger.info(f"Saved embeddings to {self.embeddings_path}")
 
-        with open(self.doc_id_map_path, "w", encoding="utf-8") as f:
-            json.dump(self.doc_ids, f, ensure_ascii=False, indent=2)
+        with atomic_path(self.doc_id_map_path) as tmp:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self.doc_ids, f, ensure_ascii=False, indent=2)
         logger.info(f"Saved doc ID map to {self.doc_id_map_path}")
 
         self._log_index_info()
@@ -135,14 +145,15 @@ class EmbeddingIndexer:
         logger.info(f"  Embedding dimension: {self.embeddings.shape[1]}")
         logger.info(f"  Total size: {self.embeddings.nbytes / (1024**2):.2f} MB")
 
-    def load(self):
+    def load(self, mmap: bool = False):
+        """mmap=True maps the file instead of reading it (enough for status and statistics)."""
         if not self.embeddings_path.exists():
             raise IndexNotFoundError(f"Embeddings not found at {self.embeddings_path}")
         if not self.doc_id_map_path.exists():
             raise IndexNotFoundError(f"Doc ID map not found at {self.doc_id_map_path}")
 
         logger.info(f"Loading embeddings from {self.embeddings_path}")
-        self.embeddings = np.load(self.embeddings_path)
+        self.embeddings = np.load(self.embeddings_path, mmap_mode="r" if mmap else None)
 
         logger.info(f"Loading doc ID map from {self.doc_id_map_path}")
         with open(self.doc_id_map_path, "r", encoding="utf-8") as f:

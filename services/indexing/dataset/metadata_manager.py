@@ -226,3 +226,17 @@ def list_all_datasets() -> List[Dict[str, Any]]:
     """
     manager = DatasetMetadataManager()
     return manager.list_datasets()
+
+
+def known_dataset_ids() -> List[str]:
+    """
+    Exact ids of every dataset that has a metadata file (never raises).
+
+    Used to turn PostgreSQL table names back into dataset ids: 'dataset_nano_beir_quora' alone cannot tell
+    whether it was 'nano/beir/quora', 'nano-beir/quora' or 'nano_beir_quora'.
+    """
+    try:
+        return [meta["dataset_name"] for meta in list_all_datasets() if meta.get("dataset_name")]
+    except Exception as e:
+        logger.warning(f"Could not list dataset metadata: {e}")
+        return []

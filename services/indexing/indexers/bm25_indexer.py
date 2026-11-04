@@ -6,6 +6,8 @@ from collections import defaultdict
 from typing import Dict, List, NamedTuple
 import jsonlines
 from common.config import get_config
+from services.indexing.naming import index_dir
+from services.indexing.storage import atomic_path
 import logging
 
 logger = logging.getLogger(__name__)
@@ -16,6 +18,13 @@ class PostingEntry(NamedTuple):
 
 class BM25Indexer:
     def __init__(self, dataset_name: str = None):
+        self._reset()
+        
+        # Use dataset-specific paths (no dataset name = the old single-dataset layout)
+        self.index_path = index_dir(dataset_name, "bm25") / "bm25_index.pkl"
+    
+    def _reset(self):
+        """Empty the in-memory index (build() calls this too: a second build() must not mix with the first)."""
         self.inverted_index: Dict[str, List[PostingEntry]] = {}
         self.doc_frequencies: Dict[str, int] = {}
         self.idf_scores: Dict[str, float] = {}
@@ -23,16 +32,6 @@ class BM25Indexer:
         self.avg_doc_length: float = 0.0
         self.total_docs: int = 0
         self.doc_ids: List[str] = []
-        
-        # Use dataset-specific paths
-        if dataset_name:
-            dataset_slug = dataset_name.replace('/', '_').replace('-', '_')
-            base_path = Path(get_config("indices.base_path", "data/indices")) / dataset_slug / "bm25"
-        else:
-            # Fallback to old behavior
-            base_path = Path(get_config("indices.base_path", "data/indices"))
-        
-        self.index_path = base_path / "bm25_index.pkl"
     
     def build(self, processed_path: str = None):
         if processed_path is None:
@@ -44,6 +43,7 @@ class BM25Indexer:
         
         logger.info(f"Loading preprocessed documents from {processed_path}")
         
+        self._reset()
         temp_inverted_index = defaultdict(lambda: defaultdict(int))
         doc_ids = []
         doc_lengths = {}
@@ -102,8 +102,9 @@ class BM25Indexer:
             "doc_ids": self.doc_ids
         }
         
-        with open(self.index_path, "wb") as f:
-            pickle.dump(index_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+        with atomic_path(self.index_path) as tmp:  # a crash mid-write can no longer leave a truncated index
+            with open(tmp, "wb") as f:
+                pickle.dump(index_data, f, protocol=pickle.HIGHEST_PROTOCOL)
         
         logger.info(f"Saved BM25 index to {self.index_path}")
         logger.info(f"Index size: {self.index_path.stat().st_size / (1024**2):.2f} MB")

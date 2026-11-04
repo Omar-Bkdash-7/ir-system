@@ -25,143 +25,34 @@ Public API:
     - get_db_dataset_info: Get database statistics
 """
 
-from services.indexing.dataset.service import DatasetService
-from services.indexing.dataset.validator import DatasetValidator
-from services.indexing.dataset.loader import DatasetLoader
-from services.indexing.dataset.metadata_manager import DatasetMetadataManager
-from services.indexing.dataset.scanner import LocalDatasetScanner
-from services.indexing.dataset.deleter import LocalDatasetDeleter
-from services.indexing.dataset.db_operations import (
-    DatasetUploader,
-    DatabaseInfoRetriever,
-    DatasetDatabaseDeleter,
-    database_cursor
-)
-from services.indexing.dataset.path_resolver import DatasetPathResolver
-from services.indexing.dataset.constants import (
-    DEFAULT_BATCH_SIZE,
-    DEFAULT_VALIDATION_RETRIES,
-    DEFAULT_RETRY_DELAY,
-    DATA_FILE_EXTENSIONS
-)
+from services.indexing._lazy import install_lazy_exports
 
-
-# Public API Functions
-
-def validate_and_store_metadata(dataset_id=None, skip_min_thresholds=False):
-    """
-    Public API: Validate dataset and store its metadata.
-    
-    Entry point for dataset validation workflow in the indexing service.
-    
-    Args:
-        dataset_id: IR datasets identifier
-        skip_min_thresholds: Reserved for future threshold validation
-        
-    Returns:
-        Dictionary containing dataset metadata
-        
-    Raises:
-        DatasetValidationError: If validation fails
-    """
-    service = DatasetService()
-    return service.validate_and_store_metadata(dataset_id, skip_min_thresholds)
-
-
-def get_metadata(dataset_name=None):
-    """
-    Public API: Retrieve stored dataset metadata.
-    
-    Args:
-        dataset_name: Dataset identifier. If None, returns active dataset
-    
-    Returns:
-        Dictionary containing dataset metadata
-        
-    Raises:
-        FileNotFoundError: If metadata file doesn't exist
-    """
-    service = DatasetService()
-    return service.get_metadata(dataset_name)
-
-
-def list_local_datasets():
-    """
-    Public API: List all locally downloaded datasets.
-    
-    Returns:
-        List of dictionaries containing dataset information
-    """
-    scanner = LocalDatasetScanner()
-    return scanner.list_datasets()
-
-
-def delete_local_dataset(dataset_id):
-    """
-    Public API: Delete a local dataset directory.
-    
-    Args:
-        dataset_id: Dataset identifier to delete
-        
-    Returns:
-        Dictionary with deletion confirmation
-        
-    Raises:
-        FileNotFoundError: If dataset doesn't exist
-        ValueError: If dataset_id is invalid
-    """
-    deleter = LocalDatasetDeleter()
-    return deleter.delete_dataset(dataset_id)
-
-
-def upload_dataset_to_db(dataset_id, batch_size=DEFAULT_BATCH_SIZE):
-    """
-    Public API: Upload dataset documents to PostgreSQL.
-    
-    Entry point for dataset upload workflow in the indexing service.
-    
-    Args:
-        dataset_id: IR datasets identifier
-        batch_size: Number of documents per batch
-        
-    Returns:
-        Dictionary with upload statistics
-        
-    Raises:
-        ValueError: If dataset is invalid
-        psycopg2.Error: If database operation fails
-    """
-    uploader = DatasetUploader()
-    return uploader.upload_to_db(dataset_id, batch_size)
-
-
-def delete_dataset_from_db(dataset_id: str):
-    """
-    Public API: Delete dataset documents from PostgreSQL.
-    
-    Args:
-        dataset_id: Dataset identifier to delete
-        
-    Returns:
-        Dictionary with deletion statistics
-        
-    Raises:
-        psycopg2.Error: If database operation fails
-    """
-    deleter = DatasetDatabaseDeleter()
-    return deleter.delete_dataset_from_db(dataset_id)
-
-
-def get_db_dataset_info():
-    """
-    Public API: Get database table information.
-    
-    Returns:
-        Dictionary with table statistics and health information
-    """
-    retriever = DatabaseInfoRetriever()
-    return retriever.get_info()
-
+# Public names are resolved on first access (PEP 562), so importing this package no longer drags in psycopg2,
+# ir_datasets, scikit-learn and numpy. Every old import path keeps working.
+install_lazy_exports(globals(), __name__, {
+    "validate_and_store_metadata": "services.indexing.dataset.api",
+    "get_metadata": "services.indexing.dataset.api",
+    "list_local_datasets": "services.indexing.dataset.api",
+    "delete_local_dataset": "services.indexing.dataset.api",
+    "upload_dataset_to_db": "services.indexing.dataset.api",
+    "delete_dataset_from_db": "services.indexing.dataset.api",
+    "get_db_dataset_info": "services.indexing.dataset.api",
+    "DatasetService": "services.indexing.dataset.service",
+    "DatasetValidator": "services.indexing.dataset.validator",
+    "DatasetLoader": "services.indexing.dataset.loader",
+    "DatasetMetadataManager": "services.indexing.dataset.metadata_manager",
+    "LocalDatasetScanner": "services.indexing.dataset.scanner",
+    "LocalDatasetDeleter": "services.indexing.dataset.deleter",
+    "DatasetUploader": "services.indexing.dataset.db_operations",
+    "DatabaseInfoRetriever": "services.indexing.dataset.db_operations",
+    "DatasetDatabaseDeleter": "services.indexing.dataset.db_operations",
+    "database_cursor": "services.indexing.dataset.db_operations",
+    "DatasetPathResolver": "services.indexing.dataset.path_resolver",
+    "DEFAULT_BATCH_SIZE": "services.indexing.dataset.constants",
+    "DEFAULT_VALIDATION_RETRIES": "services.indexing.dataset.constants",
+    "DEFAULT_RETRY_DELAY": "services.indexing.dataset.constants",
+    "DATA_FILE_EXTENSIONS": "services.indexing.dataset.constants",
+})
 
 __all__ = [
     # Public API functions

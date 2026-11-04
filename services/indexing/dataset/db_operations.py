@@ -13,6 +13,8 @@ from psycopg2.extensions import connection as PgConnection, cursor as PgCursor
 from common.config import get_config
 from common.database import get_db_connection
 from services.indexing.dataset.constants import DEFAULT_BATCH_SIZE, DB_BATCH_PAGE_SIZE
+from services.indexing.dataset.metadata_manager import known_dataset_ids
+from services.indexing.naming import table_name as build_table_name, table_to_dataset_id
 
 
 logger = logging.getLogger(__name__)
@@ -60,9 +62,9 @@ class DatasetUploader:
         Returns:
             Safe PostgreSQL table name (e.g., 'dataset_beir_quora')
         """
-        # Replace special characters with underscores
-        safe_name = dataset_id.replace('/', '_').replace('-', '_').replace('.', '_')
-        return f"{self.base_table_prefix}_{safe_name}"
+        # '/', '-' and '.' become '_' (lower-cased); anything else that is not a letter/digit is refused because the
+        # name is pasted into SQL - see services/indexing/naming.py
+        return build_table_name(dataset_id, self.base_table_prefix)
     
     def upload_to_db(
         self, 
@@ -373,10 +375,11 @@ class DatabaseInfoRetriever:
                 
                 datasets = []
                 total_rows = 0
+                known_ids = known_dataset_ids()
                 
                 for table in tables:
-                    # Extract dataset_id from table name
-                    dataset_id = table.replace(f"{self.table_prefix}_", "").replace("_", "/")
+                    # Extract dataset_id from table name (the exact id from the metadata files when it is known)
+                    dataset_id = table_to_dataset_id(table, self.table_prefix, known_ids)
                     
                     # Get row count for this table
                     cur.execute(f"SELECT COUNT(*) FROM {table}")
@@ -445,8 +448,7 @@ class DatasetDatabaseDeleter:
         Returns:
             Table name
         """
-        safe_name = dataset_id.replace('/', '_').replace('-', '_').replace('.', '_')
-        return f"{self.table_prefix}_{safe_name}"
+        return build_table_name(dataset_id, self.table_prefix)
     
     def delete_dataset_from_db(self, dataset_id: str) -> Dict[str, Any]:
         """

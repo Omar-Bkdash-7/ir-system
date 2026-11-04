@@ -5,17 +5,66 @@ Provides functionality for building TF-IDF, Embedding, and BM25 indices
 with force rebuild capability, preprocessing integration, and error handling.
 """
 
+import functools
 import logging
 import jsonlines
+from contextlib import closing
 from pathlib import Path
 from typing import Dict, Any, Optional
 from tempfile import NamedTemporaryFile
 
+from services.indexing.config import table_prefix as configured_table_prefix
+from services.indexing.dataset.metadata_manager import known_dataset_ids
 from services.indexing.indexers import TFIDFIndexer, EmbeddingIndexer, BM25Indexer
+from services.indexing.naming import index_slug, table_name as build_table_name, table_slug, table_to_dataset_id
+from services.indexing.storage import try_lock
 from common.config import get_config
 
 
 logger = logging.getLogger(__name__)
+
+SERVER_CURSOR_ROWS = 2000  # rows fetched per round trip when a dataset is streamed out of PostgreSQL
+
+
+def _already_running(label: str, dataset_name: str) -> Dict[str, str]:
+    logger.warning(f"{label} build for '{dataset_name}' is already running, request ignored")
+    return {
+        "status": "skipped",
+        "message": f"A {label} build for this dataset is already running."
+    }
+
+
+def _one_build_at_a_time(label: str):
+    """
+    Decorator for IndexBuilder.build(): refuse a second identical build while one is running.
+
+    Two concurrent builds of the same index wrote the same files at the same time and corrupted them (a double
+    click on "Build" is enough). The service runs one worker process, so a process-local lock is enough.
+    """
+    def decorator(build):
+        @functools.wraps(build)
+        def wrapper(self, dataset_name, *args, **kwargs):
+            if not dataset_name:
+                raise ValueError("dataset_name is required")
+            with try_lock(f"{label}:{index_slug(dataset_name)}") as acquired:
+                if not acquired:
+                    return _already_running(label, dataset_name)
+                return build(self, dataset_name, *args, **kwargs)
+        return wrapper
+    return decorator
+
+
+def _one_build_all_at_a_time(build_all):
+    """Same protection for build_all_indices(), which also writes one shared preprocessing file per dataset."""
+    @functools.wraps(build_all)
+    def wrapper(dataset_name, *args, **kwargs):
+        if not dataset_name:
+            raise ValueError("dataset_name is required")
+        with try_lock(f"all:{index_slug(dataset_name)}") as acquired:
+            if not acquired:
+                return _already_running("build-all", dataset_name)
+            return build_all(dataset_name, *args, **kwargs)
+    return wrapper
 
 
 def _check_dataset_in_database(dataset_name: str, table_name: str) -> None:
@@ -31,7 +80,7 @@ def _check_dataset_in_database(dataset_name: str, table_name: str) -> None:
     """
     from common.database import get_db_connection
     
-    with get_db_connection() as conn:
+    with closing(get_db_connection()) as conn:  # `with conn` only ends the transaction, it never closed the connection
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT EXISTS (
@@ -53,7 +102,8 @@ def _check_dataset_in_database(dataset_name: str, table_name: str) -> None:
                     ORDER BY table_name
                 """)
                 available_tables = [row[0] for row in cur.fetchall()]
-                available_datasets = [t.replace('dataset_', '').replace('_', '/') for t in available_tables]
+                known_ids = known_dataset_ids()
+                available_datasets = [table_to_dataset_id(t, 'dataset', known_ids) for t in available_tables]
                 
                 # Build clear, structured error message
                 error_parts = [
@@ -122,8 +172,7 @@ def _preprocess_documents(
     
     # Get the correct table name for this dataset
     table_prefix = get_config("database.table_prefix", "dataset")
-    safe_dataset_name = dataset_name.replace('/', '_').replace('-', '_').replace('.', '_')
-    table_name = f"{table_prefix}_{safe_dataset_name}"
+    table_name = build_table_name(dataset_name, table_prefix)
     
     # Check if dataset exists in database first
     _check_dataset_in_database(dataset_name, table_name)
@@ -143,8 +192,10 @@ def _preprocess_documents(
     try:
         from common.database import get_db_connection
         
-        with get_db_connection() as conn:
-            with conn.cursor() as cur:
+        with closing(get_db_connection()) as conn:
+            # Named (server-side) cursor: rows are streamed instead of loading the whole table into memory
+            with conn.cursor(name="indexing_preprocess") as cur:
+                cur.itersize = SERVER_CURSOR_ROWS
                 # Read documents from dataset-specific table
                 cur.execute(f"SELECT doc_id, text FROM {table_name} ORDER BY doc_id")
                 
@@ -174,11 +225,13 @@ def _preprocess_documents(
                         if doc_count % 10000 == 0:
                             logger.info(f"Preprocessed {doc_count} documents...")
         
+        processed_file.close()  # jsonlines.Writer does not close a file object it was given: flush before indexing
         logger.info(f"Preprocessing complete: {doc_count} documents written to {processed_path}")
         return processed_path
         
     except Exception as e:
         logger.error(f"Preprocessing failed: {e}", exc_info=True)
+        processed_file.close()
         Path(processed_path).unlink(missing_ok=True)
         raise
 
@@ -216,6 +269,7 @@ class IndexBuilder:
 class TFIDFIndexBuilder(IndexBuilder):
     """Builds TF-IDF index from documents."""
     
+    @_one_build_at_a_time("TF-IDF")
     def build(
         self, 
         dataset_name: str, 
@@ -263,8 +317,8 @@ class TFIDFIndexBuilder(IndexBuilder):
             logger.info("TF-IDF index built successfully")
             
             # Get file sizes
-            vectorizer_path = Path(get_config("indices.tfidf_vectorizer", "data/indices/tfidf_vectorizer.pkl"))
-            matrix_path = Path(get_config("indices.tfidf_matrix", "data/indices/tfidf_matrix.npz"))
+            vectorizer_path = indexer.vectorizer_path
+            matrix_path = indexer.matrix_path
             
             total_size_mb = 0
             if vectorizer_path.exists():
@@ -295,6 +349,7 @@ class TFIDFIndexBuilder(IndexBuilder):
 class EmbeddingIndexBuilder(IndexBuilder):
     """Builds embedding-based index from documents."""
     
+    @_one_build_at_a_time("Embedding")
     def build(
         self, 
         dataset_name: str, 
@@ -342,8 +397,8 @@ class EmbeddingIndexBuilder(IndexBuilder):
             logger.info("Embedding index built successfully")
             
             # Get file sizes
-            embeddings_path = Path(get_config("indices.embeddings", "data/indices/embeddings.npy"))
-            doc_map_path = Path(get_config("indices.doc_id_map", "data/indices/doc_id_map.json"))
+            embeddings_path = indexer.embeddings_path
+            doc_map_path = indexer.doc_id_map_path
             
             total_size_mb = 0
             if embeddings_path.exists():
@@ -375,6 +430,7 @@ class EmbeddingIndexBuilder(IndexBuilder):
 class BM25IndexBuilder(IndexBuilder):
     """Builds BM25 index from documents."""
     
+    @_one_build_at_a_time("BM25")
     def build(
         self, 
         dataset_name: str, 
@@ -422,7 +478,7 @@ class BM25IndexBuilder(IndexBuilder):
             logger.info("BM25 index built successfully")
             
             # Get file size
-            index_path = Path(get_config("indices.bm25_index", "data/indices/bm25_index.pkl"))
+            index_path = indexer.index_path
             index_size_mb = 0
             if index_path.exists():
                 index_size_mb = index_path.stat().st_size / (1024**2)
@@ -495,6 +551,7 @@ def build_bm25_index(dataset_name: str, force_rebuild: bool = False, preprocessi
     return builder.build(dataset_name, force_rebuild, preprocessing_config)
 
 
+@_one_build_all_at_a_time
 def build_all_indices(dataset_name: str, force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
     """
     Public API: Build all indices (TF-IDF, BM25, Embedding) with shared preprocessing.
@@ -525,17 +582,26 @@ def build_all_indices(dataset_name: str, force_rebuild: bool = False, preprocess
     processed_data_dir = Path(get_config("paths.processed", "data/processed"))
     processed_data_dir.mkdir(parents=True, exist_ok=True)
     
-    safe_dataset_name = dataset_name.replace('/', '_').replace('-', '_').replace('.', '_')
+    safe_dataset_name = table_slug(dataset_name)
     shared_preprocessed_path = processed_data_dir / f"{safe_dataset_name}_shared.jsonl"
     
     try:
-        logger.info("Step 1/4: Building shared preprocessing file...")
-        _preprocess_documents(
-            dataset_name=dataset_name,
-            preprocessing_config=preprocessing_config,
-            shared_path=str(shared_preprocessed_path)
-        )
-        logger.info(f"Shared preprocessing complete: {shared_preprocessed_path}")
+        if not force_rebuild and all(
+            indexer_class(dataset_name=dataset_name).exists()
+            for indexer_class in (TFIDFIndexer, BM25Indexer, EmbeddingIndexer)
+        ):
+            # Every index exists and no rebuild was requested: skip the expensive preprocessing pass (it used to run
+            # for minutes and its result was thrown away). The "is the dataset uploaded?" check is kept.
+            logger.info("All indices already exist - skipping the shared preprocessing")
+            _check_dataset_in_database(dataset_name, build_table_name(dataset_name, configured_table_prefix()))
+        else:
+            logger.info("Step 1/4: Building shared preprocessing file...")
+            _preprocess_documents(
+                dataset_name=dataset_name,
+                preprocessing_config=preprocessing_config,
+                shared_path=str(shared_preprocessed_path)
+            )
+            logger.info(f"Shared preprocessing complete: {shared_preprocessed_path}")
         
         # Step 2: Build TF-IDF using shared file
         logger.info("Step 2/4: Building TF-IDF index...")
