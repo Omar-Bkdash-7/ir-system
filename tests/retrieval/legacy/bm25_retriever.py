@@ -1,3 +1,5 @@
+# Snapshot of the retriever as it was BEFORE the rewrite, kept only as the reference for tests/retrieval/test_differential.py.
+# Do not import it from the service.
 import pickle
 import heapq
 from pathlib import Path
