@@ -128,3 +128,51 @@ class DatasetService:
             List of dataset metadata dictionaries
         """
         return self.metadata_manager.list_datasets()
+    
+    def save_preprocessing_config(self, dataset_name: str, preprocessing_config: Optional[dict]) -> None:
+        """
+        Save preprocessing configuration for a dataset.
+        
+        Args:
+            dataset_name: Dataset identifier (REQUIRED)
+            preprocessing_config: Preprocessing configuration to save
+            
+        Raises:
+            ValueError: If dataset_name not provided
+            FileNotFoundError: If dataset metadata doesn't exist
+        """
+        if not dataset_name:
+            raise ValueError("dataset_name is required")
+        
+        # Load existing metadata
+        metadata = self.metadata_manager.load_metadata(dataset_name)
+        
+        # Update preprocessing config
+        metadata["preprocessing_config"] = preprocessing_config
+        
+        # Save updated metadata
+        self.metadata_manager.save_metadata(metadata, dataset_name=dataset_name)
+        logger.info(f"Saved preprocessing config for dataset: {dataset_name}")
+    
+    def get_preprocessing_config(self, dataset_name: str) -> Optional[dict]:
+        """
+        Retrieve preprocessing configuration for a dataset.
+        
+        Args:
+            dataset_name: Dataset identifier (REQUIRED)
+        
+        Returns:
+            Preprocessing configuration dict or None if not set
+            
+        Raises:
+            ValueError: If dataset_name not provided
+        """
+        if not dataset_name:
+            raise ValueError("dataset_name is required")
+        
+        try:
+            metadata = self.metadata_manager.load_metadata(dataset_name)
+            return metadata.get("preprocessing_config")
+        except FileNotFoundError:
+            logger.warning(f"No metadata found for dataset: {dataset_name}")
+            return None

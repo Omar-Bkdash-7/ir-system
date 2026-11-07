@@ -9,6 +9,58 @@ PREPROCESSING_SERVICE_URL = get_config("services.preprocessing_url", "http://loc
 RETRIEVAL_SERVICE_URL = get_config("services.retrieval_url", "http://localhost:8003")
 
 
+def _get_preprocessing_config_for_dataset(dataset: Optional[str]) -> Optional[dict]:
+    """
+    Retrieve saved preprocessing config for a dataset.
+    Returns None if dataset not specified or config not found.
+    """
+    if not dataset:
+        return None
+    
+    try:
+        from services.indexing.dataset.service import DatasetService
+        dataset_service = DatasetService()
+        config = dataset_service.get_preprocessing_config(dataset)
+        if config:
+            logger.info(f"Using saved preprocessing config for dataset: {dataset}")
+        return config
+    except Exception as e:
+        logger.warning(f"Could not load preprocessing config for dataset {dataset}: {e}")
+        return None
+
+
+def _preprocess_query(query: str, dataset: Optional[str] = None) -> List[str]:
+    """
+    Preprocess query with dataset-specific config if available.
+    
+    Args:
+        query: Query text
+        dataset: Dataset name (optional)
+    
+    Returns:
+        List of query tokens
+    """
+    preprocessing_config = _get_preprocessing_config_for_dataset(dataset)
+    
+    preprocess_payload = {
+        "text": query,
+        "mode": "query"
+    }
+    
+    if preprocessing_config:
+        preprocess_payload["config"] = preprocessing_config
+    
+    with httpx.Client(timeout=30.0) as client:
+        preprocess_resp = client.post(
+            f"{PREPROCESSING_SERVICE_URL}/preprocess",
+            json=preprocess_payload
+        )
+        preprocess_resp.raise_for_status()
+        preprocess_data = preprocess_resp.json()
+        
+        return preprocess_data.get("tokens", [])
+
+
 def search_basic(
     query: str,
     model: str = "tfidf",
@@ -21,27 +73,21 @@ def search_basic(
     logger.info(f"Query: '{query[:50]}...'")
     
     try:
+        # Preprocess query with dataset-specific config
+        query_tokens = _preprocess_query(query, dataset)
+        
+        if not query_tokens:
+            logger.warning("Preprocessing returned empty tokens")
+            return {
+                "results": [],
+                "total": 0,
+                "model": model,
+                "message": "Query too short after preprocessing"
+            }
+        
+        logger.info(f"Query tokens: {len(query_tokens)} tokens")
+        
         with httpx.Client(timeout=30.0) as client:
-            preprocess_resp = client.post(
-                f"{PREPROCESSING_SERVICE_URL}/preprocess",
-                json={"text": query, "mode": "query"}
-            )
-            preprocess_resp.raise_for_status()
-            preprocess_data = preprocess_resp.json()
-            
-            query_tokens = preprocess_data.get("tokens", [])
-            
-            if not query_tokens:
-                logger.warning("Preprocessing returned empty tokens")
-                return {
-                    "results": [],
-                    "total": 0,
-                    "model": model,
-                    "message": "Query too short after preprocessing"
-                }
-            
-            logger.info(f"Query tokens: {len(query_tokens)} tokens")
-            
             retrieval_payload = {
                 "query_tokens": query_tokens,
                 "query_text": query,
@@ -88,27 +134,21 @@ def search_hybrid_serial(
     logger.info(f"Query: '{query[:50]}...'")
     
     try:
+        # Preprocess query with dataset-specific config
+        query_tokens = _preprocess_query(query, dataset)
+        
+        if not query_tokens:
+            logger.warning("Preprocessing returned empty tokens")
+            return {
+                "results": [],
+                "total": 0,
+                "model": f"hybrid_serial_{first_model}_{second_model}",
+                "message": "Query too short after preprocessing"
+            }
+        
+        logger.info(f"Query tokens: {len(query_tokens)} tokens")
+        
         with httpx.Client(timeout=30.0) as client:
-            preprocess_resp = client.post(
-                f"{PREPROCESSING_SERVICE_URL}/preprocess",
-                json={"text": query, "mode": "query"}
-            )
-            preprocess_resp.raise_for_status()
-            preprocess_data = preprocess_resp.json()
-            
-            query_tokens = preprocess_data.get("tokens", [])
-            
-            if not query_tokens:
-                logger.warning("Preprocessing returned empty tokens")
-                return {
-                    "results": [],
-                    "total": 0,
-                    "model": f"hybrid_serial_{first_model}_{second_model}",
-                    "message": "Query too short after preprocessing"
-                }
-            
-            logger.info(f"Query tokens: {len(query_tokens)} tokens")
-            
             retrieval_payload = {
                 "query_tokens": query_tokens,
                 "query_text": query,
@@ -159,27 +199,21 @@ def search_hybrid_parallel(
     logger.info(f"Query: '{query[:50]}...'")
     
     try:
+        # Preprocess query with dataset-specific config
+        query_tokens = _preprocess_query(query, dataset)
+        
+        if not query_tokens:
+            logger.warning("Preprocessing returned empty tokens")
+            return {
+                "results": [],
+                "total": 0,
+                "model": f"hybrid_parallel_{'_'.join(models)}_{fusion_method}",
+                "message": "Query too short after preprocessing"
+            }
+        
+        logger.info(f"Query tokens: {len(query_tokens)} tokens")
+        
         with httpx.Client(timeout=60.0) as client:
-            preprocess_resp = client.post(
-                f"{PREPROCESSING_SERVICE_URL}/preprocess",
-                json={"text": query, "mode": "query"}
-            )
-            preprocess_resp.raise_for_status()
-            preprocess_data = preprocess_resp.json()
-            
-            query_tokens = preprocess_data.get("tokens", [])
-            
-            if not query_tokens:
-                logger.warning("Preprocessing returned empty tokens")
-                return {
-                    "results": [],
-                    "total": 0,
-                    "model": f"hybrid_parallel_{'_'.join(models)}_{fusion_method}",
-                    "message": "Query too short after preprocessing"
-                }
-            
-            logger.info(f"Query tokens: {len(query_tokens)} tokens")
-            
             retrieval_payload = {
                 "query_tokens": query_tokens,
                 "query_text": query,

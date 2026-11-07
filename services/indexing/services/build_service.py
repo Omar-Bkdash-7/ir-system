@@ -642,6 +642,16 @@ def build_all_indices(dataset_name: str, force_rebuild: bool = False, preprocess
         results["success_count"] = success_count
         results["total_count"] = 3
         
+        # Save preprocessing config to metadata if provided
+        if preprocessing_config:
+            try:
+                from services.indexing.dataset.service import DatasetService
+                dataset_service = DatasetService()
+                dataset_service.save_preprocessing_config(dataset_name, preprocessing_config)
+                logger.info(f"Saved preprocessing config to metadata for dataset: {dataset_name}")
+            except Exception as e:
+                logger.warning(f"Failed to save preprocessing config to metadata: {e}")
+        
     except Exception as e:
         logger.error(f"Failed to build all indices: {e}", exc_info=True)
         results["status"] = "error"
