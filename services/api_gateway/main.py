@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException
+import httpx
 from services.api_gateway.clients import (
     get_dataset_info,
     search_hybrid_serial,
@@ -15,6 +16,19 @@ logger = setup_logging("api_gateway")
 
 app = FastAPI(title="API Gateway")
 register_exception_handlers(app)
+
+
+def _downstream_error(exc: httpx.HTTPStatusError) -> HTTPException:
+    """Reproduce the status a downstream service answered with (404 missing index, 422 bad request, ...).
+
+    Without this, every downstream failure was caught by the generic handler and reported as a 500.
+    """
+    try:
+        body = exc.response.json()
+        detail = body.get("detail") if isinstance(body, dict) else None
+    except ValueError:
+        detail = None
+    return HTTPException(status_code=exc.response.status_code, detail=detail or exc.response.text)
 
 
 class BasicSearchRequest(BaseModel):
@@ -95,6 +109,8 @@ def query_refine_endpoint(req: QueryRefineRequest):
         return result
     except HTTPException:
         raise
+    except httpx.HTTPStatusError as e:
+        raise _downstream_error(e)
     except Exception as e:
         logger.error(f"Query refinement failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -129,6 +145,8 @@ def search_endpoint(req: BasicSearchRequest):
         return results
     except HTTPException:
         raise
+    except httpx.HTTPStatusError as e:
+        raise _downstream_error(e)
     except Exception as e:
         logger.error(f"Basic search failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -165,6 +183,8 @@ def search_hybrid_serial_endpoint(req: HybridSerialSearchRequest):
         return results
     except HTTPException:
         raise
+    except httpx.HTTPStatusError as e:
+        raise _downstream_error(e)
     except Exception as e:
         logger.error(f"Hybrid serial search failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -203,6 +223,8 @@ def search_hybrid_parallel_endpoint(req: HybridParallelSearchRequest):
         return results
     except HTTPException:
         raise
+    except httpx.HTTPStatusError as e:
+        raise _downstream_error(e)
     except Exception as e:
         logger.error(f"Hybrid parallel search failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

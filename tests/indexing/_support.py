@@ -188,7 +188,14 @@ def fake_preprocessing(fail_on=None):
         def __init__(self, **kwargs):
             self.kwargs = kwargs
 
-    def preprocess(text, config):
+        @classmethod
+        def from_dict(cls, data):
+            return cls(**data)
+
+        def to_dict(self):
+            return dict(self.kwargs)
+
+    def preprocess(text, mode=None, config=None):  # (text, mode, config): config is passed by keyword
         if fail_on and fail_on in text:
             raise RuntimeError("preprocessing exploded")
         return [w.lower() for w in text.split() if w.isalpha()]

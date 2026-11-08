@@ -26,6 +26,26 @@ logger = logging.getLogger(__name__)
 SERVER_CURSOR_ROWS = 2000  # rows fetched per round trip when a dataset is streamed out of PostgreSQL
 
 
+class DatasetNotInDatabaseError(FileNotFoundError):
+    """The dataset exists on disk but was never uploaded, so there is nothing to index.
+
+    The `reason` attribute lets the HTTP layer answer 400 instead of a blanket 500.
+    """
+
+    reason = "dataset_not_in_database"
+
+
+class InvalidPreprocessingConfigError(ValueError):
+    """The `preprocessing_config` of a request cannot be turned into a PreprocessingConfig."""
+
+    reason = "invalid_preprocessing_config"
+
+
+def _error(exc: Exception) -> Dict[str, str]:
+    """The failure body every builder returns: `reason` is stable for clients, `message` is for humans."""
+    return {"status": "error", "reason": getattr(exc, "reason", "build_failed"), "message": str(exc)}
+
+
 def _already_running(label: str, dataset_name: str) -> Dict[str, str]:
     logger.warning(f"{label} build for '{dataset_name}' is already running, request ignored")
     return {
@@ -133,7 +153,7 @@ def _check_dataset_in_database(dataset_name: str, table_name: str) -> None:
                 error_msg = "\n".join(error_parts)
                 
                 logger.error(f"Dataset not in database: {dataset_name} (table: {table_name})")
-                raise FileNotFoundError(error_msg)
+                raise DatasetNotInDatabaseError(error_msg)
 
 
 def _preprocess_documents(
@@ -163,12 +183,19 @@ def _preprocess_documents(
     
     logger.info(f"Preprocessing documents for dataset: {dataset_name}")
     
-    if preprocessing_config:
-        logger.info(f"Using custom preprocessing config: {preprocessing_config}")
-        config = PreprocessingConfig(**preprocessing_config)
-    else:
+    if preprocessing_config is None:
         logger.info("Using default preprocessing config")
         config = PreprocessingConfig()
+    elif isinstance(preprocessing_config, PreprocessingConfig):
+        logger.info(f"Using custom preprocessing config: {preprocessing_config.to_dict()}")
+        config = preprocessing_config
+    else:
+        logger.info(f"Using custom preprocessing config: {preprocessing_config}")
+        try:
+            # from_dict (not cls(**dict)): it validates the keys and the value types instead of raising TypeError
+            config = PreprocessingConfig.from_dict(preprocessing_config)
+        except (TypeError, ValueError) as exc:
+            raise InvalidPreprocessingConfigError(f"Invalid preprocessing_config: {exc}") from exc
     
     # Get the correct table name for this dataset
     table_prefix = get_config("database.table_prefix", "dataset")
@@ -208,7 +235,9 @@ def _preprocess_documents(
                             logger.warning(f"Skipping empty document: {doc_id}")
                             continue
                         
-                        tokens = preprocess(text, config)
+                        # preprocess(text, mode, config): the second positional is the reserved `mode`, so the
+                        # configuration has to be passed by keyword or it is silently ignored (default processing).
+                        tokens = preprocess(text, config=config)
                         
                         if not tokens:
                             logger.warning(f"No tokens after preprocessing for doc: {doc_id}")
@@ -337,10 +366,7 @@ class TFIDFIndexBuilder(IndexBuilder):
             
         except Exception as e:
             logger.error(f"Failed to build TF-IDF index: {e}", exc_info=True)
-            return {
-                "status": "error",
-                "message": str(e)
-            }
+            return _error(e)
         finally:
             if should_cleanup and processed_path:
                 Path(processed_path).unlink(missing_ok=True)
@@ -418,10 +444,7 @@ class EmbeddingIndexBuilder(IndexBuilder):
             
         except Exception as e:
             logger.error(f"Failed to build Embedding index: {e}", exc_info=True)
-            return {
-                "status": "error",
-                "message": str(e)
-            }
+            return _error(e)
         finally:
             if should_cleanup and processed_path:
                 Path(processed_path).unlink(missing_ok=True)
@@ -494,13 +517,28 @@ class BM25IndexBuilder(IndexBuilder):
             
         except Exception as e:
             logger.error(f"Failed to build BM25 index: {e}", exc_info=True)
-            return {
-                "status": "error",
-                "message": str(e)
-            }
+            return _error(e)
         finally:
             if should_cleanup and processed_path:
                 Path(processed_path).unlink(missing_ok=True)
+
+
+def _remember_preprocessing_config(dataset_name: str, preprocessing_config: Optional[dict],
+                                   result: Dict[str, Any]) -> Dict[str, Any]:
+    """Store the configuration an index was built with.
+
+    The query side preprocesses with the saved config (api_gateway reads it back), so an index built with a custom
+    config must record it — otherwise queries are tokenized differently than the documents.
+    """
+    if not preprocessing_config or result.get("status") != "success":
+        return result
+    try:
+        from services.indexing.dataset.service import DatasetService
+        DatasetService().save_preprocessing_config(dataset_name, preprocessing_config)
+        logger.info(f"Saved preprocessing config to metadata for dataset: {dataset_name}")
+    except Exception as e:
+        logger.warning(f"Failed to save preprocessing config to metadata: {e}")
+    return result
 
 
 def build_tfidf_index(dataset_name: str, force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
@@ -516,7 +554,8 @@ def build_tfidf_index(dataset_name: str, force_rebuild: bool = False, preprocess
         Dictionary with build status and statistics
     """
     builder = TFIDFIndexBuilder()
-    return builder.build(dataset_name, force_rebuild, preprocessing_config)
+    return _remember_preprocessing_config(
+        dataset_name, preprocessing_config, builder.build(dataset_name, force_rebuild, preprocessing_config))
 
 
 def build_embedding_index(dataset_name: str, force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
@@ -532,7 +571,8 @@ def build_embedding_index(dataset_name: str, force_rebuild: bool = False, prepro
         Dictionary with build status and statistics
     """
     builder = EmbeddingIndexBuilder()
-    return builder.build(dataset_name, force_rebuild, preprocessing_config)
+    return _remember_preprocessing_config(
+        dataset_name, preprocessing_config, builder.build(dataset_name, force_rebuild, preprocessing_config))
 
 
 def build_bm25_index(dataset_name: str, force_rebuild: bool = False, preprocessing_config: Optional[dict] = None) -> Dict[str, Any]:
@@ -548,7 +588,8 @@ def build_bm25_index(dataset_name: str, force_rebuild: bool = False, preprocessi
         Dictionary with build status and statistics
     """
     builder = BM25IndexBuilder()
-    return builder.build(dataset_name, force_rebuild, preprocessing_config)
+    return _remember_preprocessing_config(
+        dataset_name, preprocessing_config, builder.build(dataset_name, force_rebuild, preprocessing_config))
 
 
 @_one_build_all_at_a_time
@@ -654,8 +695,7 @@ def build_all_indices(dataset_name: str, force_rebuild: bool = False, preprocess
         
     except Exception as e:
         logger.error(f"Failed to build all indices: {e}", exc_info=True)
-        results["status"] = "error"
-        results["message"] = str(e)
+        results.update(_error(e))
     
     finally:
         # Clean up shared preprocessing file
@@ -667,6 +707,8 @@ def build_all_indices(dataset_name: str, force_rebuild: bool = False, preprocess
 
 
 __all__ = [
+    "DatasetNotInDatabaseError",
+    "InvalidPreprocessingConfigError",
     "build_tfidf_index",
     "build_embedding_index",
     "build_bm25_index",

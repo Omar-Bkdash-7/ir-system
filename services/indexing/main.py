@@ -174,6 +174,24 @@ def fix_corrupted_dataset(dataset_id: str = Query(..., description="Dataset ID t
 
 # ── Index management ──────────────────────────────────────────────────────
 
+# A build that fails used to come back as HTTP 200 with {"status": "error"}: clients (and the UI) could not tell
+# success from failure. The reason a builder reports decides the status code.
+_BUILD_STATUS_BY_REASON = {
+    "dataset_not_in_database": 400,
+    "invalid_preprocessing_config": 400,
+}
+
+
+def _build_response(result: dict) -> dict:
+    """Pass a finished build through, or turn its failure body into the matching HTTP error."""
+    if result.get("status") == "error":
+        raise HTTPException(
+            status_code=_BUILD_STATUS_BY_REASON.get(result.get("reason"), 500),
+            detail=result.get("message") or "Index build failed",
+        )
+    return result
+
+
 @app.get("/index/stats")
 def index_stats(
     dataset_name: str = Query(..., description="Dataset name"),
@@ -189,7 +207,7 @@ def build_tfidf(
     body: Optional[dict] = Body(None)
 ):
     preprocessing_config = body.get("preprocessing_config") if body else None
-    return build_tfidf_index(dataset_name, force_rebuild, preprocessing_config)
+    return _build_response(build_tfidf_index(dataset_name, force_rebuild, preprocessing_config))
 
 
 @app.get("/index/tfidf/status")
@@ -204,7 +222,7 @@ def build_embedding(
     body: Optional[dict] = Body(None)
 ):
     preprocessing_config = body.get("preprocessing_config") if body else None
-    return build_embedding_index(dataset_name, force_rebuild, preprocessing_config)
+    return _build_response(build_embedding_index(dataset_name, force_rebuild, preprocessing_config))
 
 
 @app.get("/index/embedding/status")
@@ -219,7 +237,7 @@ def build_bm25(
     body: Optional[dict] = Body(None)
 ):
     preprocessing_config = body.get("preprocessing_config") if body else None
-    return build_bm25_index(dataset_name, force_rebuild, preprocessing_config)
+    return _build_response(build_bm25_index(dataset_name, force_rebuild, preprocessing_config))
 
 
 @app.get("/index/bm25/status")
@@ -238,7 +256,7 @@ def build_all(
     This is more efficient than building indices separately.
     """
     preprocessing_config = body.get("preprocessing_config") if body else None
-    return build_all_indices(dataset_name, force_rebuild, preprocessing_config)
+    return _build_response(build_all_indices(dataset_name, force_rebuild, preprocessing_config))
 
 
 # ── Inverted Index Analysis ───────────────────────────────────────────────

@@ -132,6 +132,10 @@ class DatasetService:
     def save_preprocessing_config(self, dataset_name: str, preprocessing_config: Optional[dict]) -> None:
         """
         Save preprocessing configuration for a dataset.
+
+        The file is created when the dataset has no metadata yet (a dataset that was uploaded to PostgreSQL but
+        never validated has none). Without this, the config of an index build was silently dropped and queries were
+        preprocessed with the defaults — i.e. differently than the documents it is supposed to match.
         
         Args:
             dataset_name: Dataset identifier (REQUIRED)
@@ -139,19 +143,22 @@ class DatasetService:
             
         Raises:
             ValueError: If dataset_name not provided
-            FileNotFoundError: If dataset metadata doesn't exist
         """
         if not dataset_name:
             raise ValueError("dataset_name is required")
         
-        # Load existing metadata
-        metadata = self.metadata_manager.load_metadata(dataset_name)
+        try:
+            metadata = self.metadata_manager.load_metadata(dataset_name)
+        except FileNotFoundError:
+            logger.info(f"No metadata for '{dataset_name}' yet: creating it to store the preprocessing config")
+            metadata = {"dataset_name": dataset_name}
         
         # Update preprocessing config
         metadata["preprocessing_config"] = preprocessing_config
         
         # Save updated metadata
         self.metadata_manager.save_metadata(metadata, dataset_name=dataset_name)
+        
         logger.info(f"Saved preprocessing config for dataset: {dataset_name}")
     
     def get_preprocessing_config(self, dataset_name: str) -> Optional[dict]:
