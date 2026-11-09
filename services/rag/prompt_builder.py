@@ -16,43 +16,52 @@ DEFAULT_SYSTEM_PROMPT = (
     "You are a careful research assistant inside an Information Retrieval system.\n"
     "Answer the question using ONLY the information from the provided context documents.\n"
     f'- If the documents do not contain the answer, reply exactly: "{NO_ANSWER}"\n'
-    "- Provide a direct, natural answer without mentioning document numbers or IDs.\n"
+    "- Support every claim with the bracketed number of the document it comes from, e.g. [1] or [2][3].\n"
+    "- Every document in the context starts with its number: [1] is the first retrieved document, [2] the second.\n"
+    "- Do NOT say 'according to document' or 'in the text' - just give the answer with its citation.\n"
     "- Be concise (at most 5 sentences) and focus on answering the question clearly.\n"
-    "- Never invent facts, numbers, or names not found in the context.\n"
-    "- Do NOT say 'according to document' or 'in the text' - just give the answer."
+    "- Never invent facts, numbers, or names not found in the context."
 )
 
 UNGROUNDED_SYSTEM_PROMPT = "You are a helpful, concise assistant."
 
 MIN_DOC_CHARS = 300
+ELLIPSIS = " ..."
+SEPARATOR = "\n\n"
 
 
 def _truncate(text: str, limit: int) -> str:
+    """Cut text to at most `limit` characters, ellipsis included (it used to be appended on top of the limit)."""
     text = " ".join((text or "").split())
     if len(text) <= limit:
         return text
-    cut = text[:limit]
+    room = max(limit - len(ELLIPSIS), 0)
+    cut = text[:room]
     boundary = max(cut.rfind(". "), cut.rfind("; "), cut.rfind(" "))
-    if boundary < int(limit * 0.6):
-        boundary = limit
-    return cut[:boundary].rstrip() + " ..."
+    if boundary < int(room * 0.6):
+        boundary = room
+    return cut[:boundary].rstrip() + ELLIPSIS
 
 
 def build_context_block(documents: Sequence[ContextDocument], max_chars: int) -> str:
     usable = [(i, d) for i, d in enumerate(documents, start=1) if (d.text or "").strip()]
     if not usable:
         return ""
-    per_doc = max(MIN_DOC_CHARS, max_chars // len(usable))
+    # Distributing the budget over the documents must reserve the separators too, otherwise the joined block is
+    # longer than max_chars even though every document stayed inside its own share.
+    per_doc = max(MIN_DOC_CHARS, (max_chars - len(SEPARATOR) * (len(usable) - 1)) // len(usable))
     parts: List[str] = []
     used = 0
     for index, doc in usable:
-        # Don't include doc_id or index in the context to avoid model mentioning them
-        block = f"{_truncate(doc.text, per_doc)}"
-        if parts and used + len(block) > max_chars:
+        # The number is the document's position in context_documents, so the UI can map a citation back to the source.
+        label = f"[{index}] "
+        block = label + _truncate(doc.text, per_doc - len(label))
+        cost = len(block) + (len(SEPARATOR) if parts else 0)
+        if parts and used + cost > max_chars:
             break  # budget exhausted: drop the lowest-ranked remaining documents
         parts.append(block)
-        used += len(block)
-    return "\n\n".join(parts)
+        used += cost
+    return SEPARATOR.join(parts)
 
 
 def build_messages(
@@ -76,12 +85,12 @@ def build_messages(
     ]
 
 
-_THINK_CLOSED = re.compile(r"<think>.*?</think>", re.IGNORECASE | re.DOTALL)
-_THINK_OPEN = re.compile(r"<think>.*\Z", re.IGNORECASE | re.DOTALL)
+_THINK_CLOSED = re.compile(r" thinking.*?</think>", re.IGNORECASE | re.DOTALL)
+_THINK_OPEN = re.compile(r" thinking.*\Z", re.IGNORECASE | re.DOTALL)
 
 
 def strip_reasoning(text: str) -> str:
-    """Remove <think>...</think> blocks (reasoning models) and a dangling unclosed <think>."""
+    """Remove  thinking...</think> blocks (reasoning models) and a dangling unclosed  thinking."""
     text = _THINK_CLOSED.sub("", text or "")
     text = _THINK_OPEN.sub("", text)
     return text.strip()

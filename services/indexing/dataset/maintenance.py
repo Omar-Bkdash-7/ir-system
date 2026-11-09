@@ -1,6 +1,5 @@
 """Dataset maintenance operations that used to be written inline inside main.py."""
 import logging
-import os
 import shutil
 from typing import Any, Dict
 
@@ -64,21 +63,3 @@ def fix_corrupted_dataset(dataset_id: str) -> Dict[str, Any]:
     return {"status": "success", "dataset_id": dataset_id,
             "message": "Dataset fixed and re-downloaded successfully",
             "counts": {"documents": doc_count, "queries": query_count, "qrels": qrel_count}}
-
-
-def debug_path_info() -> Dict[str, Any]:
-    """Contents of IR_DATASETS_HOME (diagnostics endpoint)."""
-    ir_home = DatasetPathResolver().get_ir_home()
-    result: Dict[str, Any] = {"ir_datasets_home": str(ir_home), "exists": ir_home.exists(),
-                              "env_var": os.environ.get("IR_DATASETS_HOME")}
-    if ir_home.exists():
-        result["contents"] = [
-            {"name": child.name, "type": "dir" if child.is_dir() else "file", "path": str(child)}
-            for child in sorted(ir_home.iterdir())
-        ]
-        quora_path = ir_home / "beir" / "quora"
-        if quora_path.exists():
-            result["beir_quora"] = {"exists": True, "contents": [f.name for f in quora_path.iterdir()]}
-        else:
-            result["beir_quora"] = {"exists": False}
-    return result

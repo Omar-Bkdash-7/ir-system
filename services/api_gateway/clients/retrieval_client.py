@@ -1,4 +1,6 @@
+import json
 import httpx
+from pathlib import Path
 from common.config import get_config
 from typing import List, Dict, Optional
 import logging
@@ -9,24 +11,35 @@ PREPROCESSING_SERVICE_URL = get_config("services.preprocessing_url", "http://loc
 RETRIEVAL_SERVICE_URL = get_config("services.retrieval_url", "http://localhost:8003")
 
 
+def _metadata_file_stem(dataset: str) -> str:
+    """File name of a dataset's metadata, exactly as services.indexing.dataset.metadata_manager builds it."""
+    return dataset.replace("/", "-").replace("\\", "-")
+
+
 def _get_preprocessing_config_for_dataset(dataset: Optional[str]) -> Optional[dict]:
     """
     Retrieve saved preprocessing config for a dataset.
     Returns None if dataset not specified or config not found.
+
+    The metadata file is read directly. Importing the indexing service here (DatasetService) also imported
+    ir_datasets and its registry, so every gateway query paid for loading a library it never uses.
     """
     if not dataset:
         return None
-    
+
+    metadata_path = Path(get_config("paths.metadata_dir", "data/metadata")) / f"{_metadata_file_stem(dataset)}.json"
     try:
-        from services.indexing.dataset.service import DatasetService
-        dataset_service = DatasetService()
-        config = dataset_service.get_preprocessing_config(dataset)
-        if config:
-            logger.info(f"Using saved preprocessing config for dataset: {dataset}")
-        return config
-    except Exception as e:
+        with open(metadata_path, encoding="utf-8") as handle:
+            config = json.load(handle).get("preprocessing_config")
+    except FileNotFoundError:
+        return None
+    except (OSError, json.JSONDecodeError) as e:
         logger.warning(f"Could not load preprocessing config for dataset {dataset}: {e}")
         return None
+
+    if config:
+        logger.info(f"Using saved preprocessing config for dataset: {dataset}")
+    return config
 
 
 def _preprocess_query(query: str, dataset: Optional[str] = None) -> List[str]:
@@ -77,13 +90,10 @@ def search_basic(
         query_tokens = _preprocess_query(query, dataset)
         
         if not query_tokens:
-            logger.warning("Preprocessing returned empty tokens")
-            return {
-                "results": [],
-                "total": 0,
-                "model": model,
-                "message": "Query too short after preprocessing"
-            }
+            # A query made only of stop words ("who are you") has no tokens left, but retrieval still needs it: the
+            # embedding model embeds query_text and does not look at query_tokens at all. Answering with an empty
+            # result here hid those queries from every model.
+            logger.info("Preprocessing left no tokens; sending the query text as it is")
         
         logger.info(f"Query tokens: {len(query_tokens)} tokens")
         
@@ -138,13 +148,7 @@ def search_hybrid_serial(
         query_tokens = _preprocess_query(query, dataset)
         
         if not query_tokens:
-            logger.warning("Preprocessing returned empty tokens")
-            return {
-                "results": [],
-                "total": 0,
-                "model": f"hybrid_serial_{first_model}_{second_model}",
-                "message": "Query too short after preprocessing"
-            }
+            logger.info("Preprocessing left no tokens; sending the query text as it is")
         
         logger.info(f"Query tokens: {len(query_tokens)} tokens")
         
@@ -203,13 +207,7 @@ def search_hybrid_parallel(
         query_tokens = _preprocess_query(query, dataset)
         
         if not query_tokens:
-            logger.warning("Preprocessing returned empty tokens")
-            return {
-                "results": [],
-                "total": 0,
-                "model": f"hybrid_parallel_{'_'.join(models)}_{fusion_method}",
-                "message": "Query too short after preprocessing"
-            }
+            logger.info("Preprocessing left no tokens; sending the query text as it is")
         
         logger.info(f"Query tokens: {len(query_tokens)} tokens")
         

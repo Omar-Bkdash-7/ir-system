@@ -263,6 +263,8 @@ async def rag_health_endpoint():
             response = await client.get(f"{rag_url}/health")
             response.raise_for_status()
             return response.json()
+    except httpx.HTTPStatusError as e:
+        raise _downstream_error(e)
     except Exception as e:
         logger.error(f"Error fetching RAG health: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -280,6 +282,8 @@ async def rag_models_endpoint():
             response = await client.get(f"{rag_url}/models")
             response.raise_for_status()
             return response.json()
+    except httpx.HTTPStatusError as e:
+        raise _downstream_error(e)
     except Exception as e:
         logger.error(f"Error fetching RAG models: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -297,6 +301,8 @@ async def rag_local_model_status_endpoint():
             response = await client.get(f"{rag_url}/local-model")
             response.raise_for_status()
             return response.json()
+    except httpx.HTTPStatusError as e:
+        raise _downstream_error(e)
     except Exception as e:
         logger.error(f"Error fetching RAG local model status: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

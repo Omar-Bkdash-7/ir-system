@@ -96,15 +96,6 @@ class MaintenanceHelpersTest(WorkdirTestCase):
             result = maintenance.download_dataset("demo")
         self.assertEqual(result["sample_counts"], {"docs_sampled": 11, "queries": 3, "qrels": 4})
 
-    def test_debug_path(self):
-        info = maintenance.debug_path_info()
-        self.assertEqual(info["ir_datasets_home"], str(self.ir_home))
-        self.assertEqual(info["beir_quora"], {"exists": False})  # no "contents" key when the folder is missing
-        (self.ir_home / "beir" / "quora").mkdir(parents=True)
-        (self.ir_home / "beir" / "quora" / "a.txt").write_text("x")
-        self.assertEqual(maintenance.debug_path_info()["beir_quora"], {"exists": True, "contents": ["a.txt"]})
-
-
 class KnownDatasetIdsTest(WorkdirTestCase):
     def test_exact_ids_come_from_the_metadata_files(self):
         manager = DatasetMetadataManager()
@@ -116,6 +107,16 @@ class KnownDatasetIdsTest(WorkdirTestCase):
         with mock.patch("services.indexing.dataset.metadata_manager.list_all_datasets", side_effect=OSError("boom")):
             self.assertEqual(known_dataset_ids(), [])
         self.assertEqual(known_dataset_ids(), [])  # no metadata directory at all
+
+
+class AtomicMetadataWriteTest(WorkdirTestCase):
+    def test_a_rewrite_replaces_the_file_and_leaves_no_temporary_file(self):
+        manager = DatasetMetadataManager()
+        manager.save_metadata({"doc_count": 1}, "demo")
+        manager.save_metadata({"doc_count": 2}, "demo")
+        files = sorted(p.name for p in (self.work / "data" / "metadata").iterdir())
+        self.assertEqual(files, ["demo.json"], "a temporary file survived the write")
+        self.assertEqual(manager.load_metadata("demo")["doc_count"], 2)
 
 
 if __name__ == "__main__":

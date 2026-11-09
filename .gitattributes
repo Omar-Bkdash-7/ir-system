@@ -1,0 +1,16 @@
+# One line-ending policy for every text file: stored as LF, checked out as LF on every OS. The working tree had a mix
+# of CRLF and LF files, so diffs showed whole files changed and editors kept flip-flopping the endings.
+* text=auto eol=lf
+
+# Binary files git must never try to normalise or diff as text.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.npy binary
+*.npz binary
+*.pkl binary
+*.pt binary
+*.safetensors binary
+*.parquet binary

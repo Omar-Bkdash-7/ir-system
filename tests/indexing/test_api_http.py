@@ -11,7 +11,7 @@ from tests.indexing._support import FakeDoc, FakeIrDataset, WorkdirTestCase, hav
 
 EXPECTED_ROUTES = {
     ("GET", "/health"), ("POST", "/validate"), ("POST", "/datasets/download"), ("GET", "/datasets/local"),
-    ("GET", "/datasets/debug-path"), ("DELETE", "/datasets/local"), ("POST", "/datasets/upload-to-db"),
+    ("DELETE", "/datasets/local"), ("POST", "/datasets/upload-to-db"),
     ("GET", "/datasets/db-info"), ("GET", "/datasets/metadata"), ("DELETE", "/datasets/db"),
     ("POST", "/datasets/fix-corrupted"), ("GET", "/index/stats"), ("POST", "/index/tfidf/build"),
     ("GET", "/index/tfidf/status"), ("POST", "/index/embedding/build"), ("GET", "/index/embedding/status"),

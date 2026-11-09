@@ -79,16 +79,6 @@ def local_datasets():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/datasets/debug-path")
-def debug_dataset_path():
-    """Debug endpoint to inspect IR_DATASETS_HOME contents."""
-    try:
-        return maintenance.debug_path_info()
-    except Exception as e:
-        logger.error(f"Debug path failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.delete("/datasets/local")
 def delete_dataset(dataset_id: str = Query(..., description="Dataset ID to delete")):
     """Permanently delete a local dataset directory."""

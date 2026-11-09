@@ -226,6 +226,8 @@ class BuildRulesTest(WorkdirTestCase):
         self.assertEqual(result["indices"]["tfidf"]["status"], "success")
         self.assertEqual(result["indices"]["bm25"]["status"], "success")
         self.assertEqual(result["indices"]["embedding"]["status"], "error")  # the stand-in "model" fails on purpose
+        self.assertEqual(result["status"], "error", "one failed index must not be reported as an overall success")
+        self.assertIn("embedding", result["message"])
         self.assertFalse((self.work / "data" / "processed" / "demo_shared.jsonl").exists())  # shared file is cleaned up
 
     def test_a_second_identical_build_is_refused_while_one_is_running(self):

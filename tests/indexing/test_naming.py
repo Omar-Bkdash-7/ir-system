@@ -17,7 +17,9 @@ class IndexSlugTest(unittest.TestCase):
         self.assertEqual(index_slug("cranfield"), "cranfield")
         self.assertEqual(index_slug("beir/quora"), "beir_quora")
         self.assertEqual(index_slug("nano-beir/quora"), "nano_beir_quora")
-        self.assertEqual(index_slug("demo/v1.2"), "demo_v1.2")  # the indexers never replaced '.'
+        # A dot must not survive here: retrieval and common.config.get_dataset_specific_path build the same slug with
+        # '.' -> '_', so a dotted dataset was built in a directory retrieval never looked in (the index was invisible).
+        self.assertEqual(index_slug("demo/v1.2"), "demo_v1_2")
 
     def test_rejects_names_that_would_point_outside_the_indices_directory(self):
         for bad in ("", ".", ".."):

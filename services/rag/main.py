@@ -70,8 +70,10 @@ def create_app(
         version=VERSION,
         lifespan=lifespan,
     )
+    # "*" with credentials is refused by browsers (and it echoed the Origin back with the cookie flag set); this API
+    # authenticates nothing, so no origin needs credentials.
     app.add_middleware(
-        CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"]
+        CORSMiddleware, allow_origins=["*"], allow_credentials=False, allow_methods=["*"], allow_headers=["*"]
     )
     register_exception_handlers(app)
 

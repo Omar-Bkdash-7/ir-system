@@ -20,6 +20,10 @@ from services.rag.schemas import ContextDocument, RAGRequest, RAGResponse
 
 logger = setup_logging("rag.service")
 
+# What "hybrid" means when the request only names a model: the retrieval service offers hybrid searching as a fusion
+# of models running in parallel, and /retrieve rejects "hybrid" outright (422).
+HYBRID_MODELS = ("tfidf", "bm25")
+
 
 class RAGService:
     def __init__(self, settings: RAGSettings, router: GeneratorRouter, retrieval_client: httpx.AsyncClient):
@@ -28,18 +32,24 @@ class RAGService:
         self.retrieval_client = retrieval_client
 
     async def retrieve_context(self, request: RAGRequest) -> List[ContextDocument]:
-        url = f"{self.settings.retrieval_url}/retrieve"
         payload = {
             "query_text": request.query,
             "query_tokens": [],
             "dataset": request.dataset,
-            "model": request.retrieval_model,
             "top_k": request.top_k,
             "include_text": True,
         }
-        if request.retrieval_model == "bm25":
-            payload["bm25_k1"] = request.bm25_k1
-            payload["bm25_b"] = request.bm25_b
+        if request.retrieval_model == "hybrid":
+            url = f"{self.settings.retrieval_url}/retrieve/hybrid/parallel"
+            payload["models"] = list(HYBRID_MODELS)
+            payload["fusion_method"] = "rrf"
+            payload["candidates_per_model"] = max(100, request.top_k * 20)
+        else:
+            url = f"{self.settings.retrieval_url}/retrieve"
+            payload["model"] = request.retrieval_model
+            if request.retrieval_model == "bm25":
+                payload["bm25_k1"] = request.bm25_k1
+                payload["bm25_b"] = request.bm25_b
         try:
             response = await self.retrieval_client.post(url, json=payload)
             response.raise_for_status()

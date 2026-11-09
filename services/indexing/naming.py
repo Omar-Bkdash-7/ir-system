@@ -1,7 +1,11 @@
 """The ONE place that turns a dataset id into a directory slug, a table name or a safe path.
 
 Rules that must never change (they name things that already exist on disk / in PostgreSQL):
-  index_slug  '/' and '-' -> '_'                      (existing index directories: data/indices/<slug>/...)
+  index_slug  '/', '-' and '.' -> '_'                 (index directories: data/indices/<slug>/...; this is also what
+                                                        common.config.get_dataset_specific_path and the retrieval
+                                                        service's dataset_slug produce, so a '.' had to be replaced
+                                                        here too: a dotted id was built in a directory retrieval
+                                                        never looked in, and the index was invisible)
   table_slug  '/', '-', '.' -> '_', lower-cased       (existing tables; common.database.get_documents_by_ids builds
                                                         the same name, and PostgreSQL folds unquoted names to lower case)
 """
@@ -25,8 +29,10 @@ def validate_index_type(index_type: str) -> str:
 
 def index_slug(dataset_name: str) -> str:
     """Directory name of a dataset below data/indices. Rejects '', '.', '..' (they would point outside)."""
-    slug = dataset_name.replace("/", "_").replace("-", "_")
-    if slug in ("", ".", ".."):
+    slug = dataset_name.replace("/", "_").replace("-", "_").replace(".", "_")
+    # '', '.', '..' and '/' all collapse to nothing but underscores: a name with no letter or digit left cannot name
+    # a directory.
+    if not any(char.isalnum() for char in slug):
         raise InvalidDatasetIdError(f"Invalid dataset name: {dataset_name!r}")
     return slug
 

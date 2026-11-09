@@ -6,6 +6,8 @@ Supports multi-dataset metadata storage with individual files per dataset.
 
 import json
 import logging
+import os
+import tempfile
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 
@@ -172,19 +174,33 @@ class DatasetMetadataManager:
         return self._get_dataset_metadata_path(dataset_name).exists()
     
     def _write_json_with_retry(self, file_path: Path, data: Dict[str, Any]) -> None:
-        """Write JSON file with retry logic for Windows file locking."""
+        """Write JSON atomically (temp file + os.replace) with retry logic for Windows file locking.
+
+        Writing the target file in place left a half-written JSON behind when the process died mid-write, and a
+        reader (retrieval, gateway, the UI) loading at that moment got a decode error instead of the previous file.
+        """
         import time
         
         max_retries = 3
         retry_delay = 0.1
         
         for attempt in range(max_retries):
+            temp_path: Optional[Path] = None
             try:
-                with open(file_path, 'w', encoding='utf-8') as f:
+                handle, temp_name = tempfile.mkstemp(prefix=f".{file_path.name}.", suffix=".tmp",
+                                                     dir=str(file_path.parent))
+                temp_path = Path(temp_name)
+                with os.fdopen(handle, 'w', encoding='utf-8') as f:
                     json.dump(data, f, indent=2, ensure_ascii=False)
+                os.replace(temp_path, file_path)  # atomic on POSIX and Windows (same directory)
                 return
                 
             except (OSError, IOError) as e:
+                if temp_path is not None:
+                    try:
+                        temp_path.unlink(missing_ok=True)
+                    except OSError:
+                        pass
                 if attempt < max_retries - 1:
                     logger.warning(f"Write attempt {attempt + 1} failed, retrying: {e}")
                     time.sleep(retry_delay)

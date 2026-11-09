@@ -682,14 +682,25 @@ def build_all_indices(dataset_name: str, force_rebuild: bool = False, preprocess
             preprocessed_path=str(shared_preprocessed_path)
         )
         
-        logger.info("All indices built successfully with shared preprocessing")
-        results["status"] = "success"
-        
         # Count successful builds
         success_count = sum(1 for idx_result in results["indices"].values() 
                           if idx_result.get("status") in ("success", "skipped"))
         results["success_count"] = success_count
         results["total_count"] = 3
+
+        # One failed index used to be reported as an overall "success": the caller (and the UI) could not tell a
+        # complete build from a partial one, and the missing model only showed up as a 404 at search time.
+        failed = {name: item for name, item in results["indices"].items() if item.get("status") == "error"}
+        if failed:
+            results["status"] = "error"
+            results["reason"] = "build_failed"
+            results["message"] = "; ".join(
+                f"{name}: {item.get('message') or item.get('reason') or 'build failed'}"
+                for name, item in failed.items())
+            logger.error(f"Indices failed for {dataset_name}: {sorted(failed)}")
+        else:
+            results["status"] = "success"
+            logger.info("All indices built successfully with shared preprocessing")
         
         # Record the configuration only when something was actually built with it: passing a config while every index
         # was skipped used to overwrite the stored config of indexes that were not rebuilt at all.
