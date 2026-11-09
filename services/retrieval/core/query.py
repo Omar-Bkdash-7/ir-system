@@ -3,28 +3,101 @@
 BM25 / TF-IDF   query_tokens when the caller sent them (the gateway and the evaluation service already ran the
                 preprocessing service on the query); otherwise query_text is preprocessed here, once. Tokens that were
                 already preprocessed are NEVER preprocessed a second time.
-Embedding       query_text is required. embedding_query_mode "preprocessed" embeds the preprocessed tokens joined by
-                spaces (what the service always did); "raw" embeds the original text (the indexer embeds each
-                document's raw text).
+Embedding       query_text is required. embedding_query_mode "raw" embeds the original text (the indexer embeds each
+                document's raw text); "preprocessed" embeds the preprocessed tokens joined by spaces.
 
-The preprocessing package (spaCy) is imported lazily, only when a query really needs it.
+A text-only query is preprocessed with the configuration the dataset's index was built with (the metadata the
+indexing service writes), not with the defaults: otherwise a dataset built with a custom config has its documents and
+the queries that search them tokenised differently. The preprocessing package (spaCy) is imported lazily, only when a
+query really needs it.
 """
 from __future__ import annotations
 
+import json
+import logging
 import threading
-from typing import Any, Callable, List, Optional, Sequence, Tuple
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
+from common.config import get_config
 from common.exceptions import InvalidQueryError
 
 from .names import LABELS
+
+logger = logging.getLogger(__name__)
 
 
 def default_preprocess(text: str) -> List[str]:
     from services.preprocessing.preprocessing_service import preprocess  # loads spaCy: import only when needed
 
     return list(preprocess(text, mode="query"))
+
+
+_saved_configs: Dict[Tuple[str, int, int], Optional[dict]] = {}
+_saved_configs_lock = threading.Lock()
+_SUPPORTED_CACHED = 64
+
+
+def _metadata_path(dataset: str) -> Path:
+    """The metadata file the indexing service writes for a dataset (same directory and naming rule)."""
+    safe = str(dataset).replace("/", "-").replace("\\", "-")
+    return Path(get_config("paths.metadata_dir", "data/metadata")) / f"{safe}.json"
+
+
+def saved_preprocessing_config(dataset: Optional[str]) -> Optional[dict]:
+    """The preprocessing config the dataset's indexes were built with, or None. Never raises.
+
+    The file is stat'ed on every call (a few microseconds) so a rebuild is picked up without a restart, and parsed
+    once per version of the file.
+    """
+    if not dataset or not str(dataset).strip():
+        return None
+    path = _metadata_path(str(dataset))
+    try:
+        info = path.stat()
+    except OSError:
+        return None  # no metadata: the dataset was never built with a custom config
+    key = (str(path), info.st_mtime_ns, info.st_size)
+    with _saved_configs_lock:
+        if key in _saved_configs:
+            return _saved_configs[key]
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            metadata = json.load(handle)
+    except (OSError, ValueError) as exc:
+        logger.warning("Could not read the metadata of dataset %r (%s); using the default preprocessing", dataset, exc)
+        return None
+    config = metadata.get("preprocessing_config") if isinstance(metadata, dict) else None
+    with _saved_configs_lock:
+        if len(_saved_configs) >= _SUPPORTED_CACHED:
+            _saved_configs.clear()
+        _saved_configs[key] = config
+    return config
+
+
+def preprocessor_for(dataset: Optional[str]) -> Callable[[str], List[str]]:
+    """`preprocess(text)` bound to the configuration the dataset's index was built with.
+
+    A caller that sends query_tokens preprocessed the query itself (api_gateway does); a caller that sends only text
+    (the RAG service) used to get the DEFAULTS here, so an index built with a custom config was searched with
+    differently tokenised queries. An unreadable or unknown config falls back to the defaults.
+    """
+    config = saved_preprocessing_config(dataset)
+    if not config:
+        return default_preprocess
+
+    def preprocess(text: str) -> List[str]:
+        from services.preprocessing.preprocessing_service import PreprocessingConfig, preprocess as run
+
+        try:
+            return list(run(text, config=PreprocessingConfig.from_dict(config)))
+        except (TypeError, ValueError) as exc:  # a config written by another version of the service
+            logger.warning("Ignoring the saved preprocessing config of %r (%s); using the defaults", dataset, exc)
+            return default_preprocess(text)
+
+    return preprocess
 
 
 class QueryContext:

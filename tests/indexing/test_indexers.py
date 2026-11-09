@@ -77,9 +77,11 @@ class TFIDFIndexerTest(WorkdirTestCase):
         index = TFIDFIndexer("demo").load()
         self.assertEqual(index.matrix.shape[0], 4)
         self.assertEqual(index.doc_ids, ["d1", "d2", "d3", "d4"])
-        # scikit-learn's default token pattern ignores one-character tokens ('x', 'a'); BM25 keeps them. This
-        # difference exists in the original code and is documented in EVALUATION.md (not changed here).
-        self.assertEqual(len(index.vectorizer.vocabulary_), 6)
+        # Every preprocessed token is indexed exactly as it is (BM25 takes the same tokens). scikit-learn's default
+        # pattern used to re-tokenise the corpus: one-character tokens ('x', 'a') were dropped and compound tokens
+        # were split, so the two models indexed different vocabularies.
+        expected = sorted({token for document in DOCS for token in document["tokens"]})
+        self.assertEqual(sorted(index.vectorizer.vocabulary_), expected)
 
     def test_inconsistent_files_are_refused_instead_of_answering_wrongly(self):
         TFIDFIndexer("demo").build(self.processed()).save()

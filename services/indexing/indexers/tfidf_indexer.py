@@ -47,9 +47,16 @@ class TFIDFIndexer:
         sublinear_tf = get_config("models.tfidf.sublinear_tf", True)
         norm = get_config("models.tfidf.norm", "l2")
         
+        # The corpus is already preprocessed tokens joined by spaces, so it has to be indexed exactly as it is.
+        # scikit-learn's default pattern r"(?u)\b\w\w+\b" re-tokenised it: compound tokens were split
+        # ("state-of-the-art" -> state/of/the/art, putting the stopwords preprocessing removed back into the matrix),
+        # one-character tokens were dropped and "c++" disappeared. BM25 takes the tokens as they are, so the two
+        # models then indexed different vocabularies and were not comparable (and hybrid fusion mixed them).
         self.vectorizer = TfidfVectorizer(
             sublinear_tf=sublinear_tf,
-            norm=norm
+            norm=norm,
+            token_pattern=r"(?u)\S+",
+            lowercase=False,
         )
         
         self.matrix = self.vectorizer.fit_transform(corpus)

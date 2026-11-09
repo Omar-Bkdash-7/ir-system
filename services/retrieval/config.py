@@ -8,7 +8,7 @@ deployment-level knobs, by an environment variable (the variable wins). No confi
     compact_cache_dir              RETRIEVAL_CACHE_DIR                  data/cache/retrieval
     stale_check_seconds            RETRIEVAL_STALE_CHECK_SECONDS        2.0
     index_memory_budget_mb         RETRIEVAL_INDEX_MEMORY_MB            2048
-    embedding_query_mode           RETRIEVAL_EMBEDDING_QUERY_MODE       preprocessed
+    embedding_query_mode           RETRIEVAL_EMBEDDING_QUERY_MODE       raw
     embedding_mmap                 RETRIEVAL_EMBEDDING_MMAP             true
     query_cache_size               RETRIEVAL_QUERY_CACHE_SIZE           512
     db_pool_max                    RETRIEVAL_DB_POOL_MAX                8
@@ -28,8 +28,8 @@ from common.config import get_config
 
 logger = logging.getLogger(__name__)
 
-#: "preprocessed": the query text is tokenised/lemmatised before it is embedded (what the service always did);
-#: "raw": the original text is embedded (the indexer embeds each document's RAW text).
+#: "raw": the original text is embedded — the indexer embeds each document's RAW text, so this is the coherent
+#: default; "preprocessed": the query text is tokenised/lemmatised before it is embedded (what the service did first).
 QUERY_MODES = ("preprocessed", "raw")
 
 T = TypeVar("T")
@@ -86,7 +86,7 @@ class RetrievalSettings:
     cache_dir: Path = Path("data/cache/retrieval")
     stale_check_seconds: float = 2.0
     index_memory_budget_mb: int = 2048
-    embedding_query_mode: str = "preprocessed"
+    embedding_query_mode: str = "raw"
     embedding_mmap: bool = True
     query_cache_size: int = 512
     db_pool_max: int = 8

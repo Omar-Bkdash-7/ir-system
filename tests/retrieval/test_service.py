@@ -116,11 +116,12 @@ class ServiceTests(unittest.TestCase):
             self.service.retrieve(request(dataset="missing", query_tokens=[], query_text=""))
 
     def test_embedding_query_mode(self):
-        self.service.retrieve(request(model="embedding", query_tokens=["wing", "flutter"], query_text="Wing flutter?"))
-        self.assertEqual(self.encoder.calls[-1], "wing flutter")
-        self.make_service(embedding_query_mode="raw")
+        # raw by default: the indexer embeds each document's RAW text, so the query must be raw too
         self.service.retrieve(request(model="embedding", query_tokens=["wing", "flutter"], query_text="Wing flutter?"))
         self.assertEqual(self.encoder.calls[-1], "Wing flutter?")
+        self.make_service(embedding_query_mode="preprocessed")
+        self.service.retrieve(request(model="embedding", query_tokens=["wing", "flutter"], query_text="Wing flutter?"))
+        self.assertEqual(self.encoder.calls[-1], "wing flutter")
 
     def test_none_bm25_parameters_fall_back_to_the_defaults(self):
         a = self.service.retrieve(request(query_tokens=["boundary"], bm25_k1=None, bm25_b=None))

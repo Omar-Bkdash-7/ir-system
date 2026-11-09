@@ -21,7 +21,7 @@ from .compact import CompactCache
 from .encoder import QueryEncoder
 from .indexes import BaseIndex, Hits, SearchOptions
 from .names import KINDS, LABELS
-from .query import QueryContext, default_preprocess
+from .query import QueryContext, default_preprocess, preprocessor_for
 from .store import IndexStore
 from .texts import TextStore
 
@@ -108,8 +108,14 @@ class RetrievalService:
             tokens=getattr(req, "query_tokens", None),
             encoder=self._encoder,
             embedding_query_mode=self._settings.embedding_query_mode,
-            preprocess=self._preprocess,
+            preprocess=self._preprocess_for(getattr(req, "dataset", None)),
         )
+
+    def _preprocess_for(self, dataset: Optional[str]) -> Callable[[str], Sequence[str]]:
+        """An explicitly injected `preprocess` wins (tests); otherwise the config the dataset was indexed with."""
+        if self._preprocess is not default_preprocess:
+            return self._preprocess
+        return preprocessor_for(dataset)
 
     def _options(self, req: Any) -> SearchOptions:
         k1 = getattr(req, "bm25_k1", None)

@@ -123,6 +123,9 @@ class RememberedConfigTest(unittest.TestCase):
                 return {"status": "success", "vocab_size": 3}
 
         class FakeDatasetService:
+            def has_metadata(self, dataset_name):
+                return False
+
             def save_preprocessing_config(self, dataset_name, config):
                 recorded.append((dataset_name, config))
 
@@ -148,6 +151,72 @@ class RememberedConfigTest(unittest.TestCase):
         self.addCleanup(failure.stop)
         self.build_service.build_tfidf_index("demo/ds", False, {"use_stemming": True})
         self.assertEqual(self.saved, [])
+
+
+class DefaultRebuildTest(unittest.TestCase):
+    """A rebuild with the defaults must clear an older custom config.
+
+    Leaving it behind makes the query side keep preprocessing with a configuration the rebuilt index no longer has.
+    """
+
+    def test_a_default_rebuild_clears_the_stored_config(self):
+        from services.indexing.services import build_service
+
+        saved = []
+
+        class FakeBuilder:
+            def build(self, *args, **kwargs):
+                return {"status": "success", "vocab_size": 3}
+
+        class FakeDatasetService:
+            def has_metadata(self, dataset_name):
+                return True
+
+            def save_preprocessing_config(self, dataset_name, config):
+                saved.append((dataset_name, config))
+
+        with mock.patch.object(build_service, "TFIDFIndexBuilder", FakeBuilder), \
+                mock.patch("services.indexing.dataset.service.DatasetService", FakeDatasetService):
+            build_service.build_tfidf_index("demo/ds", False, None)
+        self.assertEqual(saved, [("demo/ds", None)])
+
+    def test_build_all_does_not_record_a_config_when_every_index_was_skipped(self):
+        from services.indexing.services import build_service
+
+        saved = []
+
+        class Existing:
+            """Exists on disk (so the shared preprocessing pass is skipped) and refuses to rebuild."""
+
+            def __init__(self, dataset_name=None):
+                pass
+
+            def exists(self):
+                return True
+
+            def build(self, *args, **kwargs):
+                return {"status": "skipped", "message": "index already exists"}
+
+        class FakeDatasetService:
+            def has_metadata(self, dataset_name):
+                return True
+
+            def save_preprocessing_config(self, dataset_name, config):
+                saved.append((dataset_name, config))
+
+        patchers = [mock.patch.object(build_service, name, Existing) for name in
+                    ("TFIDFIndexer", "BM25Indexer", "EmbeddingIndexer",
+                     "TFIDFIndexBuilder", "BM25IndexBuilder", "EmbeddingIndexBuilder")]
+        patchers += [mock.patch.object(build_service, "_check_dataset_in_database", lambda *a, **k: None),
+                     mock.patch("services.indexing.dataset.service.DatasetService", FakeDatasetService)]
+        for patcher in patchers:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+        result = build_service.build_all_indices("demo/ds", False, {"use_stemming": True})
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(saved, [], "nothing was rebuilt, so the stored config must stay untouched")
 
 
 class SavedConfigTest(WorkdirTestCase):

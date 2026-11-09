@@ -525,19 +525,27 @@ class BM25IndexBuilder(IndexBuilder):
 
 def _remember_preprocessing_config(dataset_name: str, preprocessing_config: Optional[dict],
                                    result: Dict[str, Any]) -> Dict[str, Any]:
-    """Store the configuration an index was built with.
+    """Store — or clear — the configuration an index was built with.
 
-    The query side preprocesses with the saved config (api_gateway reads it back), so an index built with a custom
-    config must record it — otherwise queries are tokenized differently than the documents.
+    The query side preprocesses with the saved config (api_gateway and the retrieval service read it back), so an
+    index built with a custom config must record it — otherwise queries are tokenized differently than the documents.
+
+    A rebuild with the DEFAULTS must also clear an older custom config: leaving it behind makes the query side keep
+    preprocessing with a configuration the index no longer has. Nothing is written when the build failed.
     """
-    if not preprocessing_config or result.get("status") != "success":
+    if result.get("status") != "success":
         return result
     try:
         from services.indexing.dataset.service import DatasetService
-        DatasetService().save_preprocessing_config(dataset_name, preprocessing_config)
-        logger.info(f"Saved preprocessing config to metadata for dataset: {dataset_name}")
+        service = DatasetService()
+        if preprocessing_config:
+            service.save_preprocessing_config(dataset_name, preprocessing_config)
+            logger.info(f"Saved preprocessing config to metadata for dataset: {dataset_name}")
+        elif service.has_metadata(dataset_name):
+            service.save_preprocessing_config(dataset_name, None)
+            logger.info(f"Cleared the stored preprocessing config of '{dataset_name}' (rebuilt with the defaults)")
     except Exception as e:
-        logger.warning(f"Failed to save preprocessing config to metadata: {e}")
+        logger.warning(f"Failed to update the stored preprocessing config: {e}")
     return result
 
 
@@ -683,15 +691,11 @@ def build_all_indices(dataset_name: str, force_rebuild: bool = False, preprocess
         results["success_count"] = success_count
         results["total_count"] = 3
         
-        # Save preprocessing config to metadata if provided
-        if preprocessing_config:
-            try:
-                from services.indexing.dataset.service import DatasetService
-                dataset_service = DatasetService()
-                dataset_service.save_preprocessing_config(dataset_name, preprocessing_config)
-                logger.info(f"Saved preprocessing config to metadata for dataset: {dataset_name}")
-            except Exception as e:
-                logger.warning(f"Failed to save preprocessing config to metadata: {e}")
+        # Record the configuration only when something was actually built with it: passing a config while every index
+        # was skipped used to overwrite the stored config of indexes that were not rebuilt at all.
+        built = any(item.get("status") == "success" for item in results["indices"].values())
+        _remember_preprocessing_config(
+            dataset_name, preprocessing_config, {"status": "success" if built else "skipped"})
         
     except Exception as e:
         logger.error(f"Failed to build all indices: {e}", exc_info=True)
