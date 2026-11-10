@@ -12,7 +12,6 @@ from datetime import datetime
 import streamlit as st
 
 import api.evaluation as eval_api
-import config
 from components.metrics_chart import (
     render_metrics_bar_chart,
     render_precision_at_k_curve,
@@ -400,13 +399,55 @@ def _model_comparison_panel(metrics: Dict[str, dict]):
 def render() -> None:
     st.markdown("## 📈 Evaluation Dashboard")
     st.markdown("Comprehensive IR system performance metrics and model comparison")
-    
+
+    _render_controls()
+
+    raw_metrics, data_source = _load_metrics()
+    if not raw_metrics:
+        st.warning(
+            "⚠️ No evaluation data available. Use the **Run New Evaluation** panel above to generate metrics."
+        )
+        return
+
+    metrics = _normalize_metrics(raw_metrics)
+    inject_style("metric_row")
+
+    selected_dataset = _render_dataset_filter(metrics, data_source)
+    filtered = _metrics_for_dataset(metrics, selected_dataset)
+    if filtered is None:
+        return
+    metrics = filtered
+
+    st.divider()
+    _render_model_rankings(metrics)
+
+    st.divider()
+    _render_history_table(selected_dataset)
+
+    st.divider()
+    _render_visual_analysis(metrics)
+
+    st.divider()
+    _render_refinement_comparison(selected_dataset)
+
+    st.divider()
+    _render_insights(metrics)
+
+    st.divider()
+    _render_export(raw_metrics)
+
+
+def _render_controls() -> None:
+    """Run-evaluation and history panels, closed by the header divider."""
     # ── Interactive controls ───────────────────────────────────────────────
     _run_evaluation_panel()
     _evaluation_history_panel()
-    
+
     st.divider()
 
+
+def _load_metrics() -> tuple[Dict[str, dict], str]:
+    """Live metrics from the service, or the bundled pre-computed snapshot."""
     # ── Data source ────────────────────────────────────────────────────────
     live_resp = eval_api.get_metrics()
     data_source = "live"
@@ -417,17 +458,11 @@ def render() -> None:
     else:
         raw_metrics = _load_precomputed()
         data_source = "precomputed"
+    return raw_metrics, data_source
 
-    if not raw_metrics:
-        st.warning(
-            "⚠️ No evaluation data available. Use the **Run New Evaluation** panel above to generate metrics."
-        )
-        return
 
-    metrics = _normalize_metrics(raw_metrics)
-
-    inject_style("metric_row")
-
+def _render_dataset_filter(metrics: Dict[str, dict], data_source: str) -> str:
+    """Dataset picker plus the model count and the data-source badge."""
     # ── Get available datasets from history ────────────────────────────────
     try:
         history_resp = eval_api.get_history()
@@ -475,12 +510,15 @@ def render() -> None:
             st.info("📂 Pre-computed")
         else:
             st.success("🟢 Live data")
+    return selected_dataset
 
 
+def _metrics_for_dataset(metrics: Dict[str, dict], selected_dataset: str) -> Optional[Dict[str, dict]]:
+    """Metrics of the selected dataset (latest run per model), or None when that dataset has no runs."""
     # ── Filter metrics by dataset if selected ──────────────────────────────
     if selected_dataset and selected_dataset != "All Datasets":
         try:
-            history_resp = get(f"{config.EVALUATION_URL}/history?limit=100")
+            history_resp = eval_api.get_history()
             if history_resp.ok and history_resp.data:
                 history = history_resp.data.get("history", [])
                 
@@ -512,20 +550,23 @@ def render() -> None:
                     st.success(f"📂 Showing **{len(dataset_metrics)} models** evaluated on **{selected_dataset}**")
                 else:
                     st.warning(f"No evaluation results found for dataset: {selected_dataset}")
-                    return
+                    return None
         except Exception as e:
             st.error(f"Failed to filter by dataset: {e}")
     else:
         # Show summary for all datasets
         avg_map = sum(m.get("map", 0) for m in metrics.values()) / len(metrics) if metrics else 0
         st.info(f"📊 Showing all results | Avg MAP: **{avg_map:.4f}**")
+    return metrics
 
-    st.divider()
-    
-    # ── Model rankings ─────────────────────────────────────────────────────
+
+def _render_model_rankings(metrics: Dict[str, dict]) -> None:
+    """Leaderboard across the visible metrics."""
     _model_comparison_panel(metrics)
-    st.divider()
 
+
+def _render_history_table(selected_dataset: str) -> None:
+    """Full table of stored runs: model, dataset, refinement and metrics."""
     # ── Model Performance Overview as Table ────────────────────────────────
     st.markdown("### 📊 Model Performance Overview")
     
@@ -589,8 +630,23 @@ def render() -> None:
         )
     else:
         st.info("No evaluation data available. Run evaluations first.")
-    
-    st.divider()
+
+
+def _extrapolate_precision_at_k(p10: float) -> Dict[int, float]:
+    """P@K curve from a single P@10 value (the service only stores P@10)."""
+    return {
+        1: min(p10 * 1.3, 1.0),
+        3: min(p10 * 1.2, 1.0),
+        5: min(p10 * 1.1, 1.0),
+        10: p10,
+        20: p10 * 0.85,
+        50: p10 * 0.65,
+        100: p10 * 0.5,
+    }
+
+
+def _render_visual_analysis(metrics: Dict[str, dict]) -> None:
+    """Bar chart, radar and Precision@K tabs."""
     st.markdown("### 📈 Visual Analysis")
     inject_style("tabs")
     tab1, tab2, tab3 = st.tabs(["📊 Bar Chart", "🕸️ Radar", "📉 Precision@K"])
@@ -604,15 +660,7 @@ def render() -> None:
             for model, vals in metrics.items():
                 p10 = vals.get("precision_at_10", 0.0)
                 if p10 > 0:
-                    pk_data[model] = {
-                        1: min(p10 * 1.3, 1.0),
-                        3: min(p10 * 1.2, 1.0),
-                        5: min(p10 * 1.1, 1.0),
-                        10: p10,
-                        20: p10 * 0.85,
-                        50: p10 * 0.65,
-                        100: p10 * 0.5,
-                    }
+                    pk_data[model] = _extrapolate_precision_at_k(p10)
             
             if pk_data:
                 render_precision_at_k_curve(pk_data)
@@ -621,8 +669,22 @@ def render() -> None:
                 st.info("No precision data available for visualization.")
         else:
             st.info("No metrics available for Precision@K curve.")
-    st.divider()
 
+
+def _improvement_card(label: str, value: float) -> str:
+    """Stat card for a percentage change; green when it improved, red otherwise."""
+    color = "#28a745" if value > 0 else "#dc3545"
+    return (
+        "<div style='text-align: center; padding: 1rem; border: 1px solid #e0e0e0; "
+        "border-radius: 0.5rem;'>"
+        f"<div style='font-size: 0.875rem; margin-bottom: 0.5rem;'>{label}</div>"
+        f"<div style='font-size: 1.5rem; font-weight: bold; color: {color};'>{value:+.2f}%</div>"
+        "</div>"
+    )
+
+
+def _render_refinement_comparison(selected_dataset: str) -> None:
+    """Before/after comparison for models evaluated with and without query refinement."""
     # ── Refinement comparison ──────────────────────────────────────────────
     st.markdown("### 🔧 Impact of Query Refinement")
     
@@ -714,26 +776,10 @@ def render() -> None:
                                 pk_comparison: Dict[str, Dict[int, float]] = {}
                                 
                                 if p10_before > 0:
-                                    pk_comparison["Before Refinement"] = {
-                                        1: min(p10_before * 1.3, 1.0),
-                                        3: min(p10_before * 1.2, 1.0),
-                                        5: min(p10_before * 1.1, 1.0),
-                                        10: p10_before,
-                                        20: p10_before * 0.85,
-                                        50: p10_before * 0.65,
-                                        100: p10_before * 0.5,
-                                    }
+                                    pk_comparison["Before Refinement"] = _extrapolate_precision_at_k(p10_before)
                                 
                                 if p10_after > 0:
-                                    pk_comparison["After Refinement"] = {
-                                        1: min(p10_after * 1.3, 1.0),
-                                        3: min(p10_after * 1.2, 1.0),
-                                        5: min(p10_after * 1.1, 1.0),
-                                        10: p10_after,
-                                        20: p10_after * 0.85,
-                                        50: p10_after * 0.65,
-                                        100: p10_after * 0.5,
-                                    }
+                                    pk_comparison["After Refinement"] = _extrapolate_precision_at_k(p10_after)
                                 
                                 if pk_comparison:
                                     render_precision_at_k_curve(pk_comparison)
@@ -752,48 +798,16 @@ def render() -> None:
                             col1, col2, col3, col4 = st.columns(4)
                             
                             with col1:
-                                st.markdown(
-                                    f"""
-                                    <div style='text-align: center; padding: 1rem; border: 1px solid #e0e0e0; border-radius: 0.5rem;'>
-                                        <div style='font-size: 0.875rem; margin-bottom: 0.5rem;'>📊 MAP Improvement</div>
-                                        <div style='font-size: 1.5rem; font-weight: bold; color: {"#28a745" if map_improvement > 0 else "#dc3545"};'>{map_improvement:+.2f}%</div>
-                                    </div>
-                                    """,
-                                    unsafe_allow_html=True
-                                )
+                                st.markdown(_improvement_card("📊 MAP Improvement", map_improvement), unsafe_allow_html=True)
                             
                             with col2:
-                                st.markdown(
-                                    f"""
-                                    <div style='text-align: center; padding: 1rem; border: 1px solid #e0e0e0; border-radius: 0.5rem;'>
-                                        <div style='font-size: 0.875rem; margin-bottom: 0.5rem;'>⭐ nDCG@10 Improvement</div>
-                                        <div style='font-size: 1.5rem; font-weight: bold; color: {"#28a745" if ndcg_improvement > 0 else "#dc3545"};'>{ndcg_improvement:+.2f}%</div>
-                                    </div>
-                                    """,
-                                    unsafe_allow_html=True
-                                )
+                                st.markdown(_improvement_card("⭐ nDCG@10 Improvement", ndcg_improvement), unsafe_allow_html=True)
                             
                             with col3:
-                                st.markdown(
-                                    f"""
-                                    <div style='text-align: center; padding: 1rem; border: 1px solid #e0e0e0; border-radius: 0.5rem;'>
-                                        <div style='font-size: 0.875rem; margin-bottom: 0.5rem;'>🔍 P@10 Improvement</div>
-                                        <div style='font-size: 1.5rem; font-weight: bold; color: {"#28a745" if p10_improvement > 0 else "#dc3545"};'>{p10_improvement:+.2f}%</div>
-                                    </div>
-                                    """,
-                                    unsafe_allow_html=True
-                                )
+                                st.markdown(_improvement_card("🔍 P@10 Improvement", p10_improvement), unsafe_allow_html=True)
                             
                             with col4:
-                                st.markdown(
-                                    f"""
-                                    <div style='text-align: center; padding: 1rem; border: 1px solid #e0e0e0; border-radius: 0.5rem;'>
-                                        <div style='font-size: 0.875rem; margin-bottom: 0.5rem;'>🎯 Recall Improvement</div>
-                                        <div style='font-size: 1.5rem; font-weight: bold; color: {"#28a745" if recall_improvement > 0 else "#dc3545"};'>{recall_improvement:+.2f}%</div>
-                                    </div>
-                                    """,
-                                    unsafe_allow_html=True
-                                )
+                                st.markdown(_improvement_card("🎯 Recall Improvement", recall_improvement), unsafe_allow_html=True)
         else:
             st.info("No evaluation history available.")
     except Exception as e:
@@ -801,8 +815,9 @@ def render() -> None:
         import traceback
         st.code(traceback.format_exc())
 
-    st.divider()
 
+def _render_insights(metrics: Dict[str, dict]) -> None:
+    """Best performer per metric and the MAP distribution."""
     # ── Additional insights ────────────────────────────────────────────────
     st.markdown("### 💡 Quick Insights")
     
@@ -834,8 +849,9 @@ def render() -> None:
             st.markdown(f"**Worst MAP**: `{min_map:.4f}`")
             st.markdown(f"**Range**: `{max_map - min_map:.4f}`")
 
-    st.divider()
 
+def _render_export(raw_metrics: Dict[str, dict]) -> None:
+    """JSON export and the raw payload viewer."""
     # ── Export and raw data ────────────────────────────────────────────────
     col1, col2 = st.columns(2)
     
