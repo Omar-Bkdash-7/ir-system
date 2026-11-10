@@ -44,7 +44,12 @@ def render_sidebar() -> None:
     with st.sidebar:
 
         # ── Brand ──────────────────────────────────────────────────────
-        st.markdown("### 🔍 IR System")
+        # The icon is wrapped so the gradient text fill (theme.css) does not
+        # wash out the emoji glyph.
+        st.markdown(
+            '### <span class="sidebar-brand-icon">🔍</span> IR System',
+            unsafe_allow_html=True,
+        )
         st.caption("Information Retrieval")
         st.divider()
 

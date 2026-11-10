@@ -2,6 +2,7 @@ import streamlit as st
 from typing import Dict, Any, Optional, List
 
 import api.rag as rag_api
+from ui_state import dataset_selector
 from utils.dataset_utils import get_available_datasets
 
 DOWNLOAD_POLL_SECONDS = 2
@@ -47,12 +48,12 @@ def render():
         available_datasets = _get_available_datasets_for_rag()
         
         if available_datasets:
-            dataset = st.selectbox(
-                "Dataset",
-                options=available_datasets,
-                index=None,  # No default selection
+            dataset = dataset_selector(
+                available_datasets,
+                key="rag_dataset_selector",
+                label="Dataset",
                 placeholder="Select a dataset...",
-                help="Choose a dataset to search from"
+                help="Choose a dataset to search from",
             )
         else:
             # No datasets available

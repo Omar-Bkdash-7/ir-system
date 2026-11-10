@@ -8,6 +8,7 @@ from pathlib import Path
 import config
 import api.clustering as clustering_api
 import api.indexing as indexing_api
+from ui_state import dataset_selector
 
 
 def _get_datasets_with_embeddings() -> List[str]:
@@ -104,6 +105,7 @@ def _display_dataset_info(dataset: str):
 
 
 def render():
+    """Clustering page: pick a dataset, tune HDBSCAN, run it, show the results."""
     st.title("🗂️ Document Clustering & Topic Detection")
     st.markdown(
         """
@@ -111,10 +113,46 @@ def render():
         Visualize clusters in 2D space using UMAP dimensionality reduction.
         """
     )
-    
-    # Get datasets with embeddings
+
     available_datasets = _get_datasets_with_embeddings()
-    
+
+    if not available_datasets:
+        _render_missing_embeddings_help()
+        return
+
+    dataset = _select_dataset(available_datasets)
+    if not dataset:
+        st.info("Select a dataset to perform clustering.")
+        return
+
+    _display_dataset_info(dataset)
+    st.divider()
+
+    status = _get_clustering_status(dataset)
+    clusters_exist = bool(status and status.get("status") == "clustered")
+
+    _render_clustering_status(status, clusters_exist)
+    st.divider()
+
+    params = _render_clustering_parameters()
+
+    run_clustering, force_recompute = _render_clustering_actions(dataset, clusters_exist)
+    if run_clustering:
+        _run_clustering(
+            dataset,
+            force_recompute=force_recompute,
+            **params,
+        )
+
+    st.divider()
+
+    cluster_data = _load_cluster_data(dataset, status)
+    if cluster_data:
+        _render_cluster_results(cluster_data)
+
+
+def _render_missing_embeddings_help() -> None:
+    """Explain what the user must build before clustering is possible."""
     if not available_datasets:
         st.warning("⚠️ No datasets with embeddings available for clustering")
         st.info("""
@@ -133,15 +171,17 @@ def render():
             st.switch_page("app_pages/indexing.py")
         return
     
-    # Dataset selector
-    dataset = st.selectbox(
-        "Select Dataset",
-        options=available_datasets,
-        index=0,
+
+
+def _select_dataset(available_datasets: List[str]) -> str | None:
+    """Dataset selector, clearing cached results when the selection changes."""
+    # Shared selector: keeps the dataset picked on another page
+    dataset = dataset_selector(
+        available_datasets,
         key="clustering_dataset_selector",
-        help="Only shows datasets that have embeddings built"
+        help="Only shows datasets that have embeddings built",
     )
-    
+
     # Clear session state if dataset changed
     if "last_clustering_dataset" not in st.session_state:
         st.session_state["last_clustering_dataset"] = dataset
@@ -155,17 +195,12 @@ def render():
         st.info("Select a dataset to perform clustering.")
         return
     
-    # Display dataset info
-    _display_dataset_info(dataset)
-    
-    st.divider()
-    
-    # Check clustering status
-    status = _get_clustering_status(dataset)
-    
-    # Determine if clusters exist
-    clusters_exist = status and status.get("status") == "clustered"
-    
+
+    return dataset
+
+
+def _render_clustering_status(status: Optional[Dict], clusters_exist: bool) -> None:
+    """Status strip: cluster/noise counts for an existing run, or a hint to run one."""
     # Show status
     st.subheader("📊 Clustering Status")
     
@@ -188,6 +223,10 @@ def render():
     
     st.divider()
     
+
+
+def _render_clustering_parameters() -> Dict[str, object]:
+    """HDBSCAN controls; returns the values to send to the service."""
     # Clustering parameters
     st.subheader("⚙️ Clustering Parameters")
     
@@ -219,6 +258,16 @@ def render():
             help="Distance metric for clustering",
         )
     
+
+    return {
+        "min_cluster_size": min_cluster_size,
+        "min_samples": min_samples,
+        "metric": metric,
+    }
+
+
+def _render_clustering_actions(dataset: str, clusters_exist: bool) -> tuple[bool, bool]:
+    """Run/Rebuild/Delete buttons. Returns (run_clustering, force_recompute)."""
     # Show different buttons based on whether clusters exist
     if clusters_exist:
 
@@ -266,6 +315,18 @@ def render():
         )
         force_recompute = False
     
+
+    return run_clustering, force_recompute
+
+
+def _run_clustering(
+    dataset: str,
+    min_cluster_size: int,
+    min_samples: int,
+    metric: str,
+    force_recompute: bool,
+) -> None:
+    """Call the clustering service and render the outcome."""
     # Run clustering
     if run_clustering:
         with st.spinner("Clustering documents... This may take a few minutes."):
@@ -306,6 +367,10 @@ def render():
     
     st.divider()
     
+
+
+def _load_cluster_data(dataset: str, status: Optional[Dict]) -> Optional[Dict]:
+    """Clusters from the session cache, or loaded from the backend when they exist."""
     # Display results if available
     cluster_data = None
     
@@ -320,6 +385,8 @@ def render():
     
     if cluster_data:
         _render_cluster_results(cluster_data)
+
+    return cluster_data
 
 
 def _get_clustering_status(dataset: str) -> Optional[Dict]:

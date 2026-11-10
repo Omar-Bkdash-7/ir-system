@@ -195,6 +195,14 @@ section[data-testid="stSidebar"] nav {
   font-weight: 700 !important;
 }
 
+/* Keep the brand emoji intact: gradient text fill clips colour glyphs */
+[data-testid="stSidebar"] h3 .sidebar-brand-icon {
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  -webkit-text-fill-color: initial;
+}
+
 [data-testid="stSidebar"] [data-testid="stCaptionContainer"] {
   color: var(--muted) !important;
   font-size: 11px !important;

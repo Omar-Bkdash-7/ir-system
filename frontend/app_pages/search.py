@@ -43,6 +43,7 @@ from constants import (
     SS_SESSION_ID,
     SS_SELECTED_DATASET,
 )
+from ui_state import dataset_selector
 from ui_style import inject_style
 from utils.dataset_utils import get_available_datasets, get_dataset_display_name
 
@@ -441,26 +442,17 @@ def render() -> None:
     st.caption("Choose a dataset with all indices built")
     
     def on_dataset_change():
-        """Callback when dataset selection changes"""
-        new_dataset = st.session_state.dataset_selector
-        if new_dataset:  # Only update if not None
-            st.session_state[SS_SELECTED_DATASET] = new_dataset
+        """A new dataset invalidates the results of the previous one."""
+        if st.session_state.dataset_selector:
             st.session_state[SS_SEARCH_RESULTS] = None
     
     if available_datasets:
-        # Find index if dataset is selected and valid
-        current_dataset = st.session_state.get(SS_SELECTED_DATASET)
-        default_index = None
-        if current_dataset and current_dataset in available_datasets:
-            default_index = available_datasets.index(current_dataset)
-
-        st.selectbox(
-            "Dataset",
-            options=available_datasets,
-            index=default_index,
+        dataset_selector(
+            available_datasets,
+            key="dataset_selector",
+            label="Dataset",
             placeholder="Select a dataset...",
             format_func=get_dataset_display_name,
-            key="dataset_selector",
             help="Only datasets with all indices (TF-IDF, BM25, Embedding) built are shown",
             label_visibility="collapsed",
             on_change=on_dataset_change,

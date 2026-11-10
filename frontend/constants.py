@@ -46,6 +46,7 @@ SS_REFINEMENT_LAB_QUERY_INPUT = "refinement_lab_query_input"
 SS_INDEX_STATUS = "index_status_cache"
 SS_BUILD_LOG = "build_log"
 SS_BUILD_IN_PROGRESS = "build_in_progress"   # False | "tfidf" | "bm25" | "embedding" | "all"
+SS_BUILD_JOB = "build_job"                   # survives page switches; see app_pages/indexing.py
 SS_FORCE_REBUILD = "force_rebuild"
 
 # --- System monitor ---------------------------------------------------
@@ -104,6 +105,7 @@ DEFAULTS = {
     SS_INDEX_STATUS: {},
     SS_BUILD_LOG: [],
     SS_BUILD_IN_PROGRESS: False,
+    SS_BUILD_JOB: None,
     SS_FORCE_REBUILD: False,
 
     SS_SERVICE_HEALTH: {},

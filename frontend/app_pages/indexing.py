@@ -3,13 +3,18 @@ Index Management page build, monitor, and rebuild TF-IDF / BM25 / Embedding indi
 """
 from __future__ import annotations
 
+import threading
+import time
+from types import SimpleNamespace
+
 import streamlit as st
 
 import config
 import api.indexing as indexing_api
 import api.gateway as gateway
 from components.index_status_badge import render_index_card
-from constants import SS_BUILD_LOG, SS_FORCE_REBUILD
+from constants import SS_BUILD_IN_PROGRESS, SS_BUILD_JOB, SS_BUILD_LOG, SS_FORCE_REBUILD
+from ui_state import dataset_selector
 
 
 def _get_downloaded_datasets() -> list[str]:
@@ -144,7 +149,8 @@ def _render_preprocessing_config() -> dict | None:
     return None
 
 
-def _build_single(index_type: str, force: bool, preprocessing_config: dict | None = None, dataset_in_db: bool = True, dataset_name: str = None) -> None:
+def _index_label(index_type: str) -> tuple[str, str]:
+    """Human label + time estimate for an index type (``all`` included)."""
     # Special handling for 'all' index type
     if index_type == "all":
         label = "All Indices"
@@ -152,223 +158,292 @@ def _build_single(index_type: str, force: bool, preprocessing_config: dict | Non
     else:
         label = config.RETRIEVAL_MODEL_LABELS.get(index_type, index_type)
         estimate = config.BUILD_TIME_ESTIMATES.get(index_type, "a few minutes")
-    
-    log: list = st.session_state.get(SS_BUILD_LOG, [])
 
-    with st.status(f"Building {label} index (est. {estimate})", expanded=True) as s:
-        prep_msg = " with custom preprocessing" if preprocessing_config else ""
-        st.write(f"Calling indexing service - force_rebuild={force}{prep_msg}")
-        
+    return label, estimate
+
+
+# Approximate progress stages pushed to the UI while the service is working.
+_BUILD_STAGES: dict[str, list[tuple[int, str]]] = {
+    "all": [
+        (5, "Preprocessing documents from database..."),
+        (10, "Building shared preprocessing file..."),
+        (20, "Preprocessing complete, starting TF-IDF..."),
+        (35, "Building TF-IDF index..."),
+        (45, "TF-IDF complete, starting BM25..."),
+        (60, "Building BM25 inverted index..."),
+        (70, "BM25 complete, starting Embedding..."),
+        (75, "Loading sentence transformer model..."),
+        (85, "Generating embeddings (batch 5/10)..."),
+        (95, "Saving all indices..."),
+        (100, "Complete!")
+    ],
+    "tfidf": [
+        (10, "Loading preprocessed documents..."),
+        (30, "Building vocabulary..."),
+        (50, "Computing TF-IDF weights..."),
+        (70, "Creating sparse matrix..."),
+        (90, "Saving index files..."),
+        (100, "Complete!")
+    ],
+    "bm25": [
+        (10, "Loading preprocessed documents..."),
+        (25, "Building inverted index..."),
+        (45, "Computing document frequencies..."),
+        (65, "Calculating IDF scores..."),
+        (85, "Finalizing index structure..."),
+        (100, "Complete!")
+    ],
+    "embedding": [
+        (5, "Loading sentence transformer model..."),
+        (10, "Model loaded, preparing documents..."),
+        (30, "Generating embeddings (batch 1/10)..."),
+        (50, "Generating embeddings (batch 5/10)..."),
+        (70, "Generating embeddings (batch 8/10)..."),
+        (90, "Saving embeddings..."),
+        (100, "Complete!")
+    ]
+}
+
+
+def _start_build_job(
+    index_type: str,
+    label: str,
+    estimate: str,
+    force: bool,
+    preprocessing_config: dict | None,
+    dataset_name: str | None,
+    dataset_in_db: bool,
+) -> dict:
+    """Start the build in the background and remember it for the whole session.
+
+    The job lives in session state (not in a local variable) so leaving the
+    page no longer kills it: the thread keeps talking to the indexing service
+    and the page can pick the progress back up when the user returns.
+    """
+    job = {
+        "index_type": index_type,
+        "label": label,
+        "estimate": estimate,
+        "dataset_in_db": dataset_in_db,
+        "stages": _BUILD_STAGES.get(index_type, [(50, "Building..."), (100, "Complete!")]),
+        "stage": 0,
+        "started_at": time.time(),
+        "done": False,
+        "reported": False,
+        "resp": None,
+    }
+
+    def _build_thread() -> None:
+        try:
+            job["resp"] = indexing_api.build_index(
+                index_type,
+                force_rebuild=force,
+                preprocessing_config=preprocessing_config,
+                dataset_name=dataset_name,
+            )
+        except Exception as exc:  # surfaced in the UI as a failed build
+            job["resp"] = SimpleNamespace(ok=False, error=str(exc), data=None)
+        finally:
+            job["done"] = True
+
+    threading.Thread(target=_build_thread, daemon=True).start()
+
+    st.session_state[SS_BUILD_JOB] = job
+    st.session_state[SS_BUILD_IN_PROGRESS] = index_type
+    return job
+
+
+def _elapsed_label(started_at: float) -> str:
+    seconds = int(time.time() - started_at)
+    return "just now" if seconds < 5 else f"{seconds}s ago"
+
+
+def _render_active_build() -> None:
+    """Show the build that is running now -- also after the user changed page."""
+    job = st.session_state.get(SS_BUILD_JOB)
+    if not job or job.get("reported"):
+        return
+
+    label = job["label"]
+    log: list = st.session_state.get(SS_BUILD_LOG, [])
+    stages = job["stages"]
+
+    with st.status(f"Building {label} index (est. {job['estimate']})", expanded=True) as s:
+        st.write(
+            f"Calling indexing service - started {_elapsed_label(job['started_at'])}. "
+            "The build keeps running if you change page."
+        )
+
         progress_container = st.empty()
         status_container = st.empty()
-        
-        stages = {
-            "all": [
-                (5, "Preprocessing documents from database..."),
-                (10, "Building shared preprocessing file..."),
-                (20, "Preprocessing complete, starting TF-IDF..."),
-                (35, "Building TF-IDF index..."),
-                (45, "TF-IDF complete, starting BM25..."),
-                (60, "Building BM25 inverted index..."),
-                (70, "BM25 complete, starting Embedding..."),
-                (75, "Loading sentence transformer model..."),
-                (85, "Generating embeddings (batch 5/10)..."),
-                (95, "Saving all indices..."),
-                (100, "Complete!")
-            ],
-            "tfidf": [
-                (10, "Loading preprocessed documents..."),
-                (30, "Building vocabulary..."),
-                (50, "Computing TF-IDF weights..."),
-                (70, "Creating sparse matrix..."),
-                (90, "Saving index files..."),
-                (100, "Complete!")
-            ],
-            "bm25": [
-                (10, "Loading preprocessed documents..."),
-                (25, "Building inverted index..."),
-                (45, "Computing document frequencies..."),
-                (65, "Calculating IDF scores..."),
-                (85, "Finalizing index structure..."),
-                (100, "Complete!")
-            ],
-            "embedding": [
-                (5, "Loading sentence transformer model..."),
-                (10, "Model loaded, preparing documents..."),
-                (30, "Generating embeddings (batch 1/10)..."),
-                (50, "Generating embeddings (batch 5/10)..."),
-                (70, "Generating embeddings (batch 8/10)..."),
-                (90, "Saving embeddings..."),
-                (100, "Complete!")
-            ]
-        }
-        
-        current_stages = stages.get(index_type, [(50, "Building..."), (100, "Complete!")])
-        
-        import threading
-        import time
-        
-        result_holder = {"done": False, "resp": None}
-        
-        def _build_thread():
-            try:
-                result_holder["resp"] = indexing_api.build_index(
-                    index_type, 
-                    force_rebuild=force, 
-                    preprocessing_config=preprocessing_config,
-                    dataset_name=dataset_name
-                )
-            except Exception as e:
-                result_holder["resp"] = type('obj', (object,), {
-                    'ok': False, 
-                    'error': str(e),
-                    'data': None
-                })()
-            finally:
-                result_holder["done"] = True
-        
-        build_thread = threading.Thread(target=_build_thread, daemon=True)
-        build_thread.start()
-        
-        stage_idx = 0
-        start_time = time.time()
-        
-        while not result_holder["done"] and stage_idx < len(current_stages):
-            pct, msg = current_stages[stage_idx]
+
+        while not job["done"]:
+            stage_idx = min(job["stage"], len(stages) - 1)
+            pct, msg = stages[stage_idx]
             progress_container.progress(pct, text=f"{pct}% - {msg}")
-            status_container.caption(f"{msg}")
-            
-            elapsed = int(time.time() - start_time)
+
+            elapsed = int(time.time() - job["started_at"])
             if stage_idx > 0:
-                estimated_total = (elapsed / (stage_idx / len(current_stages)))
-                remaining = int(estimated_total - elapsed)
+                estimated_total = elapsed / (stage_idx / len(stages))
                 status_container.caption(
-                    f"{msg} | Elapsed: {elapsed}s | Est. remaining: {remaining}s"
+                    f"{msg} | Elapsed: {elapsed}s | Est. remaining: {int(estimated_total - elapsed)}s"
                 )
-            
+            else:
+                status_container.caption(msg)
+
+            job["stage"] = min(stage_idx + 1, len(stages) - 1)
             time.sleep(2)
-            stage_idx += 1
-        
-        build_thread.join(timeout=5)
-        
-        if not result_holder["done"]:
-            progress_container.progress(100, text="Waiting for completion...")
-            build_thread.join()
-        
+
         progress_container.progress(100, text="100% - Finalizing...")
         status_container.empty()
-        
-        resp = result_holder["resp"]
-        
-        if resp and resp.ok and isinstance(resp.data, dict):
-            # Handle "all" index type differently
-            if index_type == "all":
-                indices_results = resp.data.get("indices", {})
-                success_count = resp.data.get("success_count", 0)
-                total_count = resp.data.get("total_count", 3)
-                
-                if success_count == total_count:
-                    success_msg = f"All {total_count} indices built successfully!"
-                    s.update(label=success_msg, state="complete")
-                    st.balloons()
-                    log.append(f"[OK] All indices: {success_count}/{total_count} built")
-                else:
-                    warning_msg = f"Built {success_count}/{total_count} indices"
-                    s.update(label=warning_msg, state="complete")
-                    log.append(f"[WARN] Partial build: {success_count}/{total_count}")
-                
-                # Log individual results
-                for idx_name, idx_result in indices_results.items():
-                    if idx_result.get("status") == "success":
-                        log.append(f"[OK] {idx_name}: built successfully")
-                    elif idx_result.get("status") == "skipped":
-                        log.append(f"[SKIP] {idx_name}: {idx_result.get('message', 'already exists')}")
-                    else:
-                        log.append(f"[ERR] {idx_name}: {idx_result.get('message', 'unknown error')}")
-                
-                indexing_api.clear_index_status_cache()
-            else:
-                # Original single-index logic
-                status_val = resp.data.get("status", "unknown")
-                index_size = resp.data.get("index_size_mb", "N/A")
-                vocab_size = resp.data.get("vocab_size", "N/A")
-                
-                if status_val == "skipped":
-                    s.update(
-                        label=f"{label} already built - use Force Rebuild to overwrite.",
-                        state="complete",
-                    )
-                    log.append(f"[SKIP] {label}: {resp.data.get('message')}")
-                else:
-                    success_msg = f"{label} built successfully!"
-                    if index_size != "N/A":
-                        success_msg += f" | Size: {index_size} MB"
-                    if vocab_size != "N/A":
-                        success_msg += f" | Terms: {vocab_size:,}"
-                    
-                    s.update(label=success_msg, state="complete")
-                    st.balloons()
-                    log.append(f"[OK] {label}: size={index_size}MB, vocab={vocab_size}")
-                
-                indexing_api.clear_index_status_cache()
-        else:
-            error_msg = resp.error if resp else "Unknown error from indexing service."
-            s.update(label=f"{label} build failed", state="error")
-            
-            # Check if error is related to missing dataset in database AND dataset is actually not in DB
-            if dataset_in_db is False and ("not uploaded to the database" in error_msg or ("dataset" in error_msg.lower() and "database" in error_msg.lower())):
-                st.error("### Dataset Not Uploaded to Database")
-                
-                # Extract dataset name from error message if available
-                dataset_match = error_msg.split("Dataset '")[1].split("'")[0] if "Dataset '" in error_msg else "current dataset"
-                
-                st.markdown(f"**Problem:** The dataset **`{dataset_match}`** exists locally but is not in the database.")
-                st.markdown("**Impact:** Indices cannot be built because they require data from the database.")
-                
-                # Show detailed error in expander
-                with st.expander("View Full Error Details", expanded=False):
-                    st.code(error_msg, language="text")
-                
-                with st.container(border=True):
-                    st.markdown("### How to Fix This Issue")
-                    st.markdown("""
-                    **Follow these steps to upload your dataset and build indices:**
-                    
-                    1. **Navigate** to the **Dataset Management** page (use sidebar or button below)
-                    2. **Locate** your dataset in the **Downloaded Datasets** section
-                    3. **Click** the **Upload to Database** button next to the dataset name
-                    4. **Monitor** the upload progress bar (may take a few minutes for large datasets)
-                    5. **Verify** upload completion (you'll see a success message)
-                    6. **Return** to this page to build the index
-                    
-                    **Tip:** After uploading, refresh this page to see updated index build options.
-                    """)
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("Go to Dataset Management", key=f"goto_dataset_{index_type}", use_container_width=True, type="primary"):
-                            st.switch_page("app_pages/dataset.py")
-                    with col2:
-                        if st.button("Refresh Status", key=f"refresh_error_{index_type}", use_container_width=True):
-                            indexing_api.clear_index_status_cache()
-                            st.rerun()
-            else:
-                # For other errors, show a clear error panel
-                with st.container(border=True):
-                    st.markdown("### Error Details")
-                    st.code(error_msg, language="text")
-                    
-                    st.markdown("### Troubleshooting Tips")
-                    st.markdown("""
-                    - Check that the dataset is properly downloaded
-                    - Verify that all required services are running
-                    - Review the build log below for more details
-                    - Try refreshing the page and attempting again
-                    """)
-            
-            log.append(f"[ERR] {label}: {error_msg}")
 
+        resp = job["resp"]
+        if resp and resp.ok and isinstance(resp.data, dict):
+            _report_build_success(resp, s, job["index_type"], label, log)
+        else:
+            _report_build_failure(
+                resp, s, job["index_type"], job.get("dataset_in_db", True), label, log
+            )
+
+    job["reported"] = True
+    st.session_state[SS_BUILD_IN_PROGRESS] = False
     st.session_state[SS_BUILD_LOG] = log[-50:]
+
+
+def _report_build_success(resp, s, index_type: str, label: str, log: list) -> None:
+    """Render a completed build (single index or the combined ``all`` run)."""
+    # Handle "all" index type differently
+    if index_type == "all":
+        indices_results = resp.data.get("indices", {})
+        success_count = resp.data.get("success_count", 0)
+        total_count = resp.data.get("total_count", 3)
+
+        if success_count == total_count:
+            success_msg = f"All {total_count} indices built successfully!"
+            s.update(label=success_msg, state="complete")
+            st.balloons()
+            log.append(f"[OK] All indices: {success_count}/{total_count} built")
+        else:
+            warning_msg = f"Built {success_count}/{total_count} indices"
+            s.update(label=warning_msg, state="complete")
+            log.append(f"[WARN] Partial build: {success_count}/{total_count}")
+
+        # Log individual results
+        for idx_name, idx_result in indices_results.items():
+            if idx_result.get("status") == "success":
+                log.append(f"[OK] {idx_name}: built successfully")
+            elif idx_result.get("status") == "skipped":
+                log.append(f"[SKIP] {idx_name}: {idx_result.get('message', 'already exists')}")
+            else:
+                log.append(f"[ERR] {idx_name}: {idx_result.get('message', 'unknown error')}")
+
+        indexing_api.clear_index_status_cache()
+    else:
+        # Original single-index logic
+        status_val = resp.data.get("status", "unknown")
+        index_size = resp.data.get("index_size_mb", "N/A")
+        vocab_size = resp.data.get("vocab_size", "N/A")
+
+        if status_val == "skipped":
+            s.update(
+                label=f"{label} already built - use Force Rebuild to overwrite.",
+                state="complete",
+            )
+            log.append(f"[SKIP] {label}: {resp.data.get('message')}")
+        else:
+            success_msg = f"{label} built successfully!"
+            if index_size != "N/A":
+                success_msg += f" | Size: {index_size} MB"
+            if vocab_size != "N/A":
+                success_msg += f" | Terms: {vocab_size:,}"
+
+            s.update(label=success_msg, state="complete")
+            st.balloons()
+            log.append(f"[OK] {label}: size={index_size}MB, vocab={vocab_size}")
+
+    indexing_api.clear_index_status_cache()
+
+
+def _report_build_failure(resp, s, index_type: str, dataset_in_db: bool, label: str, log: list) -> None:
+    """Render a failed build, with a dedicated panel when the dataset is missing from the DB."""
+    error_msg = resp.error if resp else "Unknown error from indexing service."
+    s.update(label=f"{label} build failed", state="error")
+
+    # Check if error is related to missing dataset in database AND dataset is actually not in DB
+    if dataset_in_db is False and ("not uploaded to the database" in error_msg or ("dataset" in error_msg.lower() and "database" in error_msg.lower())):
+        st.error("### Dataset Not Uploaded to Database")
+
+        # Extract dataset name from error message if available
+        dataset_match = error_msg.split("Dataset '")[1].split("'")[0] if "Dataset '" in error_msg else "current dataset"
+
+        st.markdown(f"**Problem:** The dataset **`{dataset_match}`** exists locally but is not in the database.")
+        st.markdown("**Impact:** Indices cannot be built because they require data from the database.")
+
+        # Show detailed error in expander
+        with st.expander("View Full Error Details", expanded=False):
+            st.code(error_msg, language="text")
+
+        with st.container(border=True):
+            st.markdown("### How to Fix This Issue")
+            st.markdown("""
+            **Follow these steps to upload your dataset and build indices:**
+
+            1. **Navigate** to the **Dataset Management** page (use sidebar or button below)
+            2. **Locate** your dataset in the **Downloaded Datasets** section
+            3. **Click** the **Upload to Database** button next to the dataset name
+            4. **Monitor** the upload progress bar (may take a few minutes for large datasets)
+            5. **Verify** upload completion (you'll see a success message)
+            6. **Return** to this page to build the index
+
+            **Tip:** After uploading, refresh this page to see updated index build options.
+            """)
+
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("Go to Dataset Management", key=f"goto_dataset_{index_type}", use_container_width=True, type="primary"):
+                    st.switch_page("app_pages/dataset.py")
+            with col2:
+                if st.button("Refresh Status", key=f"refresh_error_{index_type}", use_container_width=True):
+                    indexing_api.clear_index_status_cache()
+                    st.rerun()
+    else:
+        # For other errors, show a clear error panel
+        with st.container(border=True):
+            st.markdown("### Error Details")
+            st.code(error_msg, language="text")
+
+            st.markdown("### Troubleshooting Tips")
+            st.markdown("""
+            - Check that the dataset is properly downloaded
+            - Verify that all required services are running
+            - Review the build log below for more details
+            - Try refreshing the page and attempting again
+            """)
+
+    log.append(f"[ERR] {label}: {error_msg}")
+
+
+def _build_single(index_type: str, force: bool, preprocessing_config: dict | None = None, dataset_in_db: bool = True, dataset_name: str = None) -> None:
+    """Build one index (or all of them) with live progress and a build log entry."""
+    running = st.session_state.get(SS_BUILD_JOB)
+    if running and not running.get("reported"):
+        st.warning(
+            f"A build of **{running['label']}** is already running — showing its progress."
+        )
+        _render_active_build()
+        return
+
+    label, estimate = _index_label(index_type)
+    _start_build_job(
+        index_type,
+        label,
+        estimate,
+        force,
+        preprocessing_config,
+        dataset_name,
+        dataset_in_db,
+    )
+    _render_active_build()
 
 
 def _on_dataset_change():
@@ -498,6 +573,10 @@ def render() -> None:
     st.markdown("## Index Management")
     _show_dataset_change_error()
 
+    # A build started earlier keeps going while the user visits other pages;
+    # this re-attaches the progress UI when they come back.
+    _render_active_build()
+
     selected_dataset, dataset_in_db = _render_dataset_selector()
     if selected_dataset is None:
         return
@@ -555,15 +634,13 @@ def _render_dataset_selector() -> tuple[str | None, bool]:
     if "_previous_dataset" not in st.session_state:
         st.session_state["_previous_dataset"] = current_dataset
     
-    # Dataset selector without default selection - always starts empty with placeholder
-    selected_dataset = st.selectbox(
-        "Select Dataset",
-        options=available_datasets,
-        index=None,
-        placeholder="Choose a dataset to work with...",
+    # Shared selector: the dataset picked on another page is preselected here
+    selected_dataset = dataset_selector(
+        available_datasets,
         key="dataset_selector",
+        placeholder="Choose a dataset to work with...",
         on_change=_on_dataset_change,
-        help="Only shows datasets that are downloaded locally AND uploaded to database"
+        help="Only shows datasets that are downloaded locally AND uploaded to database",
     )
     
     # Check if dataset is uploaded to database (should always be true now, but keep for safety)

@@ -32,6 +32,25 @@ section[data-testid="stSidebar"] > div:first-child {
     margin-top: 0 !important;
 }
 
+/* Remove the empty strip above the first sidebar item (the user-content box
+   reserves 6rem to clear the collapse button, which is hidden in theme.css) */
+section[data-testid="stSidebar"] div[data-testid="stSidebarHeader"] {
+    display: none !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+section[data-testid="stSidebar"] div[data-testid="stSidebarUserContent"] {
+    padding-top: 0.5rem !important;
+    margin-top: 0 !important;
+}
+
+section[data-testid="stSidebar"] div[data-testid="stSidebarContent"] {
+    padding-top: 0 !important;
+}
+
 /* Force header to have zero height */
 header[data-testid="stHeader"] {
     height: 0 !important;

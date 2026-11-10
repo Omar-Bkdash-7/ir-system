@@ -3,6 +3,7 @@ Dataset page: browser, download with progress, local list + delete, DB upload.
 """
 from __future__ import annotations
 
+import re
 import time
 import streamlit as st
 
@@ -338,12 +339,82 @@ def _render_local_datasets():
 # ---------------------------------------------------------------------------
 # Section: upload to PostgreSQL
 # ---------------------------------------------------------------------------
-def _render_db_upload():
-    st.markdown("### Database Management")
+def _parse_size_to_mb(size_str):
+    """Convert PostgreSQL size string to MB."""
+    if not size_str or size_str == '—':
+        return 0.0
 
-    # Show current database status
-    db_resp = indexing_api.get_db_info()
-    
+    # Remove all spaces
+    size_str = size_str.replace(' ', '')
+
+    # Extract number and unit
+    import re
+    match = re.match(r'([\d.]+)([A-Za-z]+)', size_str)
+    if not match:
+        return 0.0
+
+    value = float(match.group(1))
+    unit = match.group(2).upper()
+
+    # Convert to MB
+    if unit in ['B', 'BYTES']:
+        return value / (1024 * 1024)
+    elif unit in ['KB', 'KIB']:
+        return value / 1024
+    elif unit in ['MB', 'MIB']:
+        return value
+    elif unit in ['GB', 'GIB']:
+        return value * 1024
+    elif unit in ['TB', 'TIB']:
+        return value * 1024 * 1024
+    else:
+        return 0.0
+
+
+def _render_db_dataset_row(ds: dict) -> None:
+    """One row of the DB table: dataset, table, doc count, delete (with confirmation)."""
+    ds_id = ds.get("dataset_id", "—")
+    table_name = ds.get("table_name", "—")
+    doc_count = ds.get("doc_count", 0)
+    size = ds.get("size", "—")
+
+    cols = st.columns([3, 2, 1, 1])
+    cols[0].write(ds_id)
+    cols[1].write(table_name)
+    cols[2].write(f"{doc_count:,}")
+
+    confirm_key = f"confirm_db_{ds_id}"
+
+    with cols[3]:
+        if st.button("🗑️", key=f"del_db_{ds_id}", help=f"Delete {ds_id} from DB",
+                     use_container_width=True):
+            st.session_state[confirm_key] = True
+
+    if st.session_state.get(confirm_key):
+        st.warning(
+            f"⚠️ Are you sure you want to **permanently delete** `{ds_id}` from database? "
+            f"This will drop the table with **{doc_count:,}** documents and cannot be undone."
+        )
+        yes_col, no_col = st.columns(2)
+        with yes_col:
+            if st.button("Yes, delete from DB", type="primary", key=f"yes_db_{ds_id}"):
+                del_resp = indexing_api.delete_dataset_from_db(ds_id)
+                if del_resp.ok:
+                    st.success(f"✅ Deleted `{ds_id}` from database.")
+                    gateway.clear_dataset_info_cache()
+                    indexing_api.clear_index_status_cache()
+                else:
+                    st.error(f"Delete failed: {del_resp.error}")
+                st.session_state.pop(confirm_key, None)
+                st.rerun()
+        with no_col:
+            if st.button("Cancel", key=f"no_db_{ds_id}"):
+                st.session_state.pop(confirm_key, None)
+                st.rerun()
+
+
+def _render_db_summary(db_resp) -> None:
+    """Database metrics, the dataset table, and the total on-disk size."""
     if db_resp.ok and isinstance(db_resp.data, dict):
         total_tables = db_resp.data.get("total_tables", 0)
         total_docs = db_resp.data.get("total_documents", 0)
@@ -369,78 +440,11 @@ def _render_db_upload():
             
             # Dataset rows
             for ds in datasets:
-                ds_id = ds.get("dataset_id", "—")
-                table_name = ds.get("table_name", "—")
-                doc_count = ds.get("doc_count", 0)
-                size = ds.get("size", "—")
-                
-                cols = st.columns([3, 2, 1, 1])
-                cols[0].write(ds_id)
-                cols[1].write(table_name)
-                cols[2].write(f"{doc_count:,}")
-                
-                confirm_key = f"confirm_db_{ds_id}"
-                
-                with cols[3]:
-                    if st.button("🗑️", key=f"del_db_{ds_id}", help=f"Delete {ds_id} from DB",
-                                 use_container_width=True):
-                        st.session_state[confirm_key] = True
-                
-                if st.session_state.get(confirm_key):
-                    st.warning(
-                        f"⚠️ Are you sure you want to **permanently delete** `{ds_id}` from database? "
-                        f"This will drop the table with **{doc_count:,}** documents and cannot be undone."
-                    )
-                    yes_col, no_col = st.columns(2)
-                    with yes_col:
-                        if st.button("Yes, delete from DB", type="primary", key=f"yes_db_{ds_id}"):
-                            del_resp = indexing_api.delete_dataset_from_db(ds_id)
-                            if del_resp.ok:
-                                st.success(f"✅ Deleted `{ds_id}` from database.")
-                                gateway.clear_dataset_info_cache()
-                                indexing_api.clear_index_status_cache()
-                            else:
-                                st.error(f"Delete failed: {del_resp.error}")
-                            st.session_state.pop(confirm_key, None)
-                            st.rerun()
-                    with no_col:
-                        if st.button("Cancel", key=f"no_db_{ds_id}"):
-                            st.session_state.pop(confirm_key, None)
-                            st.rerun()
+                _render_db_dataset_row(ds)
             
             # Calculate total size properly
-            def parse_size_to_mb(size_str):
-                """Convert PostgreSQL size string to MB."""
-                if not size_str or size_str == '—':
-                    return 0.0
-                
-                # Remove all spaces
-                size_str = size_str.replace(' ', '')
-                
-                # Extract number and unit
-                import re
-                match = re.match(r'([\d.]+)([A-Za-z]+)', size_str)
-                if not match:
-                    return 0.0
-                
-                value = float(match.group(1))
-                unit = match.group(2).upper()
-                
-                # Convert to MB
-                if unit in ['B', 'BYTES']:
-                    return value / (1024 * 1024)
-                elif unit in ['KB', 'KIB']:
-                    return value / 1024
-                elif unit in ['MB', 'MIB']:
-                    return value
-                elif unit in ['GB', 'GIB']:
-                    return value * 1024
-                elif unit in ['TB', 'TIB']:
-                    return value * 1024 * 1024
-                else:
-                    return 0.0
-            
-            total_size_mb = sum(parse_size_to_mb(ds.get('size', '0')) for ds in datasets)
+
+            total_size_mb = sum(_parse_size_to_mb(ds.get('size', '0')) for ds in datasets)
             
             if total_size_mb >= 1024:
                 st.caption(f"💾 Total size: {total_size_mb / 1024:.2f} GB")
@@ -450,12 +454,10 @@ def _render_db_upload():
             st.info("📭 No datasets in database yet.")
     else:
         st.warning("⚠️ Could not reach database info endpoint.")
-    
-    st.divider()
-    
-    # Upload section
-    st.markdown("#### Upload Dataset to Database")
-    
+
+
+def _render_db_upload_form(db_resp) -> tuple[str | None, bool, bool]:
+    """Dataset picker + upload button. Returns (upload_id, do_upload, is_in_db)."""
     # Get list of local datasets
     local_resp = indexing_api.list_local_datasets()
     local_datasets = []
@@ -508,9 +510,66 @@ def _render_db_upload():
     if upload_id and is_in_db:
         st.info(f"ℹ️ Dataset `{upload_id}` is already in database. Re-uploading will drop the old table and create a new one.")
 
-    if not do_upload or not upload_id:
-        return
+    return upload_id, do_upload, is_in_db
 
+
+def _render_db_upload_error(up_resp, s, upload_id: str) -> None:
+    """Upload failure: corruption repair flow, or the raw error."""
+    s.update(label="❌ Upload failed", state="error")
+    error_msg = up_resp.error or "Unknown error"
+
+    # Check if it's a corruption error
+    if "corrupted" in error_msg.lower() or "decompression" in error_msg.lower() or "lz4" in error_msg.lower():
+        st.error("### 🔴 Dataset Files Corrupted")
+
+        st.markdown("""
+        The dataset files appear to be **corrupted or incomplete**. This usually happens when:
+        - Download was interrupted
+        - Network connection was lost during download
+        - Disk space was insufficient
+        """)
+
+        st.warning("**📋 Solution:** Click the button below to automatically fix the dataset.")
+
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            if st.button("🔧 Fix Corrupted Dataset", type="primary", use_container_width=True, key="fix_corrupted"):
+                with st.spinner(f"Fixing corrupted dataset `{upload_id}`..."):
+                    st.info("⏳ Deleting corrupted files...")
+                    fix_resp = indexing_api.fix_corrupted_dataset(upload_id)
+
+                    if fix_resp.ok and isinstance(fix_resp.data, dict):
+                        counts = fix_resp.data.get("counts", {})
+                        docs = counts.get("documents", 0)
+                        queries = counts.get("queries", 0)
+                        qrels = counts.get("qrels", 0)
+
+                        st.success(f"""
+                        ✅ **Dataset fixed successfully!**
+
+                        - Documents: {docs:,}
+                        - Queries: {queries:,}
+                        - Qrels: {qrels:,}
+                        """)
+
+                        st.info("💡 You can now try uploading to database again.")
+                        gateway.clear_dataset_info_cache()
+                        st.rerun()
+                    else:
+                        st.error(f"❌ Failed to fix dataset: {fix_resp.error}")
+
+        with col2:
+            with st.expander("🔍 See error details"):
+                st.code(error_msg, language="text")
+    else:
+        st.error(f"**Error:** {error_msg}")
+
+        with st.expander("🔍 See full error"):
+            st.code(error_msg, language="text")
+
+
+def _run_db_upload(upload_id: str) -> None:
+    """Stream a local dataset into PostgreSQL and report the outcome."""
     with st.status(f"Uploading `{upload_id}` to PostgreSQL…", expanded=True) as s:
         st.write("Streaming documents in batches of 1 000…")
         up_resp = indexing_api.upload_to_db(upload_id)
@@ -524,57 +583,29 @@ def _render_db_upload():
         gateway.clear_dataset_info_cache()
         st.rerun()
     else:
-        s.update(label="❌ Upload failed", state="error")
-        error_msg = up_resp.error or "Unknown error"
-        
-        # Check if it's a corruption error
-        if "corrupted" in error_msg.lower() or "decompression" in error_msg.lower() or "lz4" in error_msg.lower():
-            st.error("### 🔴 Dataset Files Corrupted")
-            
-            st.markdown("""
-            The dataset files appear to be **corrupted or incomplete**. This usually happens when:
-            - Download was interrupted
-            - Network connection was lost during download
-            - Disk space was insufficient
-            """)
-            
-            st.warning("**📋 Solution:** Click the button below to automatically fix the dataset.")
-            
-            col1, col2 = st.columns([1, 2])
-            with col1:
-                if st.button("🔧 Fix Corrupted Dataset", type="primary", use_container_width=True, key="fix_corrupted"):
-                    with st.spinner(f"Fixing corrupted dataset `{upload_id}`..."):
-                        st.info("⏳ Deleting corrupted files...")
-                        fix_resp = indexing_api.fix_corrupted_dataset(upload_id)
-                        
-                        if fix_resp.ok and isinstance(fix_resp.data, dict):
-                            counts = fix_resp.data.get("counts", {})
-                            docs = counts.get("documents", 0)
-                            queries = counts.get("queries", 0)
-                            qrels = counts.get("qrels", 0)
-                            
-                            st.success(f"""
-                            ✅ **Dataset fixed successfully!**
-                            
-                            - Documents: {docs:,}
-                            - Queries: {queries:,}
-                            - Qrels: {qrels:,}
-                            """)
-                            
-                            st.info("💡 You can now try uploading to database again.")
-                            gateway.clear_dataset_info_cache()
-                            st.rerun()
-                        else:
-                            st.error(f"❌ Failed to fix dataset: {fix_resp.error}")
-            
-            with col2:
-                with st.expander("🔍 See error details"):
-                    st.code(error_msg, language="text")
-        else:
-            st.error(f"**Error:** {error_msg}")
-            
-            with st.expander("🔍 See full error"):
-                st.code(error_msg, language="text")
+        _render_db_upload_error(up_resp, s, upload_id)
+
+
+def _render_db_upload() -> None:
+    """Database Management section: what is stored, and uploading a local dataset."""
+    st.markdown("### Database Management")
+
+    db_resp = indexing_api.get_db_info()
+    _render_db_summary(db_resp)
+
+    st.divider()
+
+    st.markdown("#### Upload Dataset to Database")
+
+    upload_id, do_upload, is_in_db = _render_db_upload_form(db_resp)
+
+    if upload_id and is_in_db:
+        st.info(f"ℹ️ Dataset `{upload_id}` is already in database. Re-uploading will drop the old table and create a new one.")
+
+    if not do_upload or not upload_id:
+        return
+
+    _run_db_upload(upload_id)
 
 
 # ---------------------------------------------------------------------------
