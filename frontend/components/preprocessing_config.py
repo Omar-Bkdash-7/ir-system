@@ -6,12 +6,11 @@ render_preprocessing_preset_selector() — quick preset picker that populates se
 """
 from __future__ import annotations
 
-from typing import Optional
-
 import streamlit as st
 
 import config
 from constants import SS_PREPROCESSING_CONFIG, SS_PREPROCESSING_PRESET
+from ui_style import inject_style
 
 
 def _get_current_config() -> dict:
@@ -124,21 +123,7 @@ def render_preprocessing_config(key_prefix: str = "prep") -> dict:
         else:
             cfg["max_token_length"] = None
 
-    st.markdown(
-        """
-        <style>
-        div[role="radiogroup"] label[data-baseweb="radio"] > div:first-child {
-            display: none !important;
-        }
-        
-        div[role="radiogroup"] label[data-baseweb="radio"] > div:nth-child(2) {
-            margin-left: 0 !important;
-            padding-left: 5px !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    inject_style("preprocessing_radio")
 
     st.markdown(
         '<div class="ir-eyebrow" style="margin-top:10px">Morphological Processing</div>',

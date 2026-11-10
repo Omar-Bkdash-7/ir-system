@@ -1,0 +1,9 @@
+/* tabs — injected where it was previously inlined in Python. */
+
+div[data-baseweb="tab-list"] {
+    gap: 16px !important;
+}
+button[data-baseweb="tab"] {
+    padding: 8px 18px !important;
+    border-radius: 8px !important;
+}

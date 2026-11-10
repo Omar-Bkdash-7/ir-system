@@ -4,7 +4,6 @@ Sidebar component — always visible.
 from __future__ import annotations
 
 import time
-from typing import Optional
 
 import streamlit as st
 
@@ -18,6 +17,7 @@ from constants import (
     SS_LAST_REFRESH_TIME,
     SS_SELECTED_PAGE,
 )
+from ui_style import inject_style
 
 _PAGES = [
     {"key": "guide", "label": "User Guide", "icon": "📘"},
@@ -39,31 +39,7 @@ def render_sidebar() -> None:
     """Renders the full sidebar. Navigation lives in session_state[SS_SELECTED_PAGE]."""
     
     # Apply CSS for left-aligned buttons
-    st.markdown(
-        """
-        <style>
-        /* Align sidebar navigation to left */
-        [data-testid="stSidebarNav"] {
-            background-position: 0px;
-        }
-        
-        /* Left-align all sidebar buttons */
-        section[data-testid="stSidebar"] div.stButton > button {
-            width: 100%;
-            text-align: left;
-            justify-content: flex-start;
-            padding-left: 0.75rem;
-        }
-        
-        /* Ensure button content (icon + text) stays left */
-        section[data-testid="stSidebar"] div.stButton > button > div {
-            justify-content: flex-start;
-            text-align: left;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
+    inject_style("sidebar_nav")
     
     with st.sidebar:
 

@@ -201,6 +201,21 @@ def clear_datasets_metadata_cache() -> None:
     list_datasets_metadata.clear()
 
 
+def get_dataset_metadata(dataset_id: str) -> dict | None:
+    """
+    Metadata row of a single dataset, taken from the cached `/datasets/metadata` listing.
+
+    Returns None when the dataset is unknown or the indexing service is unreachable.
+    """
+    response = list_datasets_metadata()
+    if not response.ok or not isinstance(response.data, dict):
+        return None
+    return next(
+        (ds for ds in response.data.get("datasets", []) if ds.get("dataset_name") == dataset_id),
+        None,
+    )
+
+
 def fix_corrupted_dataset(dataset_id: str) -> APIResponse:
     """Fix corrupted dataset by deleting and re-downloading."""
     return post(

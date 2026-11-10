@@ -6,7 +6,7 @@ import numpy as np
 from pathlib import Path
 
 import config
-from api.client import get, post, delete
+import api.clustering as clustering_api
 import api.indexing as indexing_api
 
 
@@ -104,11 +104,6 @@ def _display_dataset_info(dataset: str):
 
 
 def render():
-    """Main entry point for the clustering page."""
-    render_clustering_page()
-
-
-def render_clustering_page():
     st.title("🗂️ Document Clustering & Topic Detection")
     st.markdown(
         """
@@ -248,10 +243,7 @@ def render_clustering_page():
         # Handle delete
         if delete_button:
             with st.spinner("Deleting clusters..."):
-                response = delete(
-                    f"{config.CLUSTERING_URL}/clusters/{dataset}",
-                    timeout=30,
-                )
+                response = clustering_api.delete_run(dataset)
                 if response.ok:
                     st.success("✅ Clusters deleted successfully!")
                     if "clustering_result" in st.session_state:
@@ -277,18 +269,13 @@ def render_clustering_page():
     # Run clustering
     if run_clustering:
         with st.spinner("Clustering documents... This may take a few minutes."):
-            payload = {
-                "dataset": dataset,
-                "min_cluster_size": min_cluster_size,
-                "min_samples": min_samples,
-                "metric": metric,
-                "force_recompute": force_recompute,
-            }
-            
-            response = post(
-                f"{config.CLUSTERING_URL}/cluster",
-                json=payload,
-                timeout=600,
+            response = clustering_api.run(
+                dataset,
+                min_cluster_size=min_cluster_size,
+                min_samples=min_samples,
+                metric=metric,
+                force_recompute=force_recompute,
+                long_run=True,
             )
             
             if response.ok:
@@ -337,13 +324,13 @@ def render_clustering_page():
 
 def _get_clustering_status(dataset: str) -> Optional[Dict]:
     """Get clustering status for a dataset."""
-    response = get(f"{config.CLUSTERING_URL}/status/{dataset}", timeout=10)
+    response = clustering_api.status(dataset)
     return response.data if response.ok else None
 
 
 def _load_clusters(dataset: str) -> Optional[Dict]:
     """Load cluster data from backend."""
-    response = get(f"{config.CLUSTERING_URL}/clusters/{dataset}", timeout=30)
+    response = clustering_api.clusters(dataset)
     return response.data if response.ok else None
 
 

@@ -18,6 +18,7 @@ import streamlit as st
 
 import config
 import api.gateway as gateway
+import api.indexing as indexing_api
 from api.client import APIResponse
 from components.bm25_params import render_bm25_params
 from components.preprocessing_config import (
@@ -42,30 +43,13 @@ from constants import (
     SS_SESSION_ID,
     SS_SELECTED_DATASET,
 )
+from ui_style import inject_style
 from utils.dataset_utils import get_available_datasets, get_dataset_display_name
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Dataset metadata helper
 # ─────────────────────────────────────────────────────────────────────────────
-
-@st.cache_data(ttl=300, show_spinner=False)
-def _get_dataset_metadata(dataset_id: str) -> dict | None:
-    """Get metadata for a specific dataset (cached)."""
-    import api.indexing as indexing_api
-    
-    metadata_resp = indexing_api.list_datasets_metadata()
-    
-    if metadata_resp.ok and isinstance(metadata_resp.data, dict):
-        all_datasets = metadata_resp.data.get("datasets", [])
-        
-        # Find metadata for the requested dataset
-        return next(
-            (ds for ds in all_datasets if ds.get("dataset_name") == dataset_id),
-            None
-        )
-    return None
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Internal helpers
@@ -332,22 +316,7 @@ def _tab_hybrid_serial() -> dict:
 
 def _tab_hybrid_parallel() -> dict:
     """Render Hybrid Parallel tab, return mode_cfg dict."""
-    st.markdown(
-        """
-        <style>
-        span[data-baseweb="tag"] span {
-            color: #0f172a !important;
-            font-weight: 600 !important;
-        }
-
-        span[data-baseweb="tag"] svg {
-            fill: #0f172a !important;
-            color: #0f172a !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+    inject_style("dataframe_tags")
 
     st.markdown("##### Parallel fusion across multiple models")
 
@@ -464,20 +433,7 @@ def _tab_hybrid_parallel() -> dict:
 def render() -> None:
     st.markdown("## 🔍 Search")
 
-    st.markdown(
-        """
-        <style>
-        div[data-testid="stSelectbox"] {
-            margin-bottom: -10px;
-        }
-        hr {
-            margin-top: 0rem !important;
-            margin-bottom: 0.8rem !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+    inject_style("search_layout")
 
     # ── Dataset selector ───────────────────────────────────────────────────
     available_datasets = get_available_datasets()
@@ -522,7 +478,7 @@ def render() -> None:
     
     # ── Dataset Information Cards ──────────────────────────────────────────
     if st.session_state.get(SS_SELECTED_DATASET):
-        selected_metadata = _get_dataset_metadata(st.session_state[SS_SELECTED_DATASET])
+        selected_metadata = indexing_api.get_dataset_metadata(st.session_state[SS_SELECTED_DATASET])
         
         if selected_metadata:
             with st.container(border=True):

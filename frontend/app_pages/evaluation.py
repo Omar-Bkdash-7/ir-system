@@ -13,13 +13,13 @@ import streamlit as st
 
 import api.evaluation as eval_api
 import config
-from api.client import post
 from components.metrics_chart import (
     render_metrics_bar_chart,
     render_precision_at_k_curve,
     render_radar_chart,
     render_refinement_comparison_chart,
 )
+from ui_style import inject_style
 from utils.dataset_utils import get_available_datasets, get_dataset_display_name
 
 # Paths to pre-computed evaluation JSON files
@@ -161,22 +161,7 @@ def _run_evaluation_panel():
                 hybrid_models = [first_model, second_model]
             
             else:  # hybrid_parallel
-                st.markdown(
-                    """
-                    <style>
-                    span[data-baseweb="tag"] span {
-                        color: #0f172a !important;
-                        font-weight: 600 !important;
-                    }
-
-                    span[data-baseweb="tag"] svg {
-                        fill: #0f172a !important;
-                        color: #0f172a !important;
-                    }
-                    </style>
-                    """,
-                    unsafe_allow_html=True
-                )
+                inject_style("dataframe_tags")
                 hybrid_models = st.multiselect(
                     "Models (select 2+)",
                     ["tfidf", "bm25", "embedding"],
@@ -233,7 +218,7 @@ def _run_evaluation_panel():
                     
                     # Evaluation can take long time, especially for hybrid models
                     # Use extended timeout (100 minutes)
-                    response = post(f"{config.EVALUATION_URL}/evaluate", json=payload, timeout=6000)
+                    response = eval_api.run_evaluation(payload)
                     
                     if response.ok:
                         st.success(f"✅ Evaluation completed!")
@@ -267,8 +252,7 @@ def _evaluation_history_panel():
     """Show evaluation history from database"""
     with st.expander("📜 Evaluation History", expanded=False):
         try:
-            from api.client import get, delete
-            response = get(f"{config.EVALUATION_URL}/history?limit=100")
+            response = eval_api.get_history()
             
             if response.ok and response.data:
                 history = response.data.get("history", [])
@@ -293,8 +277,8 @@ def _evaluation_history_panel():
                                 if selected_model_to_delete != "Select...":
                                     with st.spinner(f"Deleting all results for {selected_model_to_delete}..."):
                                         try:
-                                            del_response = delete(
-                                                f"{config.EVALUATION_URL}/results?model={selected_model_to_delete}"
+                                            del_response = eval_api.delete_results(
+                                                model=selected_model_to_delete
                                             )
                                             if del_response.ok:
                                                 count = del_response.data.get("count", 0)
@@ -321,8 +305,8 @@ def _evaluation_history_panel():
                                 if selected_dataset_to_delete != "Select...":
                                     with st.spinner(f"Deleting all results for {selected_dataset_to_delete}..."):
                                         try:
-                                            del_response = delete(
-                                                f"{config.EVALUATION_URL}/results?dataset={selected_dataset_to_delete}"
+                                            del_response = eval_api.delete_results(
+                                                dataset=selected_dataset_to_delete
                                             )
                                             if del_response.ok:
                                                 count = del_response.data.get("count", 0)
@@ -371,7 +355,7 @@ def _evaluation_history_panel():
                             if st.button("🗑️", key=f"delete_eval_{item.get('id')}", help="Delete this evaluation"):
                                 with st.spinner("Deleting..."):
                                     try:
-                                        del_response = delete(f"{config.EVALUATION_URL}/result/{item.get('id')}")
+                                        del_response = eval_api.delete_result(item.get('id'))
                                         if del_response.ok:
                                             st.success("✅ Deleted")
                                             st.rerun()
@@ -442,25 +426,11 @@ def render() -> None:
 
     metrics = _normalize_metrics(raw_metrics)
 
-    st.markdown(
-        """
-        <style>
-        div[data-testid="stMetric"] {
-            display: flex !important;
-            flex-direction: row !important;
-            align-items: center !important;
-            justify-content: space-between !important;
-            height: 4.3rem !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True
-    )
+    inject_style("metric_row")
 
     # ── Get available datasets from history ────────────────────────────────
     try:
-        from api.client import get
-        history_resp = get(f"{config.EVALUATION_URL}/history?limit=100")
+        history_resp = eval_api.get_history()
         available_datasets = []
         
         if history_resp.ok and history_resp.data:
@@ -565,8 +535,7 @@ def render() -> None:
     table_rows = []
     
     try:
-        from api.client import get
-        history_resp = get(f"{config.EVALUATION_URL}/history?limit=100")
+        history_resp = eval_api.get_history()
         
         if history_resp.ok and history_resp.data:
             history = history_resp.data.get("history", [])
@@ -623,20 +592,7 @@ def render() -> None:
     
     st.divider()
     st.markdown("### 📈 Visual Analysis")
-    st.markdown(
-    """
-    <style>
-    div[data-baseweb="tab-list"] {
-        gap: 16px !important;
-    }
-    button[data-baseweb="tab"] {
-        padding: 8px 18px !important;
-        border-radius: 8px !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-    )
+    inject_style("tabs")
     tab1, tab2, tab3 = st.tabs(["📊 Bar Chart", "🕸️ Radar", "📉 Precision@K"])
     with tab1:
         render_metrics_bar_chart(metrics)
@@ -672,8 +628,7 @@ def render() -> None:
     
     # Try to get before/after data from history for current dataset
     try:
-        from api.client import get
-        history_resp = get(f"{config.EVALUATION_URL}/history?limit=100")
+        history_resp = eval_api.get_history()
         
         if history_resp.ok and history_resp.data:
             history = history_resp.data.get("history", [])

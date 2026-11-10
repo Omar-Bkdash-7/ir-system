@@ -1,0 +1,8 @@
+/* dataset local actions — injected where it was previously inlined in Python. */
+
+[data-testid="stButton"] button[kind="secondary"].delete-btn,
+div[data-delete-btn] button {
+    background-color: #dc2626 !important;
+    color: white !important;
+    border-color: #dc2626 !important;
+}

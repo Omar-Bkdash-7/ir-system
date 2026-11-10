@@ -47,22 +47,6 @@ def _get_datasets_in_db() -> list[str]:
     return []
 
 
-@st.cache_data(ttl=300, show_spinner=False)
-def _get_dataset_metadata(dataset_id: str) -> dict | None:
-    """Get metadata for a specific dataset (cached)."""
-    metadata_resp = indexing_api.list_datasets_metadata()
-    
-    if metadata_resp.ok and isinstance(metadata_resp.data, dict):
-        all_datasets = metadata_resp.data.get("datasets", [])
-        
-        # Find metadata for the requested dataset
-        return next(
-            (ds for ds in all_datasets if ds.get("dataset_name") == dataset_id),
-            None
-        )
-    return None
-
-
 def _render_preprocessing_config() -> dict | None:
     """Render preprocessing configuration options and return config dict."""
     
@@ -562,7 +546,7 @@ def render() -> None:
     
     # Show dataset info only if a dataset is selected (use cached metadata)
     if selected_dataset:
-        selected_metadata = _get_dataset_metadata(selected_dataset)
+        selected_metadata = indexing_api.get_dataset_metadata(selected_dataset)
         
         if selected_metadata:
             with st.container(border=True):
@@ -657,7 +641,7 @@ def render() -> None:
         if st.button("Refresh Status", use_container_width=True, key="idx_refresh"):
             indexing_api.clear_index_status_cache()
             _get_datasets_in_db.clear()
-            _get_dataset_metadata.clear()
+            indexing_api.clear_datasets_metadata_cache()
             st.rerun()
     
     with hdr_c4:

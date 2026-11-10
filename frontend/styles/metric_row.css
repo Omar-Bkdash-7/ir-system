@@ -1,0 +1,9 @@
+/* metric row — injected where it was previously inlined in Python. */
+
+div[data-testid="stMetric"] {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    height: 4.3rem !important;
+}

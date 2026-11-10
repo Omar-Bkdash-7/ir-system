@@ -257,6 +257,8 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm -T query
 
 `pytest.ini` limits collection to `tests/`, so standalone helper scripts under `scripts/` are not picked up.
 
+`tests/frontend` exercises the Streamlit app without a browser: retry/error normalization in `api/client.py`, the request payloads of the service clients, and the stylesheet contract (every `inject_style("name")` must resolve to `frontend/styles/name.css`). It imports `frontend/`, which the dev compose mounts into this service.
+
 ## 📊 Performance Optimizations
 
 ### Build Time

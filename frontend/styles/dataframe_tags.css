@@ -1,0 +1,11 @@
+/* dataframe tags — injected where it was previously inlined in Python. */
+
+span[data-baseweb="tag"] span {
+    color: #0f172a !important;
+    font-weight: 600 !important;
+}
+
+span[data-baseweb="tag"] svg {
+    fill: #0f172a !important;
+    color: #0f172a !important;
+}

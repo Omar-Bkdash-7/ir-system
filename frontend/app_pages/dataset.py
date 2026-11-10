@@ -10,6 +10,7 @@ import config
 import api.gateway as gateway
 import api.indexing as indexing_api
 from constants import SS_DATASET_VALIDATION_RESULT, SS_VALIDATION_IN_PROGRESS
+from ui_style import inject_style
 
 # ---------------------------------------------------------------------------
 # Curated catalogue (from ir-datasets.com/counts) — only rows with qrels
@@ -269,16 +270,7 @@ def _render_local_datasets():
     st.caption("Datasets already downloaded on the server.")
 
     # CSS to colour the delete buttons red
-    st.markdown("""
-        <style>
-        [data-testid="stButton"] button[kind="secondary"].delete-btn,
-        div[data-delete-btn] button {
-            background-color: #dc2626 !important;
-            color: white !important;
-            border-color: #dc2626 !important;
-        }
-        </style>
-    """, unsafe_allow_html=True)
+    inject_style("dataset_local_actions")
 
     if st.button("🔄 Refresh list", key="btn_refresh_local"):
         st.cache_data.clear()
@@ -299,19 +291,7 @@ def _render_local_datasets():
         col.markdown(f"**{lbl}**")
 
     # Single CSS block for all delete buttons — targets every button whose key starts with "del_"
-    st.markdown("""
-        <style>
-        div[data-testid="stButton"] > button[kind="secondary"] {
-            background-color: #dc2626;
-            color: white;
-            border: 1px solid #dc2626;
-        }
-        div[data-testid="stButton"] > button[kind="secondary"]:hover {
-            background-color: #b91c1c;
-            border-color: #b91c1c;
-        }
-        </style>
-    """, unsafe_allow_html=True)
+    inject_style("dataset_browser_rows")
 
     for ds in datasets:
         ds_id   = ds.get("dataset_id", "—")
@@ -380,19 +360,7 @@ def _render_db_upload():
             st.markdown("#### Datasets in Database")
             
             # CSS for delete buttons
-            st.markdown("""
-                <style>
-                div[data-testid="stButton"] > button.db-delete-btn {
-                    background-color: #dc2626 !important;
-                    color: white !important;
-                    border: 1px solid #dc2626 !important;
-                }
-                div[data-testid="stButton"] > button.db-delete-btn:hover {
-                    background-color: #b91c1c !important;
-                    border-color: #b91c1c !important;
-                }
-                </style>
-            """, unsafe_allow_html=True)
+            inject_style("dataset_db_actions")
             
             # Header row
             hdr = st.columns([3, 2, 1, 1])

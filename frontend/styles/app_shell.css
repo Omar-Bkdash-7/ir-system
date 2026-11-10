@@ -1,0 +1,41 @@
+/* App shell overrides — hide Streamlit's multipage nav and remove top spacing. */
+
+/* CRITICAL: Hide Streamlit's auto-generated multipage navigation */
+[data-testid="stSidebarNav"],
+nav[aria-label="Page navigation"],
+ul[data-testid="stSidebarNav"],
+section[data-testid="stSidebar"] nav,
+div[data-testid="stSidebarNav"],
+.css-1dp5vir,
+.css-17lntkn {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    width: 0 !important;
+    overflow: hidden !important;
+    position: absolute !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* Remove all top spacing from main content */
+.main .block-container,
+[data-testid="block-container"],
+.main > div:first-child {
+    padding-top: 0.5rem !important;
+    margin-top: 0 !important;
+}
+
+/* Remove all top spacing from sidebar */
+section[data-testid="stSidebar"] > div:first-child {
+    padding-top: 0.5rem !important;
+    margin-top: 0 !important;
+}
+
+/* Force header to have zero height */
+header[data-testid="stHeader"] {
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
+    display: none !important;
+}

@@ -17,6 +17,7 @@ from constants import (
     SS_REFINEMENT_HISTORY,
     SS_SESSION_ID,
 )
+from ui_style import inject_style
 
 
 def _diff_html(original: str, refined: str) -> str:
@@ -125,20 +126,7 @@ def render() -> None:
         if not applied:
             st.info("No refinements applied — query was already optimal.")
         else:
-            st.markdown(
-            """
-            <style>
-            div[data-baseweb="tab-list"] {
-                gap: 16px !important;
-            }
-            button[data-baseweb="tab"] {
-                padding: 8px 18px !important;
-                border-radius: 8px !important;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-            )
+            inject_style("tabs")
             tab1, tab2, tab3, tab4 = st.tabs([
                 "🔤 Spelling", "📚 Synonyms", "🧠 Semantic History", "✅ Final Result"
             ])

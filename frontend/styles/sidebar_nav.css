@@ -1,0 +1,20 @@
+/* sidebar nav — injected where it was previously inlined in Python. */
+
+/* Align sidebar navigation to left */
+[data-testid="stSidebarNav"] {
+    background-position: 0px;
+}
+
+/* Left-align all sidebar buttons */
+section[data-testid="stSidebar"] div.stButton > button {
+    width: 100%;
+    text-align: left;
+    justify-content: flex-start;
+    padding-left: 0.75rem;
+}
+
+/* Ensure button content (icon + text) stays left */
+section[data-testid="stSidebar"] div.stButton > button > div {
+    justify-content: flex-start;
+    text-align: left;
+}

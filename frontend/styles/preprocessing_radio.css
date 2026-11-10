@@ -1,0 +1,10 @@
+/* preprocessing radio — injected where it was previously inlined in Python. */
+
+div[role="radiogroup"] label[data-baseweb="radio"] > div:first-child {
+    display: none !important;
+}
+
+div[role="radiogroup"] label[data-baseweb="radio"] > div:nth-child(2) {
+    margin-left: 0 !important;
+    padding-left: 5px !important;
+}

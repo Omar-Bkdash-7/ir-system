@@ -1,0 +1,9 @@
+/* search layout — injected where it was previously inlined in Python. */
+
+div[data-testid="stSelectbox"] {
+    margin-bottom: -10px;
+}
+hr {
+    margin-top: 0rem !important;
+    margin-bottom: 0.8rem !important;
+}

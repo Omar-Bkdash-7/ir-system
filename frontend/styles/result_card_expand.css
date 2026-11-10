@@ -1,0 +1,11 @@
+/* Expandable result card — replaces the inline rules that were repeated per card. */
+
+.result-card__details { margin: 0; }
+.result-card__summary { list-style: none; cursor: pointer; }
+.result-card__summary::-webkit-details-marker { display: none; }
+.result-card__toggle { display: inline-block; margin-top: 8px; color: var(--ctp-blue); font-size: 0.85em; font-weight: 500; }
+.result-card__details[open] .result-card__snippet { display: none; }
+.result-card__details[open] .result-card__toggle::before { content: "▲ Show less"; }
+.result-card__details[open] .result-card__toggle { content: ""; }
+.result-card__details:not([open]) .result-card__full-text { display: none; }
+.result-card__full-text { margin-top: 8px; white-space: pre-wrap; }

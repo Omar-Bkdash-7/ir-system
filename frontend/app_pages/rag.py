@@ -1,15 +1,9 @@
 import streamlit as st
-import httpx
-import os
 from typing import Dict, Any, Optional, List
 
+import api.rag as rag_api
 from utils.dataset_utils import get_available_datasets
 
-API_URL = os.getenv("API_GATEWAY_URL", "http://api_gateway:8000")
-
-# Worst case for one generation: remote attempt(s) + loading the local model + CPU inference.
-# Keep this slightly above the API gateway timeout for /rag/generate (300 s).
-GENERATE_TIMEOUT = 305.0
 DOWNLOAD_POLL_SECONDS = 2
 
 MODE_LABELS = {
@@ -26,7 +20,7 @@ REMOTE_PROBLEMS = {
 }
 
 
-def render_rag_page():
+def render():
     st.title("RAG - Retrieval-Augmented Generation")
 
     st.markdown("""
@@ -143,33 +137,21 @@ def _get_available_datasets_for_rag() -> List[str]:
 
 
 def _fetch_rag_models() -> Optional[Dict[str, Any]]:
-    try:
-        response = httpx.get(f"{API_URL}/rag/models", timeout=5.0)
-        if response.status_code == 200:
-            return response.json()
-    except Exception:
-        pass
-    return None
+    response = rag_api.models()
+    return response.data if response.ok and isinstance(response.data, dict) else None
 
 
 def _fetch_local_model_status() -> Optional[Dict[str, Any]]:
-    try:
-        response = httpx.get(f"{API_URL}/rag/local-model", timeout=5.0)
-        if response.status_code == 200:
-            return response.json()
-    except Exception:
-        pass
-    return None
+    response = rag_api.local_model_status()
+    return response.data if response.ok and isinstance(response.data, dict) else None
 
 
 def _start_local_download() -> bool:
-    try:
-        response = httpx.post(f"{API_URL}/rag/local-model/download", timeout=15.0)
-        response.raise_for_status()
+    response = rag_api.start_local_model_download()
+    if response.ok:
         return True
-    except Exception as e:
-        st.error(f"Could not start the download: {e}")
-        return False
+    st.error(f"Could not start the download: {response.error}")
+    return False
 
 
 def _render_models_status(models: Optional[Dict[str, Any]]):
@@ -378,48 +360,28 @@ def _generate_rag_answer(
     temperature: float,
     max_tokens: int
 ) -> Dict[str, Any]:
-    try:
-        payload = {
-            "query": query,
-            "dataset": dataset,
-            "retrieval_model": "embedding",
-            "top_k": top_k,
-            "generation_config": {
-                "mode": mode,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-                "use_context": True
-            }
-        }
+    response = rag_api.generate(
+        query,
+        dataset,
+        top_k,
+        mode=mode,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
 
-        response = httpx.post(
-            f"{API_URL}/rag/generate",
-            json=payload,
-            timeout=GENERATE_TIMEOUT
-        )
-        response.raise_for_status()
-        return response.json()
+    if response.ok:
+        return response.data
 
-    except httpx.HTTPStatusError as e:
-        st.error(f"Error: {e.response.status_code} - {_error_detail(e.response)}")
-        return None
-    except httpx.ReadTimeout:
+    if response.reason == "timeout":
         st.error(
             "The request timed out. The local model can be slow on CPU: "
             "try fewer documents or a shorter answer length."
         )
-        return None
-    except Exception as e:
-        st.error(f"Error: {e}")
-        return None
-
-
-def _error_detail(response: httpx.Response) -> str:
-    try:
-        detail = response.json().get("detail", "")
-    except Exception:
-        detail = response.text
-    return str(detail)[:300]
+    elif response.status_code:
+        st.error(f"Error: {response.status_code} - {response.error}")
+    else:
+        st.error(f"Error: {response.error}")
+    return None
 
 
 def _display_results(response: Dict[str, Any]):
@@ -473,9 +435,5 @@ def _display_results(response: Dict[str, Any]):
                     st.divider()
 
 
-def render():
-    render_rag_page()
-
-
 if __name__ == "__main__":
-    render_rag_page()
+    render()

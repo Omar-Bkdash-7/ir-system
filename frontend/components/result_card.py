@@ -6,14 +6,18 @@ render_results_grid() — side-by-side columns when multiple models selected.
 """
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import streamlit as st
 
-from constants import SS_EXPANDED_DOCS
+from ui_style import load_css
 
 _RANK_BADGES = {1: ("#1 🥇", "top1"), 2: ("#2 🥈", "top2"), 3: ("#3 🥉", "top3")}
 _SNIPPET_LEN = 420
+
+# The card markup and its rules have to be one markdown element: splitting them
+# would add an extra empty block between consecutive result cards.
+_CARD_STYLE = f"<style>{load_css('result_card_expand')}</style>"
 
 
 def _score_bar(score: float) -> str:
@@ -66,17 +70,7 @@ def render_result_card(doc: Dict, rank: int, model_label: str = "") -> None:
             f'</details>'
             f'{_score_bar(score)}'
             f'</div>'
-            f'<style>'
-            f'.result-card__details {{ margin: 0; }}'
-            f'.result-card__summary {{ list-style: none; cursor: pointer; }}'
-            f'.result-card__summary::-webkit-details-marker {{ display: none; }}'
-            f'.result-card__toggle {{ display: inline-block; margin-top: 8px; color: var(--ctp-blue); font-size: 0.85em; font-weight: 500; }}'
-            f'.result-card__details[open] .result-card__snippet {{ display: none; }}'
-            f'.result-card__details[open] .result-card__toggle::before {{ content: "▲ Show less"; }}'
-            f'.result-card__details[open] .result-card__toggle {{ content: ""; }}'
-            f'.result-card__details:not([open]) .result-card__full-text {{ display: none; }}'
-            f'.result-card__full-text {{ margin-top: 8px; white-space: pre-wrap; }}'
-            f'</style>',
+            f'{_CARD_STYLE}',
             unsafe_allow_html=True,
         )
     else:

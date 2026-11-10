@@ -21,13 +21,20 @@ import config
 
 @dataclass
 class APIResponse:
-    """Normalized result of an API call, regardless of outcome."""
+    """
+    Normalized result of an API call, regardless of outcome.
+
+    `reason` is the coarse failure class so callers can branch without parsing
+    the message: "client" (4xx), "server" (5xx), "connection", "timeout" or
+    "request". It is None on success.
+    """
 
     ok: bool
     data: Any = None
     error: Optional[str] = None
     status_code: Optional[int] = None
     elapsed_ms: float = 0.0
+    reason: Optional[str] = None
 
     def __bool__(self) -> bool:
         return self.ok
@@ -53,6 +60,7 @@ def _request(method: str, url: str, *, timeout: Optional[int] = None,
     max_retries = max(1, max_retries)
     backoff = config.RETRY_BACKOFF_BASE_SECONDS
     last_error = "Unknown error"
+    reason = "request"
     started = time.perf_counter()
 
     for attempt in range(max_retries):
@@ -66,11 +74,12 @@ def _request(method: str, url: str, *, timeout: Optional[int] = None,
                     time.sleep(backoff)
                     backoff *= 2
                     continue
-                return APIResponse(False, None, last_error, response.status_code, elapsed_ms)
+                return APIResponse(False, None, last_error, response.status_code,
+                                   elapsed_ms, reason="server")
 
             if response.status_code >= 400:
                 return APIResponse(False, None, _extract_error_detail(response),
-                                    response.status_code, elapsed_ms)
+                                    response.status_code, elapsed_ms, reason="client")
 
             try:
                 payload = response.json()
@@ -80,17 +89,20 @@ def _request(method: str, url: str, *, timeout: Optional[int] = None,
 
         except requests.exceptions.ConnectionError:
             last_error = "Connection refused — the service may be offline"
+            reason = "connection"
         except requests.exceptions.Timeout:
             last_error = f"Request timed out after {timeout}s"
+            reason = "timeout"
         except requests.exceptions.RequestException as exc:  # noqa: BLE001
             last_error = f"Request error: {exc}"
+            reason = "request"
 
         if attempt < max_retries - 1:
             time.sleep(backoff)
             backoff *= 2
 
     elapsed_ms = (time.perf_counter() - started) * 1000
-    return APIResponse(False, None, last_error, None, elapsed_ms)
+    return APIResponse(False, None, last_error, None, elapsed_ms, reason=reason)
 
 
 def get(url: str, *, params: Optional[dict] = None, timeout: Optional[int] = None,

@@ -15,40 +15,6 @@ def render_model_card(model_name: str, metrics: Dict[str, float], rank: int = No
         metrics: Dictionary of metric values
         rank: Optional ranking position
     """
-    # Card styling
-    card_css = """
-    <style>
-    .model-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 12px;
-        padding: 20px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        margin: 10px 0;
-    }
-    .model-card-header {
-        color: white;
-        font-size: 24px;
-        font-weight: bold;
-        margin-bottom: 15px;
-    }
-    .metric-item {
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 8px;
-        padding: 10px;
-        margin: 5px 0;
-        color: white;
-    }
-    .metric-label {
-        font-size: 12px;
-        opacity: 0.8;
-    }
-    .metric-value {
-        font-size: 20px;
-        font-weight: bold;
-    }
-    </style>
-    """
-    
     with st.container():
         # Rank badge
         if rank:
