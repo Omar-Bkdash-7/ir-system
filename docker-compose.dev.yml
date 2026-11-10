@@ -159,6 +159,7 @@ services:
     volumes:
       - ./services:/app/services
       - ./tests:/app/tests
+      - ./pytest.ini:/app/pytest.ini
       - ./common:/app/common
       - ./configs:/app/configs
       - ./logs:/app/logs

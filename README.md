@@ -243,6 +243,20 @@ make down-volumes        # Stop + remove data
 make clean-all           # Remove everything
 ```
 
+### Tests
+
+The suite runs with pytest, which is installed in every image through `requirements/10-dev.txt` (no ad-hoc install needed after a rebuild):
+
+```bash
+# Whole suite inside the dev stack
+docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm -T query_refinement python -m pytest tests
+
+# One module only
+docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm -T query_refinement python -m pytest tests/query_refinement
+```
+
+`pytest.ini` limits collection to `tests/`, so standalone helper scripts under `scripts/` are not picked up.
+
 ## 📊 Performance Optimizations
 
 ### Build Time

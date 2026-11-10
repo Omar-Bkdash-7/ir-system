@@ -1,0 +1,8 @@
+# Test tooling only.
+# Installed by the shared base-builder stage, so `python -m pytest` works inside every service
+# image after a rebuild - no ad-hoc `pip install pytest` in a running container.
+-c constraints.txt
+
+pytest
+iniconfig
+pluggy

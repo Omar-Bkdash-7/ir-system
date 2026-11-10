@@ -112,6 +112,8 @@ idna==3.20
     #   anyio
     #   httpx
     #   requests
+iniconfig==2.1.0
+    # via -r requirements/10-dev.txt
 intel-openmp==2021.4.0
     # via mkl
 ir-datasets==0.6.3
@@ -223,6 +225,8 @@ plotly==5.21.0
     # via
     #   -r requirements/08-frontend.txt
     #   bertopic
+pluggy==1.6.0
+    # via -r requirements/10-dev.txt
 preshed==3.0.13
     # via
     #   spacy
@@ -257,6 +261,8 @@ pynndescent==0.6.0
     # via umap-learn
 pyspellchecker==0.8.1
     # via -r requirements/03-nlp.txt
+pytest==8.4.2
+    # via -r requirements/10-dev.txt
 python-dateutil==2.9.0.post0
     # via pandas
 python-dotenv==1.2.4

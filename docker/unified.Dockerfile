@@ -115,6 +115,10 @@ COPY requirements/*.txt /tmp/
 RUN --mount=type=cache,target=/root/.cache/pip \
     /opt/venv/bin/pip install -r /tmp/01-base.txt
 
+# Test tooling (pytest) lives in the shared base so every runtime image can run the suite as-is.
+RUN --mount=type=cache,target=/root/.cache/pip \
+    /opt/venv/bin/pip install -r /tmp/10-dev.txt
+
 # =============================================================================
 # Stage: ir-builder
 # IR-specific dependencies: ir-datasets, rank-bm25, ir-measures

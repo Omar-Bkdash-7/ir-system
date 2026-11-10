@@ -9,3 +9,6 @@
 -r 06-clustering.txt
 -r 07-ir.txt
 -r 08-frontend.txt
+
+# Test tooling
+-r 10-dev.txt
