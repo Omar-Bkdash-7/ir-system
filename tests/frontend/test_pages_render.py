@@ -99,3 +99,44 @@ def test_the_evaluation_page_degrades_gracefully_without_live_data(monkeypatch, 
     assert list(app.exception) == []
     # Either the bundled pre-computed snapshot renders, or the page says why it cannot.
     assert app.dataframe or app.warning
+
+
+READY = {"status": "ready", "index_size_mb": 12.5, "num_documents": 1398, "build_time": "2.1s"}
+
+
+def test_the_indexing_page_renders_with_a_selected_dataset(monkeypatch, frontend_dir):
+    """The page must render its actions, index cards and log without a dataset switch."""
+    import api.gateway as gateway
+    import api.indexing as indexing_api
+    import app_pages.indexing as page
+
+    monkeypatch.setattr(page, "_get_downloaded_datasets", lambda: ["cranfield"])
+    monkeypatch.setattr(
+        gateway,
+        "get_dataset_info_cached",
+        lambda: {"dataset_name": "cranfield", "doc_count": 1398, "query_count": 225, "qrel_count": 1837},
+    )
+    monkeypatch.setattr(
+        indexing_api,
+        "get_dataset_metadata",
+        lambda dataset: {
+            "dataset_name": dataset,
+            "doc_count": 1398,
+            "query_count": 225,
+            "qrel_count": 1837,
+        },
+    )
+    monkeypatch.setattr(indexing_api, "index_status", lambda *a, **k: StubResponse(data=READY))
+
+    app = AppTest.from_file(str(frontend_dir / "app.py"), default_timeout=180)
+    app.session_state["selected_page"] = "indexing"
+    app.session_state["dataset_selector"] = "cranfield"
+    app.run()
+
+    assert list(app.exception) == []
+    headings = " ".join(str(m.value) for m in app.markdown)
+    assert "Index Status" in headings
+    metrics = {str(m.label): m.value for m in app.metric}
+    assert metrics.get("Docs") == "1,398"
+    buttons = " ".join(str(b.label) for b in app.button)
+    assert "Build All Indices" in buttons

@@ -496,12 +496,37 @@ def _delete_single_index(dataset_name: str, index_type: str) -> None:
 
 def render() -> None:
     st.markdown("## Index Management")
-    
+    _show_dataset_change_error()
+
+    selected_dataset, dataset_in_db = _render_dataset_selector()
+    if selected_dataset is None:
+        return
+
+    st.divider()
+    preprocessing_config = _render_preprocessing_config()
+
+    st.divider()
+    force = _render_build_actions(selected_dataset, dataset_in_db, preprocessing_config)
+    _render_delete_all_dialog(selected_dataset)
+    _render_delete_all_execution(selected_dataset)
+
+    st.divider()
+    _render_index_status(selected_dataset, dataset_in_db, force, preprocessing_config)
+
+    st.divider()
+    _render_build_log()
+
+
+def _show_dataset_change_error() -> None:
+    """Report a rejected dataset change once, then drop the message."""
     # Show only error messages from dataset change
     if "dataset_change_error" in st.session_state:
         st.error(f"Validation failed: {st.session_state['dataset_change_error']}")
         del st.session_state["dataset_change_error"]
-    
+
+
+def _render_dataset_selector() -> tuple[str | None, bool]:
+    """Dataset picker plus its metadata card; (None, False) when there is nothing to index."""
     # Dataset selection at the top
     available_datasets = _get_downloaded_datasets()
     
@@ -524,7 +549,7 @@ def render() -> None:
         """)
         if st.button("📦 Go to Dataset Management", type="primary"):
             st.switch_page("app_pages/dataset.py")
-        return
+        return None, False
     
     # Initialize previous dataset tracker
     if "_previous_dataset" not in st.session_state:
@@ -568,14 +593,17 @@ def render() -> None:
                     st.metric("Qrels", f"{qrel_count:,}")
     else:
         st.info("Select a dataset to view its information and build indices.")
-        return
+        return None, False
 
-    st.divider()
+    return selected_dataset, dataset_in_db
 
-    preprocessing_config = _render_preprocessing_config()
-    
-    st.divider()
 
+def _render_build_actions(
+    selected_dataset: str,
+    dataset_in_db: bool,
+    preprocessing_config: dict | None,
+) -> bool:
+    """Force checkbox, Build All (with its confirmation), Refresh Status and Delete All."""
     hdr_c1, hdr_c2, hdr_c3, hdr_c4 = st.columns([2, 2, 2, 2])
     with hdr_c1:
         force = st.checkbox(
@@ -649,8 +677,11 @@ def render() -> None:
                      key="idx_delete_all", type="secondary"):
             st.session_state["_show_delete_confirmation"] = True
             st.rerun()
-    
-    # Show delete confirmation dialog if triggered
+    return force
+
+
+def _render_delete_all_dialog(selected_dataset: str) -> None:
+    """Confirmation dialog listing which index files would be deleted."""
     if st.session_state.get("_show_delete_confirmation", False):
         st.divider()
         st.error("### ⚠️ Confirm Deletion of Indices")
@@ -701,15 +732,24 @@ def render() -> None:
                 st.rerun()
         
         st.divider()
-    
+
+
+def _render_delete_all_execution(selected_dataset: str) -> None:
+    """Runs the deletion once the dialog was confirmed."""
     # Execute deletion if confirmed
     if st.session_state.get("_confirmed_delete", False):
         st.session_state["_confirmed_delete"] = False
         _delete_all_indices(selected_dataset)
         st.rerun()
 
-    st.divider()
 
+def _render_index_status(
+    selected_dataset: str,
+    dataset_in_db: bool,
+    force: bool,
+    preprocessing_config: dict | None,
+) -> None:
+    """One card per index, plus the per-index deletion confirmation."""
     st.markdown("### Index Status")
     st.caption("Build indices for the active dataset. Indices are stored as optimized files for fast retrieval.")
 
@@ -769,8 +809,9 @@ def render() -> None:
             st.divider()
             break  # Only show one dialog at a time
 
-    st.divider()
 
+def _render_build_log() -> None:
+    """Collapsed build log written by `_build_single`."""
     log = st.session_state.get(SS_BUILD_LOG, [])
     if log:
         with st.expander(f"Build log ({len(log)} entries)", expanded=False):
@@ -778,4 +819,3 @@ def render() -> None:
         if st.button("Clear log", key="idx_clear_log"):
             st.session_state[SS_BUILD_LOG] = []
             st.rerun()
-
