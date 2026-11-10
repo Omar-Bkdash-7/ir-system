@@ -1,7 +1,9 @@
-from .requests import ClusterRequest, TopicRequest
+from .requests import ClusterRequest, ClusteringMetric
 from .responses import (
     ClusterResponse,
     ClusterInfo,
+    ClusterParams,
+    ClusterStatusResponse,
     TopicInfo,
     DocumentClusterInfo,
     ClusterListResponse,
@@ -9,9 +11,11 @@ from .responses import (
 
 __all__ = [
     "ClusterRequest",
-    "TopicRequest",
+    "ClusteringMetric",
     "ClusterResponse",
     "ClusterInfo",
+    "ClusterParams",
+    "ClusterStatusResponse",
     "TopicInfo",
     "DocumentClusterInfo",
     "ClusterListResponse",

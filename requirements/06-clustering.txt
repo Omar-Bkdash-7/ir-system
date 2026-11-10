@@ -1,7 +1,8 @@
 -c constraints.txt
 # Clustering and topic modeling
+# Topics are extracted with c-TF-IDF (services/clustering/core/topics.py), so bertopic is not needed; the tier keeps
+# inheriting the transformers chain because the clustering-builder stage is built on top of it.
 -r 05-transformers.txt
 
 hdbscan
-bertopic
 umap-learn

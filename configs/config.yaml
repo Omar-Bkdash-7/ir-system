@@ -84,6 +84,24 @@ query_refinement:
   # Images ship their NLTK corpora; downloading at request time only happens when this is enabled.
   allow_nltk_download: false
 
+clustering:
+  # HDBSCAN + topic detection. Every key is optional; services/clustering/config.py holds the same defaults.
+  data_dir: "data/clusters"
+  indices_dir: "data/indices"
+  min_cluster_size: 5
+  min_samples: 3
+  metric: "euclidean"
+  n_keywords: 10
+  representative_docs: 3
+  umap_n_neighbors: 15
+  umap_min_dist: 0.1
+  umap_metric: "cosine"
+  random_state: 42
+  text_batch_size: 1000
+  # Above this share of documents without text, topics are skipped instead of being built from placeholders.
+  max_missing_text_ratio: 0.05
+  db_pool_max: 4
+
 services:
   api_gateway:
     host: "0.0.0.0"
@@ -114,6 +132,7 @@ services:
   ranking_url: "http://ranking:8004"
   query_refinement_url: "http://query_refinement:8005"
   evaluation_url: "http://evaluation:8006"
+  clustering_url: "http://clustering:8007"
 
 logging:
   level: "INFO"

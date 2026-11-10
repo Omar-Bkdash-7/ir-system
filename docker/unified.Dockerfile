@@ -205,7 +205,7 @@ print(f'Embedding model downloaded: {model.get_sentence_embedding_dimension()}d'
 
 # =============================================================================
 # Stage: clustering-builder
-# Clustering and topic modeling extras: hdbscan, bertopic, umap-learn
+# Clustering extras: hdbscan + umap-learn (topics use c-TF-IDF from scikit-learn, see services/clustering)
 # =============================================================================
 FROM transformers-builder AS clustering-builder
 

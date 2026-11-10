@@ -112,7 +112,7 @@ def render_clustering_page():
     st.title("🗂️ Document Clustering & Topic Detection")
     st.markdown(
         """
-        Cluster documents based on their semantic embeddings using **HDBSCAN** and extract topics with **BERTopic**.
+        Cluster documents based on their semantic embeddings using **HDBSCAN** and extract topics with **c-TF-IDF**.
         Visualize clusters in 2D space using UMAP dimensionality reduction.
         """
     )
@@ -311,7 +311,7 @@ def render_clustering_page():
                         docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d clustering
                         ```
                         
-                        **Required libraries:** hdbscan, bertopic, umap-learn
+                        **Required libraries:** hdbscan, umap-learn
                         """
                     )
                 else:
