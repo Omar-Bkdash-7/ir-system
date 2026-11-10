@@ -67,11 +67,22 @@ retrieval:
 query_refinement:
   max_synonyms_per_word: 2
   max_wordnet_synsets: 2
-  max_history_length: 10
   similarity_threshold: 0.35
   max_edit_distance: 2
   min_term_length: 4
   confidence_threshold: 0.7
+  # A replacement word needs this many dictionary occurrences; it rejects "ceroplastic" for aeroelastic (50) while
+  # keeping "boundary" for boundray (3252).
+  min_correction_frequency: 1000
+  max_query_words_for_expansion: 4
+  # A synonym needs at least this many SemCor occurrences. At 2, boundary keeps "edge" but drops "bound" and layer
+  # drops "bed": appending a word retrieval will run verbatim needs some evidence behind it.
+  min_synonym_count: 2
+  max_history_terms: 3
+  history_boost_weight: 0.15
+  max_semantic_drift: 0.25
+  # Images ship their NLTK corpora; downloading at request time only happens when this is enabled.
+  allow_nltk_download: false
 
 services:
   api_gateway:

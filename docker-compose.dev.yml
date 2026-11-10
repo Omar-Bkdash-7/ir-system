@@ -158,6 +158,7 @@ services:
     command: python -m uvicorn services.query_refinement.main:app --host 0.0.0.0 --port 8005 --reload
     volumes:
       - ./services:/app/services
+      - ./tests:/app/tests
       - ./common:/app/common
       - ./configs:/app/configs
       - ./logs:/app/logs

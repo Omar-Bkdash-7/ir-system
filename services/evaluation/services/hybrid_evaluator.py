@@ -78,7 +78,7 @@ class HybridEvaluator:
                 # Apply query refinement if enabled
                 refined_query = query_text
                 if enable_refinement:
-                    refined_query = self._refine_query(query_text)
+                    refined_query = self._refine_query(query_text, dataset_name)
                 
                 query_tokens = self._preprocess(refined_query)
                 
@@ -192,7 +192,7 @@ class HybridEvaluator:
                 # Apply query refinement if enabled
                 refined_query = query_text
                 if enable_refinement:
-                    refined_query = self._refine_query(query_text)
+                    refined_query = self._refine_query(query_text, dataset_name)
                 
                 query_tokens = self._preprocess(refined_query)
                 
@@ -276,7 +276,7 @@ class HybridEvaluator:
             logger.error(f"Preprocessing failed: {e}")
             return query_text.lower().split()
     
-    def _refine_query(self, query_text: str) -> str:
+    def _refine_query(self, query_text: str, dataset_name: Optional[str] = None) -> str:
         """
         Refine query text using query refinement service.
         Uses evaluation mode (spelling only) for deterministic results.
@@ -294,7 +294,8 @@ class HybridEvaluator:
                     "query": query_text,
                     "history": [],
                     "enabled": True,
-                    "is_evaluation": True  # Evaluation mode: spelling only
+                    "is_evaluation": True,  # Evaluation mode: spelling only
+                    "dataset": dataset_name,
                 },
                 timeout=10
             )

@@ -145,9 +145,6 @@ REFINEMENT_MIN_TERM_LENGTH_RANGE = (2, 8)
 REFINEMENT_HISTORY_SIMILARITY_THRESHOLD_DEFAULT = 0.35
 REFINEMENT_HISTORY_SIMILARITY_THRESHOLD_RANGE = (0.0, 1.0)
 
-REFINEMENT_MAX_HISTORY_LENGTH_DEFAULT = 10
-REFINEMENT_MAX_HISTORY_LENGTH_RANGE = (1, 20)
-
 # ---------------------------------------------------------------------------
 # Preprocessing defaults & presets
 # ---------------------------------------------------------------------------

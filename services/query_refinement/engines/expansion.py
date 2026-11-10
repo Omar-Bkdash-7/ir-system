@@ -1,182 +1,111 @@
-from nltk.corpus import wordnet, stopwords
-import numpy as np
+"""Conservative WordNet synonym expansion.
+
+Only the primary senses of short queries are used, at most ``max_synonyms_per_word`` per word, and the original
+query is kept intact: synonyms are appended, so a retrieval model that ignores them still sees the user's words.
+
+Expansion is skipped - not failed - when WordNet is unavailable. The old engine carried two dead filters (a
+similarity test that always compared a synset with itself, and a frequency floor that dropped valid synonyms), and
+every exception was swallowed with a bare ``except``, which hid a broken corpus until it reached the service layer.
+"""
+from __future__ import annotations
+
 import logging
-from typing import List, Tuple, Dict, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
 
 
 class QueryExpansionEngine:
     def __init__(
-        self, 
+        self,
         max_synonyms_per_word: int = 2,
         max_synsets: int = 2,
-        min_term_length: int = 4
+        min_term_length: int = 4,
+        wordnet_reader=None,
+        stop_words: Optional[Set[str]] = None,
+        max_query_words: int = 4,
+        min_synonym_count: int = 2,
     ):
         self.max_synonyms_per_word = max_synonyms_per_word
         self.max_synsets = max_synsets
         self.min_term_length = min_term_length
-        self.stop_words = self._load_stopwords()
-        self._synset_cache = {}
-    
-    def _load_stopwords(self) -> Set[str]:
-        try:
-            return set(stopwords.words("english"))
-        except Exception:
-            return set()
-    
+        self.max_query_words = max_query_words
+        self.min_synonym_count = min_synonym_count
+        self.wordnet = wordnet_reader
+        self.stop_words = set(stop_words) if stop_words is not None else set()
+
+    @property
+    def available(self) -> bool:
+        return self.wordnet is not None
+
     def expand(self, query: str) -> Tuple[str, Dict[str, List[str]]]:
-        """
-        Expand query with carefully selected synonyms.
-        Uses conservative approach with anti-drift validation.
-        """
-        if not query or not query.strip():
+        """Return the expanded query and the synonyms added for each original word."""
+        if not query or not query.strip() or not self.available:
             return query, {}
-        
-        words = query.lower().split()
-        
-        # Don't expand if query is already long (>4 words)
-        if len(words) > 4:
-            logger.debug(f"Query has {len(words)} words, skipping expansion")
-            return query, {}
-        
-        original_words_set = set(words)
-        synonyms_map = {}
-        all_synonyms = []
-        
-        logger.debug(f"Starting expansion for query: '{query}' ({len(words)} words)")
-        
-        for word in words:
-            if not self._is_expandable(word):
-                logger.debug(f"Word '{word}' not expandable (stopword/short/non-alpha)")
-                continue
-            
-            try:
-                synsets = self._get_synsets_cached(word)
-                if not synsets:
-                    logger.debug(f"No synsets found for '{word}'")
-                    continue
-                
-                logger.debug(f"Found {len(synsets)} synsets for '{word}'")
-                
-                # Use only the primary sense (most common)
-                primary_synset = synsets[0]
 
-                word_synonyms = self._extract_ranked_synonyms(
-                    word, 
-                    [primary_synset],
-                    original_words_set,
-                    primary_synset
-                )
-                
-                if word_synonyms:
-                    # Take only top 2 synonyms (conservative)
-                    selected = word_synonyms[:2]
-                    synonyms_map[word] = selected
-                    all_synonyms.extend(selected)
-                    logger.info(f"Expanded '{word}' with: {selected}")
-                else:
-                    logger.debug(f"No suitable synonyms found for '{word}' after filtering")
-            
-            except Exception as e:
-                logger.warning(f"Expansion failed for '{word}': {e}")
-                continue
-        
-        if not all_synonyms:
-            logger.debug("No suitable synonyms found for expansion")
+        words = query.split()
+        if len(words) > self.max_query_words:
+            logger.debug("Query has %d words, skipping expansion", len(words))
             return query, {}
-        
-        # Soft expansion: append synonyms (don't replace original)
-        expanded_query = query + " " + " ".join(all_synonyms)
-        
-        logger.info(f"Query expanded: '{query}' -> '{expanded_query}' (added {len(all_synonyms)} synonyms)")
-        return expanded_query, synonyms_map
-    
-    def _get_synsets_cached(self, word: str) -> List:
-        if word not in self._synset_cache:
-            self._synset_cache[word] = wordnet.synsets(word, lang='eng')
-        return self._synset_cache[word]
-    
+
+        known = {word.lower() for word in words}
+        expansions: Dict[str, List[str]] = {}
+        added: List[str] = []
+
+        for word in dict.fromkeys(words):  # unique, order preserved
+            if not self._is_expandable(word.lower()):
+                continue
+            synonyms = self._synonyms(word.lower(), known)
+            if not synonyms:
+                continue
+            expansions[word] = synonyms
+            known.update(synonyms)
+            added.extend(synonyms)
+            logger.info("Expanded %r with %s", word, synonyms)
+
+        if not added:
+            return query, {}
+        return f"{query} {' '.join(added)}", expansions
+
+    # -- internals ---------------------------------------------------------
     def _is_expandable(self, word: str) -> bool:
-        return (
-            word.isalpha() and 
-            word not in self.stop_words and 
-            len(word) >= self.min_term_length
-        )
-    
-    def _extract_ranked_synonyms(
-        self, 
-        original_word: str, 
-        synsets: List, 
-        existing_words: Set[str],
-        primary_synset
-    ) -> List[str]:
-        synonym_scores = []
-        
-        for synset in synsets:
-            similarity_to_primary = self._synset_similarity(synset, primary_synset)
-            
-            # Require high similarity (≥ 0.7) to avoid query drift
-            if similarity_to_primary < 0.7:
-                continue
-            
-            for lemma in synset.lemmas():
-                lemma_name = lemma.name().replace('_', ' ').lower()
+        return word.isalpha() and len(word) >= self.min_term_length and word not in self.stop_words
 
-                if self._is_valid_synonym(lemma_name, original_word, existing_words):
-                    frequency = lemma.count()
-                    
-                    # Prefer common words (frequency ≥ 5)
-                    if frequency < 5:
-                        continue
-                    
-                    # Prefer synonyms with similar length
-                    length_diff = abs(len(lemma_name) - len(original_word))
-                    if length_diff > 4:
-                        continue
-                    
-                    # Score: similarity + frequency + length similarity
-                    length_penalty = 1.0 / (1 + length_diff * 0.2)
-                    score = similarity_to_primary * np.log1p(frequency) * length_penalty
-                    synonym_scores.append((lemma_name, score))
-        
-        synonym_scores.sort(key=lambda x: x[1], reverse=True)
-        return [syn for syn, score in synonym_scores]
-    
-    def _synset_similarity(self, synset1, synset2) -> float:
+    def _synonyms(self, word: str, existing: Set[str]) -> List[str]:
         try:
-            similarity = synset1.wup_similarity(synset2)
-            return similarity if similarity is not None else 0.5
-        except:
-            return 0.5
-    
-    def _is_valid_synonym(
-        self, 
-        synonym: str, 
-        original: str, 
-        existing_words: Set[str]
-    ) -> bool:
-        if (
-            synonym == original or
-            synonym in existing_words or
-            synonym in self.stop_words or
-            not synonym.isalpha() or
-            len(synonym) < 3 or
-            ' ' in synonym
-        ):
-            return False
-        
-        return True
-    
-    @staticmethod
-    def _string_similarity(s1: str, s2: str) -> float:
-        longer = max(len(s1), len(s2))
-        if longer == 0:
-            return 1.0
-        
-        s1_set = set(s1)
-        s2_set = set(s2)
-        intersection = len(s1_set & s2_set)
-        union = len(s1_set | s2_set)
-        
-        return intersection / union if union > 0 else 0.0
+            synsets = self.wordnet.synsets(word)[: self.max_synsets]
+        except Exception as exc:  # noqa: BLE001 - an unusable corpus only costs this word
+            logger.warning("WordNet lookup failed for %r: %s", word, exc)
+            return []
+
+        ranked: List[Tuple[int, str]] = []
+        for synset in synsets:
+            for lemma in synset.lemmas():
+                name = lemma.name().replace("_", " ").lower()
+                if not self._is_valid_synonym(name, word, existing):
+                    continue
+                count = int(lemma.count())
+                if count < self.min_synonym_count:
+                    # No corpus evidence for the sense ("bound" for boundary, "bed" for layer): appending it only
+                    # adds noise to a query that retrieval will run verbatim.
+                    continue
+                # Most frequent lemma first; the name keeps the order stable for equal counts.
+                ranked.append((-count, name))
+
+        selected: List[str] = []
+        for _, name in sorted(ranked):
+            if name not in selected:
+                selected.append(name)
+            if len(selected) >= self.max_synonyms_per_word:
+                break
+        return selected
+
+    def _is_valid_synonym(self, synonym: str, original: str, existing: Set[str]) -> bool:
+        return (
+            synonym != original
+            and synonym not in existing
+            and synonym not in self.stop_words
+            and synonym.isalpha()
+            and len(synonym) >= 3
+            and " " not in synonym
+        )

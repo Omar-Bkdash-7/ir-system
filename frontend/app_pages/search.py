@@ -568,6 +568,7 @@ def render() -> None:
                         st.session_state.get(SS_QUERY_HISTORY, [])[-3:],
                         enabled=True,
                         session_id=st.session_state.get(SS_SESSION_ID, "default"),
+                        dataset=st.session_state.get(SS_SELECTED_DATASET),
                     )
                     if resp.ok:
                         st.session_state[SS_REFINEMENT_RESULT] = resp.data

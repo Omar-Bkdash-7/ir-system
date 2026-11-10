@@ -82,7 +82,7 @@ class RetrievalEvaluator:
                 # Apply query refinement if enabled
                 refined_query = query_text
                 if enable_refinement:
-                    refined_query = self._refine_query(query_text)
+                    refined_query = self._refine_query(query_text, dataset_name)
                 
                 retrieved_docs = self._retrieve(
                     query_text=refined_query,
@@ -225,13 +225,14 @@ class RetrievalEvaluator:
             logger.error(f"Preprocessing failed: {e}")
             return query_text.lower().split()
     
-    def _refine_query(self, query_text: str) -> str:
+    def _refine_query(self, query_text: str, dataset_name: Optional[str] = None) -> str:
         """
         Refine query text using query refinement service.
         Uses evaluation mode (spelling only) for deterministic results.
         
         Args:
             query_text: Original query text
+            dataset_name: Dataset being evaluated; its vocabulary protects domain terms
             
         Returns:
             Refined query text
@@ -243,7 +244,8 @@ class RetrievalEvaluator:
                     "query": query_text,
                     "history": [],
                     "enabled": True,
-                    "is_evaluation": True  # Evaluation mode: spelling only
+                    "is_evaluation": True,  # Evaluation mode: spelling only
+                    "dataset": dataset_name,
                 },
                 timeout=10
             )

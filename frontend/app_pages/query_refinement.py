@@ -153,7 +153,7 @@ def render() -> None:
                     st.success("No spelling errors detected.")
 
             with tab2:
-                synonyms = result.get("synonyms_added", {})
+                synonyms = result.get("expansions", {})
                 if synonyms:
                     st.markdown("**WordNet synonyms added:**")
                     rows = [{"Word": k, "Synonyms added": ", ".join(v)}
@@ -167,9 +167,9 @@ def render() -> None:
                     )
 
             with tab3:
-                history_terms = result.get("history_terms_added", [])
+                history_terms = result.get("history_terms", [])
                 sim = result.get("history_similarity", 0.0)
-                boosted = result.get("boosted_terms", [])
+                boosted = list(result.get("history_boosts", {}))
 
                 col_a, col_b = st.columns(2)
                 with col_a:
@@ -221,8 +221,8 @@ def render() -> None:
                 "Original": entry.get("original_query", ""),
                 "Refined": entry.get("refined_query", ""),
                 "Corrections": len(entry.get("corrections", {})),
-                "Synonyms": sum(len(v) for v in entry.get("synonyms_added", {}).values()),
-                "History terms": len(entry.get("history_terms_added", [])),
+                "Synonyms": sum(len(v) for v in entry.get("expansions", {}).values()),
+                "History terms": len(entry.get("history_terms", [])),
                 "Applied": "✅" if entry.get("applied") else "—",
             })
         st.dataframe(pd.DataFrame(rows), use_container_width=True)

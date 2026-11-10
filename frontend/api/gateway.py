@@ -56,14 +56,14 @@ def refine_query(
     history: List[str],
     enabled: bool = True,
     session_id: str = "default",
+    dataset: Optional[str] = None,
 ) -> APIResponse:
-    """
-    POST /query/refine
+    """        POST /query/refine
 
-    Response fields: original_query, refined_query, corrections{},
-    synonyms_added{}, history_terms_added[], history_similarity,
-    boosted_terms[], applied
-    """
+        Response fields: original_query, refined_query, corrections{},
+        expansions{}, history_boosts{}, history_terms[], history_similarity,
+        confidence, changes_applied[], semantic_drift, applied
+        """
     return post(
         f"{config.API_GATEWAY_URL}/query/refine",
         json={
@@ -71,6 +71,7 @@ def refine_query(
             "history": history,
             "enabled": enabled,
             "session_id": session_id,
+            "dataset": dataset,
         },
     )
 

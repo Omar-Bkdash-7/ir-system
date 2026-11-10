@@ -1,59 +1,53 @@
-from fastapi import FastAPI, HTTPException
-from services.query_refinement.schemas import RefineRequest, RefineResponse
-from services.query_refinement.services import refine_query, get_service
+"""HTTP surface of the query refinement service.
+
+Errors are translated once, by ``common.exception_handlers`` (``ValueError`` becomes a 400). The previous handlers
+caught everything and re-raised a 500 carrying ``str(exc)``, which turned a corrupt corpus into a permanent outage
+*and* leaked the internal message to the client.
+"""
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
 from common.exception_handlers import register_exception_handlers
 from common.logging_config import setup_logging
+from services.query_refinement.schemas import RefineRequest, RefineResponse
+from services.query_refinement.services import get_service, refine_query
 
 logger = setup_logging("query_refinement")
 
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    status = get_service().feature_status()
+    logger.info("Query refinement service ready: %s", status)
+    yield
+
+
 app = FastAPI(
     title="Query Refinement Service",
-    description="Intelligent query refinement with spelling correction, synonym expansion, and history-aware boosting"
+    description="Query refinement with spelling correction, WordNet synonym expansion and history-aware boosting",
+    lifespan=lifespan,
 )
 register_exception_handlers(app)
 
-@app.on_event("startup")
-async def startup_event():
-    logger.info("Initializing Query Refinement Service...")
-    try:
-        get_service()
-        logger.info("Query Refinement Service initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize service: {e}", exc_info=True)
 
 @app.get("/health")
 def health():
-    return {
-        "status": "ok", 
-        "service": "query_refinement",
-        "features": [
-            "spelling_correction",
-            "synonym_expansion",
-            "history_boosting",
-            "semantic_similarity"
-        ]
-    }
+    """Always 200 while the process is alive; ``status`` says whether every stage is usable."""
+    status = get_service().feature_status()
+    features = status["features"]
+    healthy = bool(features["spelling_correction"] and features["synonym_expansion"])
+    return {"status": "ok" if healthy else "degraded", "service": "query_refinement", **status}
+
 
 @app.post("/refine", response_model=RefineResponse)
-def refine_endpoint(req: RefineRequest):
-    try:
-        if not req.query or not req.query.strip():
-            raise HTTPException(status_code=400, detail="Query cannot be empty")
-        
-        result = refine_query(
-            req.query, 
-            req.history, 
-            req.enabled, 
-            req.session_id,
-            req.is_evaluation
-        )
-        return RefineResponse(**result)
-    
-    except HTTPException:
-        raise
-    except ValueError as e:
-        logger.warning(f"Invalid input: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Query refinement failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+def refine_endpoint(request: RefineRequest) -> RefineResponse:
+    result = refine_query(
+        request.query,
+        request.history,
+        request.enabled,
+        request.session_id,
+        request.is_evaluation,
+        request.dataset,
+    )
+    return RefineResponse(**result)

@@ -144,13 +144,24 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 RUN mkdir -p /opt/nltk_data
 
-RUN python -c "import nltk; \
-nltk.download('wordnet', download_dir='/opt/nltk_data', quiet=True); \
-nltk.download('stopwords', download_dir='/opt/nltk_data', quiet=True); \
-nltk.download('omw-1.4', download_dir='/opt/nltk_data', quiet=True); \
-nltk.download('punkt', download_dir='/opt/nltk_data', quiet=True); \
-nltk.download('punkt_tab', download_dir='/opt/nltk_data', quiet=True); \
-print('NLTK resources downloaded')"
+RUN python - <<'PY'
+import sys, zipfile
+import nltk
+
+DATA = "/opt/nltk_data"
+for name in ("wordnet", "stopwords", "omw-1.4", "punkt", "punkt_tab"):
+    nltk.download(name, download_dir=DATA, quiet=True)
+    if name not in ("wordnet", "stopwords", "omw-1.4"):
+        continue
+    archive = f"{DATA}/corpora/{name}.zip"
+    try:
+        with zipfile.ZipFile(archive) as bundle:
+            if not bundle.namelist():
+                raise ValueError("archive is empty")
+    except Exception as exc:
+        sys.exit(f"NLTK corpus {name!r} is unusable after download ({archive}): {exc}")
+    print(f"NLTK corpus {name!r} verified")
+PY
 
 # =============================================================================
 # Stage: torch-builder
@@ -271,7 +282,7 @@ RUN mkdir -p /app /app/logs /app/data && \
     chown -R appuser:appuser /app
 
 COPY --from=nlp-builder /opt/venv /opt/venv
-COPY --from=nlp-builder /opt/nltk_data /app/.cache/nltk_data
+COPY --chown=appuser:appuser --from=nlp-builder /opt/nltk_data /app/.cache/nltk_data
 
 COPY --chown=appuser:appuser common/ /app/common/
 COPY --chown=appuser:appuser configs/ /app/configs/
@@ -309,7 +320,7 @@ RUN mkdir -p /app /app/logs /app/data /app/data/models && \
 
 COPY --from=transformers-builder /opt/venv /opt/venv
 COPY --from=transformers-builder /opt/models /app/data/models
-COPY --from=nlp-builder /opt/nltk_data /app/.cache/nltk_data
+COPY --chown=appuser:appuser --from=nlp-builder /opt/nltk_data /app/.cache/nltk_data
 
 COPY --chown=appuser:appuser common/ /app/common/
 COPY --chown=appuser:appuser configs/ /app/configs/
@@ -351,7 +362,7 @@ RUN mkdir -p /app /app/logs /app/data /app/data/models && \
 
 COPY --from=clustering-builder /opt/venv /opt/venv
 COPY --from=transformers-builder /opt/models /app/data/models
-COPY --from=nlp-builder /opt/nltk_data /app/.cache/nltk_data
+COPY --chown=appuser:appuser --from=nlp-builder /opt/nltk_data /app/.cache/nltk_data
 
 COPY --chown=appuser:appuser common/ /app/common/
 COPY --chown=appuser:appuser configs/ /app/configs/
@@ -430,7 +441,7 @@ RUN mkdir -p /app /app/logs /app/data /app/data/models /models/rag /models/hf-ho
 
 COPY --from=rag-builder /opt/venv /opt/venv
 COPY --from=transformers-builder /opt/models /app/data/models
-COPY --from=nlp-builder /opt/nltk_data /app/.cache/nltk_data
+COPY --chown=appuser:appuser --from=nlp-builder /opt/nltk_data /app/.cache/nltk_data
 
 COPY --chown=appuser:appuser common/ /app/common/
 COPY --chown=appuser:appuser configs/ /app/configs/

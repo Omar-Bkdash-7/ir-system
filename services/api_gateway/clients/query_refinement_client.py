@@ -1,69 +1,48 @@
-import httpx
-from common.config import get_config
-from typing import List, Dict
 import logging
+from typing import Dict, Optional, Sequence
+
+import httpx
+
+from common.config import get_config
 
 logger = logging.getLogger(__name__)
 
 QUERY_REFINEMENT_SERVICE_URL = get_config("services.query_refinement_url", "http://localhost:8005")
 
+
 def refine_query(
-    query: str, 
-    history: List[str], 
+    query: str,
+    history: Sequence[str],
     enabled: bool = True,
-    is_evaluation: bool = False
+    session_id: str = "default",
+    is_evaluation: bool = False,
+    dataset: Optional[str] = None,
 ) -> Dict:
+    """Ask the query refinement service to refine ``query``.
+
+    ``enabled=False`` is forwarded instead of answered here: the service owns the response contract, and a second
+    copy of it in the gateway is exactly how the two drifted apart.
     """
-    Refine query using the query refinement service.
-    
-    Args:
-        query: Query text to refine
-        history: List of previous queries for context
-        enabled: Whether refinement is enabled
-        is_evaluation: If True, only apply deterministic operations (spelling)
-    """
-    if not enabled:
-        return {
-            "original_query": query,
-            "refined_query": query,
-            "corrections": {},
-            "expansions": {},
-            "history_boosts": {},
-            "confidence": 0.0,
-            "changes_applied": [],
-            "semantic_drift": 0.0,
-            "applied": False
-        }
-    
     mode = "evaluation" if is_evaluation else "search"
     logger.info(f"Calling query refinement service (mode={mode}): query='{query[:50]}...'")
-    
-    try:
-        with httpx.Client(timeout=10.0) as client:
-            response = client.post(
-                f"{QUERY_REFINEMENT_SERVICE_URL}/refine",
-                json={
-                    "query": query,
-                    "history": history,
-                    "enabled": enabled,
-                    "is_evaluation": is_evaluation
-                }
-            )
-            response.raise_for_status()
-            data = response.json()
-            
-            refined = data.get('refined_query', query)
-            changes = data.get('changes_applied', [])
-            logger.info(
-                f"Query refinement completed: '{refined[:50]}...' "
-                f"(changes: {changes}, confidence: {data.get('confidence', 0):.2f})"
-            )
-            return data
-    
-    except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP error during query refinement: {e.response.status_code} - {e.response.text}")
-        raise
-    except Exception as e:
-        logger.error(f"Error during query refinement: {e}", exc_info=True)
-        raise
 
+    with httpx.Client(timeout=10.0) as client:
+        response = client.post(
+            f"{QUERY_REFINEMENT_SERVICE_URL}/refine",
+            json={
+                "query": query,
+                "history": list(history or []),
+                "enabled": enabled,
+                "session_id": session_id,
+                "is_evaluation": is_evaluation,
+                "dataset": dataset,
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+
+    logger.info(
+        f"Query refinement completed: '{str(data.get('refined_query', query))[:50]}...' "
+        f"(changes: {data.get('changes_applied', [])}, confidence: {float(data.get('confidence') or 0):.2f})"
+    )
+    return data

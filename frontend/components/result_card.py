@@ -129,8 +129,8 @@ def render_refinement_banner(refinement: dict) -> None:
     original = refinement.get("original_query", "")
     refined = refinement.get("refined_query", "")
     corrections = refinement.get("corrections", {})
-    synonyms = refinement.get("synonyms_added", {})
-    history_terms = refinement.get("history_terms_added", [])
+    synonyms = refinement.get("expansions", {})
+    history_terms = refinement.get("history_terms", [])
 
     parts = []
     if corrections:

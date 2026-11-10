@@ -85,8 +85,11 @@ class HybridParallelSearchRequest(BaseModel):
 
 class QueryRefineRequest(BaseModel):
     query: str = Field(description="Query to refine")
-    history: List[str] = Field(default=[], description="Query history")
+    history: List[str] = Field(default_factory=list, description="Query history")
     enabled: bool = Field(default=True, description="Enable refinement")
+    session_id: str = Field(default="default", description="Session identifier")
+    is_evaluation: bool = Field(default=False, description="Evaluation mode (deterministic spelling only)")
+    dataset: Optional[str] = Field(default=None, description="Dataset whose vocabulary protects domain terms")
 
 
 @app.get("/health")
@@ -105,7 +108,8 @@ def query_refine_endpoint(req: QueryRefineRequest):
         if not req.query or not req.query.strip():
             raise HTTPException(status_code=400, detail="Query cannot be empty")
         
-        result = refine_query(req.query, req.history, req.enabled)
+        # session_id used to be accepted by the UI and dropped here, so the service never saw the session.
+        result = refine_query(req.query, req.history, req.enabled, req.session_id, req.is_evaluation, req.dataset)
         return result
     except HTTPException:
         raise
@@ -126,7 +130,7 @@ def search_endpoint(req: BasicSearchRequest):
         refinement_info = None
         
         if req.enable_refinement:
-            refinement_result = refine_query(req.query, req.query_history, True)
+            refinement_result = refine_query(req.query, req.query_history, True, dataset=req.dataset)
             query_to_use = refinement_result.get("refined_query", req.query)
             refinement_info = refinement_result
         
@@ -162,7 +166,7 @@ def search_hybrid_serial_endpoint(req: HybridSerialSearchRequest):
         refinement_info = None
         
         if req.enable_refinement:
-            refinement_result = refine_query(req.query, req.query_history, True)
+            refinement_result = refine_query(req.query, req.query_history, True, dataset=req.dataset)
             query_to_use = refinement_result.get("refined_query", req.query)
             refinement_info = refinement_result
         
@@ -200,7 +204,7 @@ def search_hybrid_parallel_endpoint(req: HybridParallelSearchRequest):
         refinement_info = None
         
         if req.enable_refinement:
-            refinement_result = refine_query(req.query, req.query_history, True)
+            refinement_result = refine_query(req.query, req.query_history, True, dataset=req.dataset)
             query_to_use = refinement_result.get("refined_query", req.query)
             refinement_info = refinement_result
         
