@@ -14,11 +14,14 @@ exactly what it was.
 from __future__ import annotations
 
 import os
-from functools import lru_cache
 
 import streamlit as st
 
 _STYLES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "styles")
+
+# name -> (mtime, css). Keyed by modification time so editing a stylesheet
+# shows up on the next rerun instead of needing a process restart.
+_CACHE: dict[str, tuple[float, str]] = {}
 
 
 def stylesheet_path(name: str) -> str:
@@ -26,12 +29,22 @@ def stylesheet_path(name: str) -> str:
     return os.path.join(_STYLES_DIR, *name.split("/")) + ".css"
 
 
-@lru_cache(maxsize=None)
 def load_css(name: str) -> str:
     """Read one stylesheet from `frontend/styles/` (`name` may contain a subdirectory)."""
     path = stylesheet_path(name)
+    mtime = os.path.getmtime(path)
+    cached = _CACHE.get(name)
+    if cached is not None and cached[0] == mtime:
+        return cached[1]
     with open(path, encoding="utf-8") as fh:
-        return fh.read()
+        css = fh.read()
+    _CACHE[name] = (mtime, css)
+    return css
+
+
+def clear_css_cache() -> None:
+    """Drop every cached stylesheet (used by tests)."""
+    _CACHE.clear()
 
 
 def inject_style(name: str, *, use_html: bool = False) -> None:

@@ -17,7 +17,10 @@ from constants import (
     SS_LAST_REFRESH_TIME,
     SS_SELECTED_PAGE,
 )
+from obs import get_logger
 from ui_style import inject_style
+
+logger = get_logger(__name__)
 
 _PAGES = [
     {"key": "guide", "label": "User Guide", "icon": "📘"},
@@ -95,7 +98,8 @@ def render_sidebar() -> None:
                 status_icon = _STATUS_EMOJI.get(ok, "🟡")
                 svc_icon = _SERVICE_ICONS.get(svc_name, "📦")
                 st.caption(f"{status_icon} {svc_icon} {svc_name} · {ms:.0f}ms")
-        except Exception:
+        except Exception:  # noqa: BLE001 - a dead service list must not break the sidebar
+            logger.exception("could not refresh the service list")
             st.info("Loading services...")
 
         st.divider()

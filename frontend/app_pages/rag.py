@@ -2,8 +2,11 @@ import streamlit as st
 from typing import Dict, Any, Optional, List
 
 import api.rag as rag_api
+from obs import get_logger
 from ui_state import dataset_selector
 from utils.dataset_utils import get_available_datasets
+
+logger = get_logger(__name__)
 
 DOWNLOAD_POLL_SECONDS = 2
 
@@ -133,7 +136,8 @@ def _get_available_datasets_for_rag() -> List[str]:
     try:
         available = get_available_datasets()
         return available if available else ["cranfield", "vaswani"]
-    except Exception:
+    except Exception:  # noqa: BLE001 - the list is cosmetic, the page must still render
+        logger.exception("could not list indexed datasets; falling back to defaults")
         return ["cranfield", "vaswani"]
 
 

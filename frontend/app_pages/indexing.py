@@ -14,7 +14,11 @@ import api.indexing as indexing_api
 import api.gateway as gateway
 from components.index_status_badge import render_index_card
 from constants import SS_BUILD_IN_PROGRESS, SS_BUILD_JOB, SS_BUILD_LOG, SS_FORCE_REBUILD
+from components.preprocessing_config import render_indexing_preprocessing_config
+from obs import failure_hint, get_logger, log_failure
 from ui_state import dataset_selector
+
+logger = get_logger(__name__)
 
 
 def _get_downloaded_datasets() -> list[str]:
@@ -53,100 +57,8 @@ def _get_datasets_in_db() -> list[str]:
 
 
 def _render_preprocessing_config() -> dict | None:
-    """Render preprocessing configuration options and return config dict."""
-    
-    with st.expander("Preprocessing Configuration", expanded=False):
-        st.caption("Configure how documents are preprocessed before indexing")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("**Text Normalization**")
-            normalize_unicode = st.checkbox(
-                "Normalize Unicode",
-                value=config.DEFAULT_PREPROCESSING_CONFIG["normalize_unicode"],
-                help="Convert text to normalized Unicode form"
-            )
-            lowercase = st.checkbox(
-                "Lowercase",
-                value=config.DEFAULT_PREPROCESSING_CONFIG["lowercase"],
-                help="Convert all text to lowercase"
-            )
-            remove_punctuation = st.checkbox(
-                "Remove Punctuation",
-                value=config.DEFAULT_PREPROCESSING_CONFIG["remove_punctuation"],
-                help="Remove punctuation marks"
-            )
-            keep_numbers = st.checkbox(
-                "Keep Numbers",
-                value=config.DEFAULT_PREPROCESSING_CONFIG["keep_numbers"],
-                help="Keep numeric tokens"
-            )
-        
-        with col2:
-            st.markdown("**Token Processing**")
-            remove_stopwords = st.checkbox(
-                "Remove Stopwords",
-                value=config.DEFAULT_PREPROCESSING_CONFIG["remove_stopwords"],
-                help="Remove common English stopwords"
-            )
-            use_lemmatization = st.checkbox(
-                "Use Lemmatization",
-                value=config.DEFAULT_PREPROCESSING_CONFIG["use_lemmatization"],
-                help="Reduce words to base form (better, slower)"
-            )
-            use_stemming = st.checkbox(
-                "Use Stemming",
-                value=config.DEFAULT_PREPROCESSING_CONFIG["use_stemming"],
-                help="Reduce words to stem (faster, less accurate)"
-            )
-            use_spacy_tokenizer = st.checkbox(
-                "Use spaCy Tokenizer",
-                value=config.DEFAULT_PREPROCESSING_CONFIG["use_spacy_tokenizer"],
-                help="Use spaCy for advanced tokenization"
-            )
-        
-        st.markdown("**Token Length Filters**")
-        col3, col4 = st.columns(2)
-        with col3:
-            min_token_length = st.number_input(
-                "Min Token Length",
-                min_value=1,
-                max_value=10,
-                value=config.DEFAULT_PREPROCESSING_CONFIG["min_token_length"],
-                help="Minimum character length for tokens"
-            )
-        with col4:
-            max_token_length = st.number_input(
-                "Max Token Length (0 = no limit)",
-                min_value=0,
-                max_value=100,
-                value=0,
-                help="Maximum character length for tokens"
-            )
-        
-        apply_custom = st.checkbox(
-            "Apply custom preprocessing",
-            value=False,
-            help="Use the configuration above instead of defaults"
-        )
-        
-        if apply_custom:
-            return {
-                "normalize_unicode": normalize_unicode,
-                "lowercase": lowercase,
-                "remove_punctuation": remove_punctuation,
-                "remove_stopwords": remove_stopwords,
-                "min_token_length": min_token_length,
-                "max_token_length": max_token_length if max_token_length > 0 else None,
-                "use_lemmatization": use_lemmatization,
-                "use_stemming": use_stemming,
-                "keep_numbers": keep_numbers,
-                "use_spacy_tokenizer": use_spacy_tokenizer,
-                "custom_stopwords": []
-            }
-    
-    return None
+    """Render the preprocessing options for a build (None = server defaults)."""
+    return render_indexing_preprocessing_config()
 
 
 def _index_label(index_type: str) -> tuple[str, str]:
@@ -366,7 +278,9 @@ def _report_build_success(resp, s, index_type: str, label: str, log: list) -> No
 
 def _report_build_failure(resp, s, index_type: str, dataset_in_db: bool, label: str, log: list) -> None:
     """Render a failed build, with a dedicated panel when the dataset is missing from the DB."""
-    error_msg = resp.error if resp else "Unknown error from indexing service."
+    error_msg = failure_hint(resp) if resp else "Unknown error from indexing service."
+    if resp:
+        log_failure(logger, f"build {label}", resp)
     s.update(label=f"{label} build failed", state="error")
 
     # Check if error is related to missing dataset in database AND dataset is actually not in DB

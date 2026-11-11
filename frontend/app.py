@@ -28,6 +28,7 @@ st.set_page_config(
 
 import config                                        # noqa: E402
 from constants import DEFAULTS, SS_SELECTED_PAGE    # noqa: E402
+from obs import get_logger, setup_logging           # noqa: E402
 from components.sidebar import render_sidebar       # noqa: E402
 from ui_style import inject_style                    # noqa: E402
 
@@ -53,6 +54,9 @@ def _init_session_state() -> None:
     if not st.session_state.get("session_id"):
         st.session_state["session_id"] = str(uuid.uuid4())[:8]
 
+
+setup_logging()
+_log = get_logger("app")
 
 _load_css()
 
@@ -97,6 +101,10 @@ render_sidebar()
 active_page = st.session_state.get(SS_SELECTED_PAGE, "guide")
 
 # 3. Lazy load and render the active page
+if st.session_state.get("_last_rendered_page") != active_page:
+    st.session_state["_last_rendered_page"] = active_page
+    _log.info("page -> %s (session %s)", active_page, st.session_state.get("session_id"))
+
 module = _get_page_module(active_page)
 if module is not None:
     module.render()

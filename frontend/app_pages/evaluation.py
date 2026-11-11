@@ -11,6 +11,10 @@ from datetime import datetime
 
 import streamlit as st
 
+from obs import failure_hint, get_logger, log_failure
+
+logger = get_logger(__name__)
+
 import api.evaluation as eval_api
 from components.metrics_chart import (
     render_metrics_bar_chart,
@@ -86,290 +90,306 @@ def _metric_table(metrics: Dict[str, dict]) -> None:
         )
 
 
+def _render_evaluation_inputs(available_datasets: list[str]) -> tuple[str, str, int, int]:
+    """Model, dataset, top_k and the query limit."""
+    col1, col2 = st.columns(2)
+
+    with col1:
+        model = st.selectbox(
+            "Model",
+            ["tfidf", "embedding", "bm25", "hybrid_serial", "hybrid_parallel"],
+            format_func=lambda x: x.upper().replace("_", " ").title(),
+            key="eval_model_select"
+        )
+
+        dataset = st.selectbox(
+            "Dataset",
+            available_datasets,
+            format_func=get_dataset_display_name,
+            help="Only datasets with all indices (TF-IDF, BM25, Embedding) are shown",
+            key="eval_dataset_select"
+        )
+
+    with col2:
+        top_k = st.number_input(
+            "Top K",
+            min_value=10,
+            max_value=1000,
+            value=100,
+            step=10,
+            key="eval_topk",
+            help="Number of documents to retrieve per query"
+        )
+        query_limit = st.number_input(
+            "Query Limit",
+            min_value=0,
+            max_value=1000,
+            value=100,
+            help="Limit queries for faster testing. 0 means all queries.",
+            key="eval_query_limit"
+        )
+
+    return model, dataset, top_k, query_limit
+
+
+def _render_hybrid_configuration(model: str) -> tuple[Optional[list], str]:
+    """Which models feed a hybrid run, and how parallel results are fused."""
+    hybrid_models = None
+    fusion_method = "rrf"
+
+    if model not in ["hybrid_serial", "hybrid_parallel"]:
+        return hybrid_models, fusion_method
+
+    st.markdown("##### Hybrid Configuration")
+
+    if model == "hybrid_serial":
+        col_a, col_b = st.columns(2)
+        with col_a:
+            first_model = st.selectbox(
+                "First Model",
+                ["tfidf", "bm25", "embedding"],
+                index=1,
+                key="eval_first_model"
+            )
+        with col_b:
+            second_model = st.selectbox(
+                "Second Model",
+                ["tfidf", "bm25", "embedding"],
+                index=2,
+                key="eval_second_model"
+            )
+        hybrid_models = [first_model, second_model]
+
+    else:  # hybrid_parallel
+        inject_style("dataframe_tags")
+        hybrid_models = st.multiselect(
+            "Models (select 2+)",
+            ["tfidf", "bm25", "embedding"],
+            default=["tfidf", "bm25"],
+            key="eval_parallel_models"
+        )
+
+        fusion_method = st.selectbox(
+            "Fusion Method",
+            ["rrf", "combsum", "combmnz", "weighted"],
+            key="eval_fusion_method"
+        )
+
+        if len(hybrid_models) < 2:
+            st.warning("⚠️ Select at least 2 models for hybrid parallel")
+
+    return hybrid_models, fusion_method
+
+
+def _render_evaluation_refinement_toggle() -> bool:
+    """Refinement is spelling-only during evaluation, and says so."""
+    enable_refinement = st.checkbox(
+        "✨ Enable Query Refinement",
+        value=False,
+        key="eval_refinement_toggle",
+        help="Apply intelligent query refinement (spelling correction only in evaluation mode)"
+    )
+
+    if enable_refinement:
+        st.info(
+            "ℹ️ **Evaluation Mode**: Only high-confidence spelling correction is applied. "
+            "Expansion and history features are disabled for deterministic results."
+        )
+
+    return enable_refinement
+
+
+def _render_evaluation_result(result: dict, dataset: str) -> None:
+    """Metrics of a finished run, then rerun so the tables pick it up."""
+    st.success("✅ Evaluation completed!")
+
+    st.markdown("#### Results:")
+    metrics = result.get("metrics", {})
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("MAP", f"{metrics.get('map', 0):.4f}")
+    col2.metric("nDCG", f"{metrics.get('ndcg', 0):.4f}")
+    col3.metric("Recall", f"{metrics.get('recall', 0):.4f}")
+    col4.metric("Precision", f"{metrics.get('precision', 0):.4f}")
+
+    st.info(f"📊 Evaluated on {metrics.get('num_queries', 0)} queries")
+    st.balloons()
+
+    if dataset:
+        st.session_state["last_evaluated_dataset"] = dataset
+
+    st.rerun()
+
+
+def _run_evaluation_now(model, dataset, top_k, query_limit,
+                        hybrid_models, fusion_method, enable_refinement) -> None:
+    """Validate the selection, call the service, show the metrics."""
+    if model in ["hybrid_serial", "hybrid_parallel"]:
+        if not hybrid_models or len(hybrid_models) < 2:
+            st.error("❌ Hybrid models require at least 2 models")
+            return
+
+    with st.spinner(f"Evaluating {model.upper()} on {dataset}..."):
+        payload = {
+            "dataset_name": dataset,
+            "model": model,
+            "top_k": top_k,
+            "query_limit": query_limit if query_limit > 0 else None,
+            "include_per_query": False,
+            "enable_refinement": enable_refinement
+        }
+
+        if model in ["hybrid_serial", "hybrid_parallel"]:
+            payload["hybrid_models"] = hybrid_models
+            if model == "hybrid_parallel":
+                payload["fusion_method"] = fusion_method
+
+        # Evaluation can take a long time, especially for hybrid models:
+        # the client timeout for this call is raised by the API wrapper.
+        response = eval_api.run_evaluation(payload)
+
+    if response.ok:
+        _render_evaluation_result(response.data, dataset)
+    else:
+        log_failure(logger, "run_evaluation", response)
+        st.error(f"❌ Evaluation failed: {failure_hint(response)}")
+
+
 def _run_evaluation_panel():
     """Interactive panel to run new evaluations"""
     with st.expander("🚀 Run New Evaluation", expanded=False):
         st.markdown("Run evaluation on demand to get fresh metrics.")
-        
+
         available_datasets = get_available_datasets()
-        
+
         if not available_datasets:
             st.warning("⚠️ No datasets with all indices (TF-IDF, BM25, Embedding) are available. Please build indices first.")
             return
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            model = st.selectbox(
-                "Model",
-                ["tfidf", "embedding", "bm25", "hybrid_serial", "hybrid_parallel"],
-                format_func=lambda x: x.upper().replace("_", " ").title(),
-                key="eval_model_select"
-            )
-            
-            dataset = st.selectbox(
-                "Dataset",
-                available_datasets,
-                format_func=get_dataset_display_name,
-                help="Only datasets with all indices (TF-IDF, BM25, Embedding) are shown",
-                key="eval_dataset_select"
-            )
-        
-        with col2:
-            top_k = st.number_input(
-                "Top K", 
-                min_value=10, 
-                max_value=1000, 
-                value=100, 
-                step=10, 
-                key="eval_topk",
-                help="Number of documents to retrieve per query"
-            )
-            query_limit = st.number_input(
-                "Query Limit", 
-                min_value=0, 
-                max_value=1000, 
-                value=100,
-                help="Limit queries for faster testing. 0 means all queries.",
-                key="eval_query_limit"
-            )
-        
-        # Hybrid configuration
-        hybrid_models = None
-        fusion_method = "rrf"
-        
-        if model in ["hybrid_serial", "hybrid_parallel"]:
-            st.markdown("##### Hybrid Configuration")
-            
-            if model == "hybrid_serial":
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    first_model = st.selectbox(
-                        "First Model",
-                        ["tfidf", "bm25", "embedding"],
-                        index=1,
-                        key="eval_first_model"
-                    )
-                with col_b:
-                    second_model = st.selectbox(
-                        "Second Model",
-                        ["tfidf", "bm25", "embedding"],
-                        index=2,
-                        key="eval_second_model"
-                    )
-                hybrid_models = [first_model, second_model]
-            
-            else:  # hybrid_parallel
-                inject_style("dataframe_tags")
-                hybrid_models = st.multiselect(
-                    "Models (select 2+)",
-                    ["tfidf", "bm25", "embedding"],
-                    default=["tfidf", "bm25"],
-                    key="eval_parallel_models"
-                )
-                
-                fusion_method = st.selectbox(
-                    "Fusion Method",
-                    ["rrf", "combsum", "combmnz", "weighted"],
-                    key="eval_fusion_method"
-                )
-                
-                if len(hybrid_models) < 2:
-                    st.warning("⚠️ Select at least 2 models for hybrid parallel")
-        
-        # Query refinement toggle
-        enable_refinement = st.checkbox(
-            "✨ Enable Query Refinement",
-            value=False,
-            key="eval_refinement_toggle",
-            help="Apply intelligent query refinement (spelling correction only in evaluation mode)"
-        )
-        
-        if enable_refinement:
-            st.info(
-                "ℹ️ **Evaluation Mode**: Only high-confidence spelling correction is applied. "
-                "Expansion and history features are disabled for deterministic results."
-            )
-        
+
+        model, dataset, top_k, query_limit = _render_evaluation_inputs(available_datasets)
+        hybrid_models, fusion_method = _render_hybrid_configuration(model)
+        enable_refinement = _render_evaluation_refinement_toggle()
+
         if st.button("▶️ Run Evaluation", type="primary", use_container_width=True, key="eval_run_btn"):
-            # Validation
-            if model in ["hybrid_serial", "hybrid_parallel"]:
-                if not hybrid_models or len(hybrid_models) < 2:
-                    st.error("❌ Hybrid models require at least 2 models")
-                    return
-            
-            with st.spinner(f"Evaluating {model.upper()} on {dataset}..."):
-                try:
-                    payload = {
-                        "dataset_name": dataset,
-                        "model": model,
-                        "top_k": top_k,
-                        "query_limit": query_limit if query_limit > 0 else None,
-                        "include_per_query": False,
-                        "enable_refinement": enable_refinement
-                    }
-                    
-                    # Add hybrid-specific parameters
-                    if model in ["hybrid_serial", "hybrid_parallel"]:
-                        payload["hybrid_models"] = hybrid_models
-                        if model == "hybrid_parallel":
-                            payload["fusion_method"] = fusion_method
-                    
-                    # Evaluation can take long time, especially for hybrid models
-                    # Use extended timeout (100 minutes)
-                    response = eval_api.run_evaluation(payload)
-                    
-                    if response.ok:
-                        st.success(f"✅ Evaluation completed!")
-                        result = response.data
-                        
-                        st.markdown("#### Results:")
-                        metrics = result.get("metrics", {})
-                        
-                        col1, col2, col3, col4 = st.columns(4)
-                        col1.metric("MAP", f"{metrics.get('map', 0):.4f}")
-                        col2.metric("nDCG", f"{metrics.get('ndcg', 0):.4f}")
-                        col3.metric("Recall", f"{metrics.get('recall', 0):.4f}")
-                        col4.metric("Precision", f"{metrics.get('precision', 0):.4f}")
-                        
-                        st.info(f"📊 Evaluated on {metrics.get('num_queries', 0)} queries")
-                        st.balloons()
-                        
-                        # Preserve dataset selection after rerun
-                        if dataset:
-                            st.session_state["last_evaluated_dataset"] = dataset
-                        
-                        st.rerun()
-                    else:
-                        st.error(f"❌ Evaluation failed: {response.error}")
-                        
-                except Exception as e:
-                    st.error(f"❌ Error: {str(e)}")
+            _run_evaluation_now(model, dataset, top_k, query_limit,
+                                hybrid_models, fusion_method, enable_refinement)
+
+
+def _bulk_delete(field: str, value: str) -> None:
+    """Delete every stored result matching one model or one dataset."""
+    if value == "Select...":
+        st.warning(f"⚠️ Please select a {field} first")
+        return
+
+    with st.spinner(f"Deleting all results for {value}..."):
+        del_response = eval_api.delete_results(**{field: value})
+
+    if del_response.ok:
+        count = del_response.data.get("count", 0)
+        st.success(f"✅ Deleted {count} results for {value}")
+        st.rerun()
+    else:
+        log_failure(logger, f"delete_by_{field}", del_response)
+        st.error(f"❌ Failed to delete: {failure_hint(del_response)}")
+
+
+def _render_bulk_delete_controls(history: list[dict]) -> None:
+    """Delete everything for one model, or everything for one dataset."""
+    st.markdown("#### 🗑️ Bulk Delete Options")
+
+    col_del1, col_del2 = st.columns(2)
+
+    with col_del1:
+        models_in_history = sorted(list(set(h.get("model", "") for h in history if h.get("model"))))
+        if models_in_history:
+            selected_model_to_delete = st.selectbox(
+                "Delete all results for model:",
+                ["Select..."] + models_in_history,
+                key="bulk_delete_model_select"
+            )
+
+            if st.button("🗑️ Delete by Model", type="secondary", key="bulk_delete_model_btn", use_container_width=True):
+                _bulk_delete("model", selected_model_to_delete)
+
+    with col_del2:
+        datasets_in_history = sorted(list(set(h.get("dataset", "") for h in history if h.get("dataset"))))
+        if datasets_in_history:
+            selected_dataset_to_delete = st.selectbox(
+                "Delete all results for dataset:",
+                ["Select..."] + datasets_in_history,
+                key="bulk_delete_dataset_select"
+            )
+
+            if st.button("🗑️ Delete by Dataset", type="secondary", key="bulk_delete_dataset_btn", use_container_width=True):
+                _bulk_delete("dataset", selected_dataset_to_delete)
+
+
+def _delete_history_record(item: dict) -> None:
+    """Remove one stored evaluation."""
+    with st.spinner("Deleting..."):
+        del_response = eval_api.delete_result(item.get('id'))
+
+    if del_response.ok:
+        st.success("✅ Deleted")
+        st.rerun()
+    else:
+        log_failure(logger, "delete_result", del_response)
+        st.error(f"❌ {failure_hint(del_response)}")
+
+
+def _render_evaluation_records(history: list[dict]) -> None:
+    st.markdown("---")
+    st.markdown("#### 📋 Evaluation Records")
+
+    for item in history:
+        model_name = item.get("model", "").upper()
+        dataset_name = item.get("dataset", "")
+        date_str = item.get("created_at", "")[:19] if item.get("created_at") else ""
+
+        metadata = item.get("metadata", {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+        enable_refinement = metadata.get("enable_refinement", False)
+        refinement_badge = "✨ With Refinement" if enable_refinement else "❌ Without Refinement"
+
+        col_info, col_delete = st.columns([5, 1])
+
+        with col_info:
+            st.markdown(
+                f"""
+                <div style='padding: 0.25rem 0; font-family: monospace;'>
+                    <span style='display: inline-block; width: 180px; font-weight: bold;'>{model_name}</span>
+                    <span style='display: inline-block; width: 200px;'>on <code>{dataset_name}</code></span>
+                    <span style='display: inline-block; width: 200px;'>{refinement_badge}</span>
+                    <span style='display: inline-block;'>🕒 {date_str}</span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        with col_delete:
+            if st.button("🗑️", key=f"delete_eval_{item.get('id')}", help="Delete this evaluation"):
+                _delete_history_record(item)
 
 
 def _evaluation_history_panel():
     """Show evaluation history from database"""
     with st.expander("📜 Evaluation History", expanded=False):
-        try:
-            response = eval_api.get_history()
-            
-            if response.ok and response.data:
-                history = response.data.get("history", [])
-                
-                if history:
-                    # Add bulk delete options
-                    st.markdown("#### 🗑️ Bulk Delete Options")
-                    
-                    col_del1, col_del2 = st.columns(2)
-                    
-                    with col_del1:
-                        # Delete by model
-                        models_in_history = sorted(list(set(h.get("model", "") for h in history if h.get("model"))))
-                        if models_in_history:
-                            selected_model_to_delete = st.selectbox(
-                                "Delete all results for model:",
-                                ["Select..."] + models_in_history,
-                                key="bulk_delete_model_select"
-                            )
-                            
-                            if st.button("🗑️ Delete by Model", type="secondary", key="bulk_delete_model_btn", use_container_width=True):
-                                if selected_model_to_delete != "Select...":
-                                    with st.spinner(f"Deleting all results for {selected_model_to_delete}..."):
-                                        try:
-                                            del_response = eval_api.delete_results(
-                                                model=selected_model_to_delete
-                                            )
-                                            if del_response.ok:
-                                                count = del_response.data.get("count", 0)
-                                                st.success(f"✅ Deleted {count} results for {selected_model_to_delete}")
-                                                st.rerun()
-                                            else:
-                                                st.error(f"❌ Failed to delete: {del_response.error}")
-                                        except Exception as e:
-                                            st.error(f"❌ Error: {str(e)}")
-                                else:
-                                    st.warning("⚠️ Please select a model first")
-                    
-                    with col_del2:
-                        # Delete by dataset
-                        datasets_in_history = sorted(list(set(h.get("dataset", "") for h in history if h.get("dataset"))))
-                        if datasets_in_history:
-                            selected_dataset_to_delete = st.selectbox(
-                                "Delete all results for dataset:",
-                                ["Select..."] + datasets_in_history,
-                                key="bulk_delete_dataset_select"
-                            )
-                            
-                            if st.button("🗑️ Delete by Dataset", type="secondary", key="bulk_delete_dataset_btn", use_container_width=True):
-                                if selected_dataset_to_delete != "Select...":
-                                    with st.spinner(f"Deleting all results for {selected_dataset_to_delete}..."):
-                                        try:
-                                            del_response = eval_api.delete_results(
-                                                dataset=selected_dataset_to_delete
-                                            )
-                                            if del_response.ok:
-                                                count = del_response.data.get("count", 0)
-                                                st.success(f"✅ Deleted {count} results for {selected_dataset_to_delete}")
-                                                st.rerun()
-                                            else:
-                                                st.error(f"❌ Failed to delete: {del_response.error}")
-                                        except Exception as e:
-                                            st.error(f"❌ Error: {str(e)}")
-                                else:
-                                    st.warning("⚠️ Please select a dataset first")
-                    
-                    st.markdown("---")
-                    st.markdown("#### 📋 Evaluation Records")
-                    
-                    # Display history as compact list
-                    for idx, item in enumerate(history):
-                        model_name = item.get("model", "").upper()
-                        dataset_name = item.get("dataset", "")
-                        date_str = item.get("created_at", "")[:19] if item.get("created_at") else ""
-                        
-                        # Extract refinement setting from metadata
-                        metadata = item.get("metadata", {})
-                        if not isinstance(metadata, dict):
-                            metadata = {}
-                        enable_refinement = metadata.get("enable_refinement", False)
-                        refinement_badge = "✨ With Refinement" if enable_refinement else "❌ Without Refinement"
-                        
-                        # Create compact row with fixed widths
-                        col_info, col_delete = st.columns([5, 1])
-                        
-                        with col_info:
-                            st.markdown(
-                                f"""
-                                <div style='padding: 0.25rem 0; font-family: monospace;'>
-                                    <span style='display: inline-block; width: 180px; font-weight: bold;'>{model_name}</span>
-                                    <span style='display: inline-block; width: 200px;'>on <code>{dataset_name}</code></span>
-                                    <span style='display: inline-block; width: 200px;'>{refinement_badge}</span>
-                                    <span style='display: inline-block;'>🕒 {date_str}</span>
-                                </div>
-                                """,
-                                unsafe_allow_html=True
-                            )
-                        
-                        with col_delete:
-                            if st.button("🗑️", key=f"delete_eval_{item.get('id')}", help="Delete this evaluation"):
-                                with st.spinner("Deleting..."):
-                                    try:
-                                        del_response = eval_api.delete_result(item.get('id'))
-                                        if del_response.ok:
-                                            st.success("✅ Deleted")
-                                            st.rerun()
-                                        else:
-                                            st.error(f"❌ {del_response.error}")
-                                    except Exception as e:
-                                        st.error(f"❌ {str(e)}")
-                    
-                else:
-                    st.info("No evaluation history found. Run some evaluations first!")
-            else:
-                st.info("Evaluation history not available.")
-                
-        except Exception as e:
-            st.warning(f"Could not load history: {str(e)}")
+        response = eval_api.get_history()
+
+        if not (response.ok and response.data):
+            log_failure(logger, "evaluation_history", response)
+            st.info("Evaluation history not available.")
+            return
+
+        history = response.data.get("history", [])
+
+        if not history:
+            st.info("No evaluation history found. Run some evaluations first!")
+            return
+
+        _render_bulk_delete_controls(history)
+        _render_evaluation_records(history)
 
 
 def _model_comparison_panel(metrics: Dict[str, dict]):
@@ -683,137 +703,155 @@ def _improvement_card(label: str, value: float) -> str:
     )
 
 
+def _collect_refinement_pairs(dataset_history: list[dict]) -> tuple[dict, dict]:
+    """Split stored results into with-refinement and without-refinement metrics."""
+    with_ref: Dict[str, dict] = {}
+    without_ref: Dict[str, dict] = {}
+
+    for item in dataset_history:
+        model = item.get("model", "")
+        metadata = item.get("metadata")
+
+        if not isinstance(metadata, dict):
+            metadata = {}
+
+        metrics = {
+            "map": item.get("map", 0),
+            "ndcg_at_10": item.get("ndcg", 0),
+            "recall": item.get("recall", 0),
+            "precision_at_10": item.get("precision", 0),
+        }
+
+        if metadata.get("enable_refinement", False) and model not in with_ref:
+            with_ref[model] = metrics
+        elif not metadata.get("enable_refinement", False) and model not in without_ref:
+            without_ref[model] = metrics
+
+    return with_ref, without_ref
+
+
+def _render_refinement_tabs(before: Dict[str, float], after: Dict[str, float]) -> None:
+    """Three views of the same before/after pair."""
+    ref_tab1, ref_tab2, ref_tab3 = st.tabs(["📊 Bar Chart", "🕸️ Radar", "📉 Precision@K"])
+
+    with ref_tab1:
+        render_refinement_comparison_chart(before, after)
+
+    with ref_tab2:
+        comparison_metrics = {
+            "Before Refinement": before,
+            "After Refinement": after
+        }
+        render_radar_chart(comparison_metrics)
+
+    with ref_tab3:
+        p10_before = before.get("precision_at_10", 0.0)
+        p10_after = after.get("precision_at_10", 0.0)
+
+        pk_comparison: Dict[str, Dict[int, float]] = {}
+
+        if p10_before > 0:
+            pk_comparison["Before Refinement"] = _extrapolate_precision_at_k(p10_before)
+
+        if p10_after > 0:
+            pk_comparison["After Refinement"] = _extrapolate_precision_at_k(p10_after)
+
+        if pk_comparison:
+            render_precision_at_k_curve(pk_comparison)
+            st.caption("P@K values for K≠10 are extrapolated from P@10.")
+
+
+def _improvement_percent(before: float, after: float) -> float:
+    """Relative change, or 0 when there is no baseline to compare against."""
+    return ((after - before) / before * 100) if before > 0 else 0
+
+
+def _render_improvement_cards(before: Dict[str, float], after: Dict[str, float]) -> None:
+    """One card per metric showing the relative gain."""
+    st.markdown("---")
+    st.markdown("##### 📊 Performance Improvement")
+
+    col1, col2, col3, col4 = st.columns(4)
+
+    with col1:
+        st.markdown(
+            _improvement_card("📊 MAP Improvement",
+                              _improvement_percent(before["map"], after["map"])),
+            unsafe_allow_html=True
+        )
+
+    with col2:
+        st.markdown(
+            _improvement_card("⭐ nDCG@10 Improvement",
+                              _improvement_percent(before["ndcg_at_10"], after["ndcg_at_10"])),
+            unsafe_allow_html=True
+        )
+
+    with col3:
+        st.markdown(
+            _improvement_card("🔍 P@10 Improvement",
+                              _improvement_percent(before["precision_at_10"], after["precision_at_10"])),
+            unsafe_allow_html=True
+        )
+
+    with col4:
+        st.markdown(
+            _improvement_card("🎯 Recall Improvement",
+                              _improvement_percent(before["recall"], after["recall"])),
+            unsafe_allow_html=True
+        )
+
+
 def _render_refinement_comparison(selected_dataset: str) -> None:
     """Before/after comparison for models evaluated with and without query refinement."""
     # ── Refinement comparison ──────────────────────────────────────────────
     st.markdown("### 🔧 Impact of Query Refinement")
-    
-    # Try to get before/after data from history for current dataset
-    try:
-        history_resp = eval_api.get_history()
-        
-        if history_resp.ok and history_resp.data:
-            history = history_resp.data.get("history", [])
-            
-            # Filter by selected dataset
-            target_dataset = selected_dataset if selected_dataset != "All Datasets" else None
-            
-            if not target_dataset:
-                st.info("📂 Please select a specific dataset from the filter above to view query refinement comparison.")
-            else:
-                # Filter history by selected dataset
-                dataset_history = [h for h in history if h.get("dataset") == target_dataset]
-                
-                if not dataset_history:
-                    st.info(f"No evaluation history found for dataset: {target_dataset}")
-                else:
-                    # Find models that have both with/without refinement evaluations
-                    with_ref = {}
-                    without_ref = {}
-                    
-                    for item in dataset_history:
-                        model = item.get("model", "")
-                        metadata = item.get("metadata")
-                        
-                        if not isinstance(metadata, dict):
-                            metadata = {}
-                        
-                        has_refinement = metadata.get("enable_refinement", False)
-                        
-                        if has_refinement and model not in with_ref:
-                            with_ref[model] = {
-                                "map": item.get("map", 0),
-                                "ndcg_at_10": item.get("ndcg", 0),
-                                "recall": item.get("recall", 0),
-                                "precision_at_10": item.get("precision", 0)
-                            }
-                        elif not has_refinement and model not in without_ref:
-                            without_ref[model] = {
-                                "map": item.get("map", 0),
-                                "ndcg_at_10": item.get("ndcg", 0),
-                                "recall": item.get("recall", 0),
-                                "precision_at_10": item.get("precision", 0)
-                            }
-                    
-                    # Find models with both evaluations
-                    available_models = sorted(list(set(with_ref.keys()) & set(without_ref.keys())))
-                    
-                    if not available_models:
-                        st.info("📊 No models with both refinement and non-refinement evaluations found.")
-                        st.caption("💡 Tip: Run evaluation with and without '✨ Enable Query Refinement' for the same model.")
-                    else:
-                        # Model selector
-                        selected_model = st.selectbox(
-                            "🤖 Select Model for Comparison",
-                            available_models,
-                            format_func=lambda x: x.upper().replace("_", " ").title(),
-                            key="refinement_model_selector"
-                        )
-                        
-                        if selected_model:
-                            before = without_ref[selected_model]
-                            after = with_ref[selected_model]
-                            
-                            st.markdown(f"#### 💡 Comparison for {selected_model.upper()} on {target_dataset} dataset")
-                            
-                            # Tabs for different visualizations
-                            ref_tab1, ref_tab2, ref_tab3 = st.tabs(["📊 Bar Chart", "🕸️ Radar", "📉 Precision@K"])
-                            
-                            with ref_tab1:
-                                render_refinement_comparison_chart(before, after)
-                            
-                            with ref_tab2:
-                                comparison_metrics = {
-                                    "Before Refinement": before,
-                                    "After Refinement": after
-                                }
-                                render_radar_chart(comparison_metrics)
-                            
-                            with ref_tab3:
-                                p10_before = before.get("precision_at_10", 0.0)
-                                p10_after = after.get("precision_at_10", 0.0)
-                                
-                                pk_comparison: Dict[str, Dict[int, float]] = {}
-                                
-                                if p10_before > 0:
-                                    pk_comparison["Before Refinement"] = _extrapolate_precision_at_k(p10_before)
-                                
-                                if p10_after > 0:
-                                    pk_comparison["After Refinement"] = _extrapolate_precision_at_k(p10_after)
-                                
-                                if pk_comparison:
-                                    render_precision_at_k_curve(pk_comparison)
-                                    st.caption("P@K values for K≠10 are extrapolated from P@10.")
-                            
-                            st.markdown("---")
-                            
-                            # Show improvement stats
-                            st.markdown("##### 📊 Performance Improvement")
-                            
-                            map_improvement = ((after["map"] - before["map"]) / before["map"] * 100) if before["map"] > 0 else 0
-                            ndcg_improvement = ((after["ndcg_at_10"] - before["ndcg_at_10"]) / before["ndcg_at_10"] * 100) if before["ndcg_at_10"] > 0 else 0
-                            p10_improvement = ((after["precision_at_10"] - before["precision_at_10"]) / before["precision_at_10"] * 100) if before["precision_at_10"] > 0 else 0
-                            recall_improvement = ((after["recall"] - before["recall"]) / before["recall"] * 100) if before["recall"] > 0 else 0
-                            
-                            col1, col2, col3, col4 = st.columns(4)
-                            
-                            with col1:
-                                st.markdown(_improvement_card("📊 MAP Improvement", map_improvement), unsafe_allow_html=True)
-                            
-                            with col2:
-                                st.markdown(_improvement_card("⭐ nDCG@10 Improvement", ndcg_improvement), unsafe_allow_html=True)
-                            
-                            with col3:
-                                st.markdown(_improvement_card("🔍 P@10 Improvement", p10_improvement), unsafe_allow_html=True)
-                            
-                            with col4:
-                                st.markdown(_improvement_card("🎯 Recall Improvement", recall_improvement), unsafe_allow_html=True)
-        else:
-            st.info("No evaluation history available.")
-    except Exception as e:
-        st.error(f"Error loading refinement comparison: {str(e)}")
-        import traceback
-        st.code(traceback.format_exc())
+
+    history_resp = eval_api.get_history()
+
+    if not (history_resp.ok and history_resp.data):
+        log_failure(logger, "refinement_comparison_history", history_resp)
+        st.info("No evaluation history available.")
+        return
+
+    history = history_resp.data.get("history", [])
+    target_dataset = selected_dataset if selected_dataset != "All Datasets" else None
+
+    if not target_dataset:
+        st.info("📂 Please select a specific dataset from the filter above to view query refinement comparison.")
+        return
+
+    dataset_history = [h for h in history if h.get("dataset") == target_dataset]
+
+    if not dataset_history:
+        st.info(f"No evaluation history found for dataset: {target_dataset}")
+        return
+
+    with_ref, without_ref = _collect_refinement_pairs(dataset_history)
+    available_models = sorted(list(set(with_ref.keys()) & set(without_ref.keys())))
+
+    if not available_models:
+        st.info("📊 No models with both refinement and non-refinement evaluations found.")
+        st.caption("💡 Tip: Run evaluation with and without '✨ Enable Query Refinement' for the same model.")
+        return
+
+    selected_model = st.selectbox(
+        "🤖 Select Model for Comparison",
+        available_models,
+        format_func=lambda x: x.upper().replace("_", " ").title(),
+        key="refinement_model_selector"
+    )
+
+    if not selected_model:
+        return
+
+    before = without_ref[selected_model]
+    after = with_ref[selected_model]
+
+    st.markdown(f"#### 💡 Comparison for {selected_model.upper()} on {target_dataset} dataset")
+
+    _render_refinement_tabs(before, after)
+    _render_improvement_cards(before, after)
 
 
 def _render_insights(metrics: Dict[str, dict]) -> None:

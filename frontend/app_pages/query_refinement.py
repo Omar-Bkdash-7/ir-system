@@ -1,5 +1,10 @@
 """
 Query Refinement Lab — demo and config page.
+
+Sections, in the order they are drawn:
+  1. Read-only configuration panel
+  2. Live demo: inputs, analysis call, result tabs
+  3. Session history table
 """
 from __future__ import annotations
 
@@ -10,14 +15,16 @@ import streamlit as st
 import config
 from api.gateway import refine_query
 from constants import (
-    SS_REFINEMENT_LAB_CONFIG,
+    SS_REFINEMENT_HISTORY,
     SS_REFINEMENT_LAB_HISTORY_INPUT,
     SS_REFINEMENT_LAB_QUERY_INPUT,
     SS_REFINEMENT_LAB_RESULT,
-    SS_REFINEMENT_HISTORY,
     SS_SESSION_ID,
 )
+from obs import failure_hint, get_logger, log_failure
 from ui_style import inject_style
+
+logger = get_logger(__name__)
 
 
 def _diff_html(original: str, refined: str) -> str:
@@ -31,20 +38,15 @@ def _diff_html(original: str, refined: str) -> str:
             html_parts.append(f'<span class="diff-unchanged">{word}</span>')
         else:
             html_parts.append(f'<span class="diff-added">{word}</span>')
-    for word in orig_words:
-        if word not in set(ref_words):
-            pass  # removed words shown in original section
     return " ".join(html_parts)
 
 
-def render() -> None:
-    st.markdown("## 🔬 Query Refinement Lab")
-    st.caption(
-        "Inspect and tune every stage of the query refinement pipeline: "
-        "spelling correction, WordNet synonym expansion, and semantic history-based boosting."
-    )
+# ─────────────────────────────────────────────────────────────────────────────
+# Sections
+# ─────────────────────────────────────────────────────────────────────────────
 
-    # ── Configuration ──────────────────────────────────────────────────────
+def _render_config_panel() -> None:
+    """Read-only view of the server-side defaults."""
     with st.expander("⚙️ Refinement Configuration", expanded=False):
         st.caption(
             "This panel documents the active configuration. These values are informational — they reflect the server-side defaults."
@@ -77,11 +79,9 @@ def render() -> None:
                       config.REFINEMENT_HISTORY_SIMILARITY_THRESHOLD_DEFAULT,
                       step=0.05, key="rl_sim", disabled=True)
 
-    st.divider()
 
-    # ── Live demo ──────────────────────────────────────────────────────────
-    st.markdown("### Live Refinement Demo")
-
+def _render_demo_inputs() -> tuple[str, List[str]]:
+    """Query + pasted history; returns both in parsed form."""
     query_input = st.text_input(
         "Input query",
         value=st.session_state.get(SS_REFINEMENT_LAB_QUERY_INPUT, "informtion retrival system"),
@@ -98,124 +98,178 @@ def render() -> None:
         placeholder="document similarity\ninformation extraction\n...",
     )
     st.session_state[SS_REFINEMENT_LAB_HISTORY_INPUT] = history_raw
-    history: List[str] = [l.strip() for l in history_raw.splitlines() if l.strip()]
+    history = [line.strip() for line in history_raw.splitlines() if line.strip()]
+    return query_input, history
 
-    if st.button("🔬 Analyze Refinement", type="primary", key="btn_rl_analyze"):
-        if not query_input.strip():
-            st.error("Enter a query.")
+
+def _run_analysis(query_input: str, history: List[str]) -> None:
+    """Call the refinement service and remember the result and the log entry."""
+    if not query_input.strip():
+        st.error("Enter a query.")
+        return
+
+    with st.spinner("Calling refinement service…"):
+        resp = refine_query(
+            query_input,
+            history,
+            enabled=True,
+            session_id=st.session_state.get(SS_SESSION_ID, "default"),
+        )
+        if resp.ok and isinstance(resp.data, dict):
+            st.session_state[SS_REFINEMENT_LAB_RESULT] = resp.data
+            log: list = st.session_state.get(SS_REFINEMENT_HISTORY, [])
+            log.append(resp.data)
+            st.session_state[SS_REFINEMENT_HISTORY] = log[-20:]
         else:
-            with st.spinner("Calling refinement service…"):
-                resp = refine_query(
-                    query_input,
-                    history,
-                    enabled=True,
-                    session_id=st.session_state.get(SS_SESSION_ID, "default"),
-                )
-                if resp.ok and isinstance(resp.data, dict):
-                    st.session_state[SS_REFINEMENT_LAB_RESULT] = resp.data
-                    # append to history log
-                    log: list = st.session_state.get(SS_REFINEMENT_HISTORY, [])
-                    log.append(resp.data)
-                    st.session_state[SS_REFINEMENT_HISTORY] = log[-20:]
-                else:
-                    st.error(f"Refinement service error: {resp.error}")
+            log_failure(logger, "refinement_lab", resp)
+            st.error(f"Refinement service error: {failure_hint(resp)}")
 
+
+def _render_spelling_tab(result: dict) -> None:
+    corrections = result.get("corrections", {})
+    if corrections:
+        st.markdown("**Spelling corrections applied:**")
+        rows = [{"Original": k, "Corrected": v} for k, v in corrections.items()]
+        st.table(rows)
+    else:
+        st.success("No spelling errors detected.")
+
+
+def _render_synonyms_tab(result: dict) -> None:
+    synonyms = result.get("expansions", {})
+    if synonyms:
+        st.markdown("**WordNet synonyms added:**")
+        rows = [{"Word": k, "Synonyms added": ", ".join(v)}
+                for k, v in synonyms.items()]
+        st.table(rows)
+    else:
+        st.info(
+            "No synonyms added — words may be below min_term_length "
+            f"({config.REFINEMENT_MIN_TERM_LENGTH_DEFAULT} chars) or "
+            "no synsets found."
+        )
+
+
+def _render_history_tab(result: dict) -> None:
+    history_terms = result.get("history_terms", [])
+    sim = result.get("history_similarity", 0.0)
+    boosted = list(result.get("history_boosts", {}))
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.metric("History similarity", f"{sim:.3f}")
+    with col_b:
+        st.metric("Terms added from history", len(history_terms))
+
+    if sim > 0:
+        st.progress(min(sim, 1.0), text=f"Similarity: {sim:.3f}")
+
+    if history_terms:
+        chips = "".join(f'<span class="chip">{t}</span>' for t in history_terms)
+        st.markdown("**Added terms:**")
+        st.markdown(f'<div class="chip-row">{chips}</div>', unsafe_allow_html=True)
+    if boosted:
+        st.markdown(f"**Boosted terms (seen ≥2x in history):** "
+                    f"{', '.join(f'`{t}`' for t in boosted)}")
+    if not history_terms and not boosted:
+        st.info("No history terms added — similarity below threshold or no history provided.")
+
+
+def _render_final_tab(result: dict) -> None:
+    original = result.get("original_query", "")
+    refined = result.get("refined_query", "")
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**Original query**")
+        st.info(original)
+    with c2:
+        st.markdown("**Refined query**")
+        st.success(refined)
+
+    st.markdown("**Word-level diff (green = added):**")
+    st.markdown(
+        f'<div class="ir-card ir-card--flat" style="font-size:1.05em;padding:12px">'
+        f'{_diff_html(original, refined)}</div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _render_result() -> None:
+    """Tabs explaining what each refinement stage did to the query."""
     result = st.session_state.get(SS_REFINEMENT_LAB_RESULT)
-    if result:
-        applied = result.get("applied", False)
-        if not applied:
-            st.info("No refinements applied — query was already optimal.")
-        else:
-            inject_style("tabs")
-            tab1, tab2, tab3, tab4 = st.tabs([
-                "🔤 Spelling", "📚 Synonyms", "🧠 Semantic History", "✅ Final Result"
-            ])
+    if not result:
+        return
 
-            with tab1:
-                corrections = result.get("corrections", {})
-                if corrections:
-                    st.markdown("**Spelling corrections applied:**")
-                    rows = [{"Original": k, "Corrected": v} for k, v in corrections.items()]
-                    st.table(rows)
-                else:
-                    st.success("No spelling errors detected.")
+    if not result.get("applied", False):
+        st.info("No refinements applied — query was already optimal.")
+        return
 
-            with tab2:
-                synonyms = result.get("expansions", {})
-                if synonyms:
-                    st.markdown("**WordNet synonyms added:**")
-                    rows = [{"Word": k, "Synonyms added": ", ".join(v)}
-                            for k, v in synonyms.items()]
-                    st.table(rows)
-                else:
-                    st.info(
-                        "No synonyms added — words may be below min_term_length "
-                        f"({config.REFINEMENT_MIN_TERM_LENGTH_DEFAULT} chars) or "
-                        "no synsets found."
-                    )
+    inject_style("tabs")
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "🔤 Spelling", "📚 Synonyms", "🧠 Semantic History", "✅ Final Result"
+    ])
+    with tab1:
+        _render_spelling_tab(result)
+    with tab2:
+        _render_synonyms_tab(result)
+    with tab3:
+        _render_history_tab(result)
+    with tab4:
+        _render_final_tab(result)
 
-            with tab3:
-                history_terms = result.get("history_terms", [])
-                sim = result.get("history_similarity", 0.0)
-                boosted = list(result.get("history_boosts", {}))
 
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    st.metric("History similarity", f"{sim:.3f}")
-                with col_b:
-                    st.metric("Terms added from history", len(history_terms))
+def _render_live_demo() -> None:
+    st.markdown("### Live Refinement Demo")
 
-                if sim > 0:
-                    st.progress(min(sim, 1.0), text=f"Similarity: {sim:.3f}")
+    query_input, history = _render_demo_inputs()
+    if st.button("🔬 Analyze Refinement", type="primary", key="btn_rl_analyze"):
+        _run_analysis(query_input, history)
 
-                if history_terms:
-                    chips = "".join(f'<span class="chip">{t}</span>' for t in history_terms)
-                    st.markdown("**Added terms:**")
-                    st.markdown(f'<div class="chip-row">{chips}</div>', unsafe_allow_html=True)
-                if boosted:
-                    st.markdown(f"**Boosted terms (seen ≥2x in history):** "
-                                f"{', '.join(f'`{t}`' for t in boosted)}")
-                if not history_terms and not boosted:
-                    st.info("No history terms added — similarity below threshold or no history provided.")
+    _render_result()
 
-            with tab4:
-                original = result.get("original_query", "")
-                refined = result.get("refined_query", "")
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.markdown("**Original query**")
-                    st.info(original)
-                with c2:
-                    st.markdown("**Refined query**")
-                    st.success(refined)
 
-                st.markdown("**Word-level diff (green = added):**")
-                st.markdown(
-                    f'<div class="ir-card ir-card--flat" style="font-size:1.05em;padding:12px">'
-                    f'{_diff_html(original, refined)}</div>',
-                    unsafe_allow_html=True,
-                )
+def _render_session_history() -> None:
+    """Every refinement run in this session, newest first."""
+    history_log: list = st.session_state.get(SS_REFINEMENT_HISTORY, [])
+    if not history_log:
+        return
+
+    st.markdown(f"### Session History ({len(history_log)} refinements)")
+    import pandas as pd
+
+    rows = []
+    for entry in reversed(history_log):
+        rows.append({
+            "Original": entry.get("original_query", ""),
+            "Refined": entry.get("refined_query", ""),
+            "Corrections": len(entry.get("corrections", {})),
+            "Synonyms": sum(len(v) for v in entry.get("expansions", {}).values()),
+            "History terms": len(entry.get("history_terms", [])),
+            "Applied": "✅" if entry.get("applied") else "—",
+        })
+    st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
+    if st.button("🗑️ Clear history", key="rl_clear_history"):
+        st.session_state[SS_REFINEMENT_HISTORY] = []
+        st.session_state[SS_REFINEMENT_LAB_RESULT] = None
+        st.rerun()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Page
+# ─────────────────────────────────────────────────────────────────────────────
+
+def render() -> None:
+    st.markdown("## 🔬 Query Refinement Lab")
+    st.caption(
+        "Inspect and tune every stage of the query refinement pipeline: "
+        "spelling correction, WordNet synonym expansion, and semantic history-based boosting."
+    )
+
+    _render_config_panel()
 
     st.divider()
+    _render_live_demo()
 
-    # ── Refinement history log ─────────────────────────────────────────────
-    history_log: list = st.session_state.get(SS_REFINEMENT_HISTORY, [])
-    if history_log:
-        st.markdown(f"### Session History ({len(history_log)} refinements)")
-        import pandas as pd
-        rows = []
-        for entry in reversed(history_log):
-            rows.append({
-                "Original": entry.get("original_query", ""),
-                "Refined": entry.get("refined_query", ""),
-                "Corrections": len(entry.get("corrections", {})),
-                "Synonyms": sum(len(v) for v in entry.get("expansions", {}).values()),
-                "History terms": len(entry.get("history_terms", [])),
-                "Applied": "✅" if entry.get("applied") else "—",
-            })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True)
-
-        if st.button("🗑️ Clear history", key="rl_clear_history"):
-            st.session_state[SS_REFINEMENT_HISTORY] = []
-            st.session_state[SS_REFINEMENT_LAB_RESULT] = None
-            st.rerun()
+    st.divider()
+    _render_session_history()

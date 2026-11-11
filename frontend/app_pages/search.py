@@ -43,17 +43,18 @@ from constants import (
     SS_SESSION_ID,
     SS_SELECTED_DATASET,
 )
+from obs import failure_hint, get_logger, log_failure
 from ui_state import dataset_selector
 from ui_style import inject_style
 from utils.dataset_utils import get_available_datasets, get_dataset_display_name
 
+logger = get_logger(__name__)
+
+_RETRIEVAL_MODES = ["individual", "hybrid_serial", "hybrid_parallel"]
+
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Dataset metadata helper
-# ─────────────────────────────────────────────────────────────────────────────
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Internal helpers
+# Session-state helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _add_to_history(query: str) -> None:
@@ -73,149 +74,177 @@ def _active_preprocessing_config() -> dict:
     return cfg
 
 
-def _run_search(query: str, mode: str, mode_cfg: dict) -> None:
-    """Execute the appropriate search call and store results in session state."""
-    history = st.session_state.get(SS_QUERY_HISTORY, [])
-    refinement_enabled = st.session_state.get(SS_REFINEMENT_ENABLED, False)
-    session_id = st.session_state.get(SS_SESSION_ID, "default")
-    selected_dataset = st.session_state.get(SS_SELECTED_DATASET)
+def _on_dataset_change() -> None:
+    """A new dataset invalidates the results of the previous one."""
+    if st.session_state.get("dataset_selector"):
+        st.session_state[SS_SEARCH_RESULTS] = None
 
-    t0 = time.perf_counter()
 
-    with st.status("🔍 Searching…", expanded=True) as status_box:
-        st.write("Preprocessing query…")
+def _store_results(mode: str, results_by_model: Dict[str, List[dict]],
+                   refinement: Optional[dict], elapsed: float, query: str) -> None:
+    st.session_state[SS_SEARCH_RESULTS] = {
+        "mode": mode,
+        "results_by_model": results_by_model,
+        "refinement": refinement,
+        "elapsed_ms": elapsed,
+        "query": query,
+    }
 
-        if mode == "individual":
-            enabled_models = [m for m in config.RETRIEVAL_MODELS
-                              if mode_cfg.get(m, {}).get("enabled")]
-            if not enabled_models:
-                st.error("Select at least one model.")
-                return
 
-            results_by_model: Dict[str, List[dict]] = {}
-            refinement_data: Optional[dict] = None
-
-            for model in enabled_models:
-                mcfg = mode_cfg[model]
-                st.write(f"Retrieving with {config.RETRIEVAL_MODEL_LABELS[model]}…")
-                resp: APIResponse = gateway.search_basic(
-                    query=query,
-                    model=model,
-                    top_k=mcfg.get("top_k", config.DEFAULT_TOP_K),
-                    bm25_k1=mcfg.get("k1", config.DEFAULT_BM25_K1),
-                    bm25_b=mcfg.get("b", config.DEFAULT_BM25_B),
-                    enable_refinement=refinement_enabled,
-                    query_history=history[-3:],
-                    dataset=selected_dataset,
-                )
-                if resp.ok and isinstance(resp.data, dict):
-                    docs = resp.data.get("results", [])
-                    disp_k = mcfg.get("display_k", config.DEFAULT_DISPLAY_K)
-                    results_by_model[config.RETRIEVAL_MODEL_LABELS[model]] = docs[:disp_k]
-                    if refinement_data is None:
-                        refinement_data = resp.data.get("refinement")
-                else:
-                    st.warning(f"{config.RETRIEVAL_MODEL_LABELS[model]}: {resp.error}")
-
-            elapsed = (time.perf_counter() - t0) * 1000
-            status_box.update(label=f"✅ Done in {elapsed:.0f} ms", state="complete")
-            st.session_state[SS_SEARCH_RESULTS] = {
-                "mode": "individual",
-                "results_by_model": results_by_model,
-                "refinement": refinement_data,
-                "elapsed_ms": elapsed,
-                "query": query,
-            }
-
-        elif mode == "hybrid_serial":
-            st.write(f"Stage 1: {mode_cfg['first_model'].upper()} retrieval…")
-            resp = gateway.search_hybrid_serial(
-                query=query,
-                first_model=mode_cfg["first_model"],
-                second_model=mode_cfg["second_model"],
-                first_stage_k=mode_cfg.get("first_stage_k", config.HYBRID_SERIAL_DEFAULT_CANDIDATES),
-                final_top_k=mode_cfg.get("final_top_k", config.HYBRID_SERIAL_DEFAULT_FINAL_K),
-                bm25_k1=mode_cfg.get("k1", config.DEFAULT_BM25_K1),
-                bm25_b=mode_cfg.get("b", config.DEFAULT_BM25_B),
-                enable_refinement=refinement_enabled,
-                query_history=history[-3:],
-                dataset=selected_dataset,
-            )
-            elapsed = (time.perf_counter() - t0) * 1000
-            if resp.ok and isinstance(resp.data, dict):
-                label = (f"Hybrid Serial "
-                         f"[{mode_cfg['first_model'].upper()} → "
-                         f"{mode_cfg['second_model'].upper()}]")
-                status_box.update(label=f"✅ Done in {elapsed:.0f} ms", state="complete")
-                st.session_state[SS_SEARCH_RESULTS] = {
-                    "mode": "hybrid_serial",
-                    "results_by_model": {label: resp.data.get("results", [])},
-                    "refinement": resp.data.get("refinement"),
-                    "elapsed_ms": elapsed,
-                    "query": query,
-                }
-            else:
-                status_box.update(label="❌ Search failed", state="error")
-                st.error(f"Hybrid serial search failed: {resp.error}")
-
-        elif mode == "hybrid_parallel":
-            models = mode_cfg.get("models", [])
-            fusion = mode_cfg.get("fusion_method", "rrf")
-            st.write(f"Running {len(models)} models in parallel…")
-            resp = gateway.search_hybrid_parallel(
-                query=query,
-                models=models,
-                fusion_method=fusion,
-                top_k=mode_cfg.get("final_top_k", config.HYBRID_PARALLEL_DEFAULT_FINAL_K),
-                candidates_per_model=mode_cfg.get("candidates_per_model",
-                                                   config.HYBRID_PARALLEL_DEFAULT_CANDIDATES),
-                rrf_k=mode_cfg.get("rrf_k", config.RRF_DEFAULT_K),
-                model_weights=mode_cfg.get("model_weights"),
-                bm25_k1=mode_cfg.get("k1", config.DEFAULT_BM25_K1),
-                bm25_b=mode_cfg.get("b", config.DEFAULT_BM25_B),
-                enable_refinement=refinement_enabled,
-                query_history=history[-3:],
-                dataset=selected_dataset,
-            )
-            elapsed = (time.perf_counter() - t0) * 1000
-            if resp.ok and isinstance(resp.data, dict):
-                label = (f"Hybrid Parallel "
-                         f"[{' + '.join(m.upper() for m in models)}, "
-                         f"{config.FUSION_METHOD_LABELS.get(fusion, fusion)}]")
-                status_box.update(label=f"✅ Done in {elapsed:.0f} ms", state="complete")
-                st.session_state[SS_SEARCH_RESULTS] = {
-                    "mode": "hybrid_parallel",
-                    "results_by_model": {label: resp.data.get("results", [])},
-                    "refinement": resp.data.get("refinement"),
-                    "elapsed_ms": elapsed,
-                    "query": query,
-                }
-            else:
-                status_box.update(label="❌ Search failed", state="error")
-                st.error(f"Hybrid parallel search failed: {resp.error}")
-
+def _finish_search(query: str) -> None:
+    """Stamp the run and remember the query, whatever the outcome was."""
     st.session_state[SS_LAST_SEARCH_TIME] = time.strftime("%H:%M:%S")
     st.session_state[SS_SEARCH_COUNT] = st.session_state.get(SS_SEARCH_COUNT, 0) + 1
     _add_to_history(query)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Sub-sections rendered inside the mode tabs
+# Search execution (one function per retrieval mode)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _search_individual(query: str, mode_cfg: dict, status_box, t0: float) -> None:
+    """Run every enabled model separately and keep one list per model."""
+    enabled_models = [m for m in config.RETRIEVAL_MODELS if mode_cfg.get(m, {}).get("enabled")]
+    if not enabled_models:
+        st.error("Select at least one model.")
+        return
+
+    history = st.session_state.get(SS_QUERY_HISTORY, [])
+    refinement_enabled = st.session_state.get(SS_REFINEMENT_ENABLED, False)
+    selected_dataset = st.session_state.get(SS_SELECTED_DATASET)
+
+    results_by_model: Dict[str, List[dict]] = {}
+    refinement_data: Optional[dict] = None
+
+    for model in enabled_models:
+        mcfg = mode_cfg[model]
+        label = config.RETRIEVAL_MODEL_LABELS[model]
+        st.write(f"Retrieving with {label}…")
+        resp: APIResponse = gateway.search_basic(
+            query=query,
+            model=model,
+            top_k=mcfg.get("top_k", config.DEFAULT_TOP_K),
+            bm25_k1=mcfg.get("k1", config.DEFAULT_BM25_K1),
+            bm25_b=mcfg.get("b", config.DEFAULT_BM25_B),
+            enable_refinement=refinement_enabled,
+            query_history=history[-3:],
+            dataset=selected_dataset,
+        )
+        if resp.ok and isinstance(resp.data, dict):
+            docs = resp.data.get("results", [])
+            disp_k = mcfg.get("display_k", config.DEFAULT_DISPLAY_K)
+            results_by_model[label] = docs[:disp_k]
+            if refinement_data is None:
+                refinement_data = resp.data.get("refinement")
+        else:
+            log_failure(logger, f"search/{model}", resp)
+            st.warning(f"{label}: {failure_hint(resp)}")
+
+    elapsed = (time.perf_counter() - t0) * 1000
+    status_box.update(label=f"✅ Done in {elapsed:.0f} ms", state="complete")
+    _store_results("individual", results_by_model, refinement_data, elapsed, query)
+
+
+def _search_hybrid_serial(query: str, mode_cfg: dict, status_box, t0: float) -> None:
+    """First stage retrieves candidates, second stage re-ranks them."""
+    st.write(f"Stage 1: {mode_cfg['first_model'].upper()} retrieval…")
+    resp = gateway.search_hybrid_serial(
+        query=query,
+        first_model=mode_cfg["first_model"],
+        second_model=mode_cfg["second_model"],
+        first_stage_k=mode_cfg.get("first_stage_k", config.HYBRID_SERIAL_DEFAULT_CANDIDATES),
+        final_top_k=mode_cfg.get("final_top_k", config.HYBRID_SERIAL_DEFAULT_FINAL_K),
+        bm25_k1=mode_cfg.get("k1", config.DEFAULT_BM25_K1),
+        bm25_b=mode_cfg.get("b", config.DEFAULT_BM25_B),
+        enable_refinement=st.session_state.get(SS_REFINEMENT_ENABLED, False),
+        query_history=st.session_state.get(SS_QUERY_HISTORY, [])[-3:],
+        dataset=st.session_state.get(SS_SELECTED_DATASET),
+    )
+    elapsed = (time.perf_counter() - t0) * 1000
+
+    if resp.ok and isinstance(resp.data, dict):
+        label = (f"Hybrid Serial "
+                 f"[{mode_cfg['first_model'].upper()} → "
+                 f"{mode_cfg['second_model'].upper()}]")
+        status_box.update(label=f"✅ Done in {elapsed:.0f} ms", state="complete")
+        _store_results("hybrid_serial", {label: resp.data.get("results", [])},
+                       resp.data.get("refinement"), elapsed, query)
+        return
+
+    log_failure(logger, "search/hybrid_serial", resp)
+    status_box.update(label="❌ Search failed", state="error")
+    st.error(f"Hybrid serial search failed: {failure_hint(resp)}")
+
+
+def _search_hybrid_parallel(query: str, mode_cfg: dict, status_box, t0: float) -> None:
+    """Every model runs on the same query, then the ranked lists are fused."""
+    models = mode_cfg.get("models", [])
+    fusion = mode_cfg.get("fusion_method", "rrf")
+    st.write(f"Running {len(models)} models in parallel…")
+    resp = gateway.search_hybrid_parallel(
+        query=query,
+        models=models,
+        fusion_method=fusion,
+        top_k=mode_cfg.get("final_top_k", config.HYBRID_PARALLEL_DEFAULT_FINAL_K),
+        candidates_per_model=mode_cfg.get("candidates_per_model",
+                                           config.HYBRID_PARALLEL_DEFAULT_CANDIDATES),
+        rrf_k=mode_cfg.get("rrf_k", config.RRF_DEFAULT_K),
+        model_weights=mode_cfg.get("model_weights"),
+        bm25_k1=mode_cfg.get("k1", config.DEFAULT_BM25_K1),
+        bm25_b=mode_cfg.get("b", config.DEFAULT_BM25_B),
+        enable_refinement=st.session_state.get(SS_REFINEMENT_ENABLED, False),
+        query_history=st.session_state.get(SS_QUERY_HISTORY, [])[-3:],
+        dataset=st.session_state.get(SS_SELECTED_DATASET),
+    )
+    elapsed = (time.perf_counter() - t0) * 1000
+
+    if resp.ok and isinstance(resp.data, dict):
+        label = (f"Hybrid Parallel "
+                 f"[{' + '.join(m.upper() for m in models)}, "
+                 f"{config.FUSION_METHOD_LABELS.get(fusion, fusion)}]")
+        status_box.update(label=f"✅ Done in {elapsed:.0f} ms", state="complete")
+        _store_results("hybrid_parallel", {label: resp.data.get("results", [])},
+                       resp.data.get("refinement"), elapsed, query)
+        return
+
+    log_failure(logger, "search/hybrid_parallel", resp)
+    status_box.update(label="❌ Search failed", state="error")
+    st.error(f"Hybrid parallel search failed: {failure_hint(resp)}")
+
+
+_SEARCH_RUNNERS = {
+    "individual": _search_individual,
+    "hybrid_serial": _search_hybrid_serial,
+    "hybrid_parallel": _search_hybrid_parallel,
+}
+
+
+def _run_search(query: str, mode: str, mode_cfg: dict) -> None:
+    """Execute the call for the active mode and store the results."""
+    t0 = time.perf_counter()
+    with st.status("🔍 Searching…", expanded=True) as status_box:
+        st.write("Preprocessing query…")
+        _SEARCH_RUNNERS[mode](query, mode_cfg, status_box, t0)
+    _finish_search(query)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Mode configuration panels
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _tab_individual() -> dict:
     """Render Individual Models tab, return mode_cfg dict."""
     st.markdown("##### Select & configure models")
     mode_cfg: dict = {}
-    
+
     for model in config.RETRIEVAL_MODELS:
         icon = config.RETRIEVAL_MODEL_ICONS[model]
         label = config.RETRIEVAL_MODEL_LABELS[model]
-        
+
         with st.container(border=True):
             enabled = st.checkbox(f"{icon} {label}", value=True, key=f"ind_ena_{model}")
             col_topk, col_disp = st.columns(2)
-            
+
             with col_topk:
                 top_k = st.slider(
                     "Retrieve top_k",
@@ -223,7 +252,7 @@ def _tab_individual() -> dict:
                     config.DEFAULT_TOP_K, 10,
                     key=f"ind_topk_{model}",
                 )
-                
+
             with col_disp:
                 disp_k = st.slider(
                     "Display",
@@ -231,9 +260,9 @@ def _tab_individual() -> dict:
                     config.DEFAULT_DISPLAY_K, 5,
                     key=f"ind_disp_{model}",
                 )
-            
+
             mcfg: dict = {"enabled": enabled, "top_k": top_k, "display_k": disp_k}
-            
+
             if model == "bm25":
                 k1, b = render_bm25_params(key_prefix=f"ind_{model}")
                 mcfg.update({"k1": k1, "b": b})
@@ -241,10 +270,30 @@ def _tab_individual() -> dict:
                 st.caption(f"Model: `{config.EMBEDDING_MODEL_NAME}` ({config.EMBEDDING_DIMENSIONS}d)")
             elif model == "tfidf":
                 st.caption(f"Config: `{config.TFIDF_DESCRIPTION}`")
-            
+
             mode_cfg[model] = mcfg
-            
+
     return mode_cfg
+
+
+def _render_serial_pipeline(first: str, second: str, first_k: int, final_k: int) -> None:
+    """Show the two-stage flow as a diagram above the parameters."""
+    st.markdown(
+        f'<div class="pipeline-row">'
+        f'<div class="pipeline-box">{config.RETRIEVAL_MODEL_ICONS[first]} '
+        f'{config.RETRIEVAL_MODEL_LABELS[first]}<br>'
+        f'<small>{first_k} candidates</small></div>'
+        f'<span class="pipeline-arrow">→</span>'
+        f'<div class="pipeline-box pipeline-box--accent">'
+        f'{config.RETRIEVAL_MODEL_ICONS[second]} '
+        f'{config.RETRIEVAL_MODEL_LABELS[second]}<br>'
+        f'<small>re-rank</small></div>'
+        f'<span class="pipeline-arrow">→</span>'
+        f'<div class="pipeline-box pipeline-box--final">Top {final_k}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
 
 def _tab_hybrid_serial() -> dict:
     """Render Hybrid Serial tab, return mode_cfg dict."""
@@ -282,22 +331,7 @@ def _tab_hybrid_serial() -> dict:
             key="hs_final_k",
         )
 
-    # Pipeline diagram
-    st.markdown(
-        f'<div class="pipeline-row">'
-        f'<div class="pipeline-box">{config.RETRIEVAL_MODEL_ICONS[first]} '
-        f'{config.RETRIEVAL_MODEL_LABELS[first]}<br>'
-        f'<small>{first_k} candidates</small></div>'
-        f'<span class="pipeline-arrow">→</span>'
-        f'<div class="pipeline-box pipeline-box--accent">'
-        f'{config.RETRIEVAL_MODEL_ICONS[second]} '
-        f'{config.RETRIEVAL_MODEL_LABELS[second]}<br>'
-        f'<small>re-rank</small></div>'
-        f'<span class="pipeline-arrow">→</span>'
-        f'<div class="pipeline-box pipeline-box--final">Top {final_k}</div>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
+    _render_serial_pipeline(first, second, first_k, final_k)
 
     cfg: dict = {
         "first_model": first,
@@ -313,6 +347,55 @@ def _tab_hybrid_serial() -> dict:
             cfg.update({"k1": k1, "b": b})
 
     return cfg
+
+
+def _render_weight_sliders(models: List[str]) -> dict:
+    """One weight slider per model, with the auto-balance shortcut."""
+    st.markdown("**Weight per model** (must sum to 1.0)")
+
+    def auto_balance_weights():
+        balanced = round(1.0 / len(models), 4)
+        for m in models:
+            st.session_state[f"hp_w_{m}"] = balanced
+
+    weights: dict = {}
+    wcols = st.columns(len(models))
+    default_w = round(1.0 / len(models), 2)
+    for col, m in zip(wcols, models):
+        with col:
+            weights[m] = st.slider(
+                config.RETRIEVAL_MODEL_LABELS[m],
+                0.0, 1.0, default_w, 0.01,
+                key=f"hp_w_{m}",
+            )
+    total = sum(weights.values())
+    if abs(total - 1.0) > 0.01:
+        st.warning(f"⚠️ Weights sum to {total:.2f} — must equal 1.0")
+        st.button("⚖️ Auto-balance", key="hp_autobalance", on_click=auto_balance_weights)
+    else:
+        st.success(f"✅ Sum = {total:.2f}")
+    return weights
+
+
+def _render_fusion_diagram(models: List[str], fusion: str, final_k: int) -> None:
+    """Sources -> fusion method -> final list, drawn with the layout CSS."""
+    if len(models) < 2:
+        return
+    sources_html = "".join(
+        f'<div class="pipeline-box">{config.RETRIEVAL_MODEL_ICONS[m]} '
+        f'{config.RETRIEVAL_MODEL_LABELS[m]}</div>'
+        for m in models
+    )
+    st.markdown(
+        f'<div class="fusion-wrap">'
+        f'<div class="fusion-sources">{sources_html}</div>'
+        f'<div class="fusion-arrow-down">↓</div>'
+        f'<div class="fusion-box">🔀 {config.FUSION_METHOD_LABELS.get(fusion, fusion)}</div>'
+        f'<div class="fusion-arrow-down">↓</div>'
+        f'<div class="pipeline-box pipeline-box--final">Top {final_k}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _tab_hybrid_parallel() -> dict:
@@ -375,77 +458,50 @@ def _tab_hybrid_parallel() -> dict:
         )
 
     if fusion == "weighted" and len(models) >= 2:
-        st.markdown("**Weight per model** (must sum to 1.0)")
-        
-        # Auto-balance callback
-        def auto_balance_weights():
-            balanced = round(1.0 / len(models), 4)
-            for m in models:
-                st.session_state[f"hp_w_{m}"] = balanced
-        
-        weights: dict = {}
-        wcols = st.columns(len(models))
-        default_w = round(1.0 / len(models), 2)
-        for col, m in zip(wcols, models):
-            with col:
-                weights[m] = st.slider(
-                    config.RETRIEVAL_MODEL_LABELS[m],
-                    0.0, 1.0, default_w, 0.01,
-                    key=f"hp_w_{m}",
-                )
-        total = sum(weights.values())
-        if abs(total - 1.0) > 0.01:
-            st.warning(f"⚠️ Weights sum to {total:.2f} — must equal 1.0")
-            st.button("⚖️ Auto-balance", key="hp_autobalance", on_click=auto_balance_weights)
-        else:
-            st.success(f"✅ Sum = {total:.2f}")
-        cfg["model_weights"] = weights
+        cfg["model_weights"] = _render_weight_sliders(models)
 
     if "bm25" in models:
         with st.expander("BM25 parameters", expanded=False):
             k1, b = render_bm25_params(key_prefix="hp_bm25")
             cfg.update({"k1": k1, "b": b})
 
-    # Fusion diagram
-    if len(models) >= 2:
-        sources_html = "".join(
-            f'<div class="pipeline-box">{config.RETRIEVAL_MODEL_ICONS[m]} '
-            f'{config.RETRIEVAL_MODEL_LABELS[m]}</div>'
-            for m in models
-        )
-        st.markdown(
-            f'<div class="fusion-wrap">'
-            f'<div class="fusion-sources">{sources_html}</div>'
-            f'<div class="fusion-arrow-down">↓</div>'
-            f'<div class="fusion-box">🔀 {config.FUSION_METHOD_LABELS.get(fusion, fusion)}</div>'
-            f'<div class="fusion-arrow-down">↓</div>'
-            f'<div class="pipeline-box pipeline-box--final">Top {final_k}</div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+    _render_fusion_diagram(models, fusion, final_k)
 
     return cfg
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Main page render function
+# Page sections
 # ─────────────────────────────────────────────────────────────────────────────
 
-def render() -> None:
-    st.markdown("## 🔍 Search")
+def _render_dataset_cards() -> None:
+    """Docs / queries / qrels of the selected dataset."""
+    selected = st.session_state.get(SS_SELECTED_DATASET)
+    if not selected:
+        return
 
-    inject_style("search_layout")
+    metadata = indexing_api.get_dataset_metadata(selected)
+    if not metadata:
+        return
 
-    # ── Dataset selector ───────────────────────────────────────────────────
+    with st.container(border=True):
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.metric("Dataset", selected)
+        with col2:
+            st.metric("Docs", f"{metadata.get('doc_count', 0):,}")
+        with col3:
+            st.metric("Queries", f"{metadata.get('query_count', 0):,}")
+        with col4:
+            qrels = metadata.get("qrel_count", metadata.get("qrels_count", 0))
+            st.metric("Qrels", f"{qrels:,}")
+
+
+def _render_dataset_section() -> None:
     available_datasets = get_available_datasets()
-    
     st.caption("Choose a dataset with all indices built")
-    
-    def on_dataset_change():
-        """A new dataset invalidates the results of the previous one."""
-        if st.session_state.dataset_selector:
-            st.session_state[SS_SEARCH_RESULTS] = None
-    
+
     if available_datasets:
         dataset_selector(
             available_datasets,
@@ -455,7 +511,7 @@ def render() -> None:
             format_func=get_dataset_display_name,
             help="Only datasets with all indices (TF-IDF, BM25, Embedding) built are shown",
             label_visibility="collapsed",
-            on_change=on_dataset_change,
+            on_change=_on_dataset_change,
         )
     else:
         st.selectbox(
@@ -467,33 +523,12 @@ def render() -> None:
             disabled=True,
             label_visibility="collapsed",
         )
-    
-    # ── Dataset Information Cards ──────────────────────────────────────────
-    if st.session_state.get(SS_SELECTED_DATASET):
-        selected_metadata = indexing_api.get_dataset_metadata(st.session_state[SS_SELECTED_DATASET])
-        
-        if selected_metadata:
-            with st.container(border=True):
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    st.metric("Dataset", st.session_state[SS_SELECTED_DATASET])
-                
-                with col2:
-                    doc_count = selected_metadata.get('doc_count', 0)
-                    st.metric("Docs", f"{doc_count:,}")
-                
-                with col3:
-                    query_count = selected_metadata.get('query_count', 0)
-                    st.metric("Queries", f"{query_count:,}")
-                
-                with col4:
-                    qrel_count = selected_metadata.get('qrel_count', selected_metadata.get('qrels_count', 0))
-                    st.metric("Qrels", f"{qrel_count:,}")
-    
-    st.divider()
 
-    # ── Query input bar ────────────────────────────────────────────────────
+    _render_dataset_cards()
+
+
+def _render_query_bar() -> str:
+    """Query input plus the Refine button; returns the current query."""
     qcol, rcol = st.columns([5, 1])
     with qcol:
         query = st.text_input(
@@ -503,58 +538,82 @@ def render() -> None:
             label_visibility="collapsed",
             key="search_query_input",
         )
-        # Store query value for next render
         if query != st.session_state.get(SS_CURRENT_QUERY, ""):
             st.session_state[SS_CURRENT_QUERY] = query
 
     with rcol:
         if st.button("✨ Refine", use_container_width=True, key="btn_refine"):
-            if query.strip():
-                with st.spinner("Refining…"):
-                    resp = gateway.refine_query(
-                        query,
-                        st.session_state.get(SS_QUERY_HISTORY, [])[-3:],
-                        enabled=True,
-                        session_id=st.session_state.get(SS_SESSION_ID, "default"),
-                        dataset=st.session_state.get(SS_SELECTED_DATASET),
-                    )
-                    if resp.ok:
-                        st.session_state[SS_REFINEMENT_RESULT] = resp.data
-                    else:
-                        st.warning(f"Refinement unavailable: {resp.error}")
-            else:
-                st.warning("Enter a query first.")
+            _refine_query(query)
 
-    # ── Refinement preview ─────────────────────────────────────────────────
-    # Check if we should show refinement expander
-    show_refinement = st.session_state.get(SS_REFINEMENT_RESULT) is not None
-    
-    if show_refinement:
-        refinement_result = st.session_state[SS_REFINEMENT_RESULT]
-        if refinement_result.get("applied"):
-            with st.expander("✨ Refinement Suggestion — click to review", expanded=True):
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.markdown("**Original**")
-                    st.info(refinement_result.get("original_query", ""))
-                with c2:
-                    st.markdown("**Suggested**")
-                    st.success(refinement_result.get("refined_query", ""))
-                
-                a1, a2 = st.columns(2)
-                with a1:
-                    if st.button("✅ Accept refined query", use_container_width=True, key="btn_accept_ref"):
-                        # Update query and clear refinement
-                        st.session_state[SS_CURRENT_QUERY] = refinement_result.get("refined_query", query)
-                        st.session_state[SS_REFINEMENT_RESULT] = None
-                        st.rerun()
-                with a2:
-                    if st.button("❌ Keep original", use_container_width=True, key="btn_reject_ref"):
-                        # Just clear refinement
-                        st.session_state[SS_REFINEMENT_RESULT] = None
-                        st.rerun()
+    return query
 
-    # ── Preprocessing config ────────────────────────────────────────────────
+
+def _refine_query(query: str) -> None:
+    if not query.strip():
+        st.warning("Enter a query first.")
+        return
+
+    with st.spinner("Refining…"):
+        resp = gateway.refine_query(
+            query,
+            st.session_state.get(SS_QUERY_HISTORY, [])[-3:],
+            enabled=True,
+            session_id=st.session_state.get(SS_SESSION_ID, "default"),
+            dataset=st.session_state.get(SS_SELECTED_DATASET),
+        )
+    if resp.ok:
+        st.session_state[SS_REFINEMENT_RESULT] = resp.data
+    else:
+        log_failure(logger, "refine_query", resp)
+        st.warning(f"Refinement unavailable: {failure_hint(resp)}")
+
+
+def _render_refinement_preview(query: str) -> None:
+    """Show the suggestion with accept / keep-original actions."""
+    refinement_result = st.session_state.get(SS_REFINEMENT_RESULT)
+    if not refinement_result or not refinement_result.get("applied"):
+        return
+
+    with st.expander("✨ Refinement Suggestion — click to review", expanded=True):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("**Original**")
+            st.info(refinement_result.get("original_query", ""))
+        with c2:
+            st.markdown("**Suggested**")
+            st.success(refinement_result.get("refined_query", ""))
+
+        a1, a2 = st.columns(2)
+        with a1:
+            if st.button("✅ Accept refined query", use_container_width=True, key="btn_accept_ref"):
+                st.session_state[SS_CURRENT_QUERY] = refinement_result.get("refined_query", query)
+                st.session_state[SS_REFINEMENT_RESULT] = None
+                st.rerun()
+        with a2:
+            if st.button("❌ Keep original", use_container_width=True, key="btn_reject_ref"):
+                st.session_state[SS_REFINEMENT_RESULT] = None
+                st.rerun()
+
+
+def _render_preprocessing_preview(query: str, prep_cfg: dict) -> None:
+    """Token preview, rendered on demand inside the expander."""
+    if not (st.button("👁️ Preview tokens", key="btn_preview_prep") and query.strip()):
+        return
+
+    from api.preprocessing import preprocess
+
+    resp = preprocess(query, prep_cfg)
+    if resp.ok and isinstance(resp.data, dict):
+        tokens = resp.data.get("tokens", [])
+        chips = "".join(f'<span class="chip">{t}</span>' for t in tokens)
+        st.markdown(f'<div class="chip-row">{chips}</div>', unsafe_allow_html=True)
+        st.caption(f"{len(tokens)} tokens")
+    else:
+        log_failure(logger, "preprocess_preview", resp)
+        st.warning(f"Preview failed: {failure_hint(resp)}")
+
+
+def _render_preprocessing_section(query: str) -> None:
     with st.expander("⚙️ Preprocessing Configuration", expanded=False):
         render_preprocessing_preset_selector()
         st.divider()
@@ -562,21 +621,10 @@ def render() -> None:
 
         prev_col, _ = st.columns([1, 3])
         with prev_col:
-            if st.button("👁️ Preview tokens", key="btn_preview_prep") and query.strip():
-                from api.preprocessing import preprocess
-                resp = preprocess(query, prep_cfg)
-                if resp.ok and isinstance(resp.data, dict):
-                    tokens = resp.data.get("tokens", [])
-                    chips = "".join(f'<span class="chip">{t}</span>' for t in tokens)
-                    st.markdown(
-                        f'<div class="chip-row">{chips}</div>',
-                        unsafe_allow_html=True,
-                    )
-                    st.caption(f"{len(tokens)} tokens")
-                else:
-                    st.warning(f"Preview failed: {resp.error}")
+            _render_preprocessing_preview(query, prep_cfg)
 
-    # ── Query refinement toggle ─────────────────────────────────────────────
+
+def _render_refinement_toggle() -> None:
     st.session_state[SS_REFINEMENT_ENABLED] = st.toggle(
         "✨ Enable Query Refinement on search",
         value=st.session_state.get(SS_REFINEMENT_ENABLED, False),
@@ -584,89 +632,117 @@ def render() -> None:
         help="Automatically applies spelling correction, synonyms, and history-aware boosting.",
     )
 
-    # ── Retrieval mode segmented control ───────────────────────────────────
+
+def _on_mode_change() -> None:
+    st.session_state[SS_RETRIEVAL_MODE] = st.session_state["mode_radio"]
+
+
+def _render_mode_selector() -> tuple[str, dict]:
+    """Mode radio plus the matching configuration panel."""
     st.markdown("### Retrieval Mode")
-    
-    # Callback to update mode immediately
-    def _on_mode_change():
-        st.session_state[SS_RETRIEVAL_MODE] = st.session_state["mode_radio"]
-    
-    # Get current mode
+
     current_mode = st.session_state.get(SS_RETRIEVAL_MODE, "individual")
-    
-    # Segmented control using radio buttons with custom styling
     mode_choice = st.radio(
         "Active mode",
-        ["individual", "hybrid_serial", "hybrid_parallel"],
-        index=["individual", "hybrid_serial", "hybrid_parallel"].index(current_mode),
+        _RETRIEVAL_MODES,
+        index=_RETRIEVAL_MODES.index(current_mode),
         horizontal=True,
         key="mode_radio",
         label_visibility="collapsed",
         format_func=lambda x: {
             "individual": "📊 Individual Models",
             "hybrid_serial": "🔗 Hybrid Serial",
-            "hybrid_parallel": "🔀 Hybrid Parallel"
+            "hybrid_parallel": "🔀 Hybrid Parallel",
         }[x],
-        on_change=_on_mode_change
+        on_change=_on_mode_change,
     )
 
-    # Render the appropriate configuration panel based on selected mode
     if mode_choice == "individual":
-        active_mode_cfg = _tab_individual()
-        active_mode = "individual"
-    elif mode_choice == "hybrid_serial":
-        active_mode_cfg = _tab_hybrid_serial()
-        active_mode = "hybrid_serial"
-    else:
-        active_mode_cfg = _tab_hybrid_parallel()
-        active_mode = "hybrid_parallel"
+        return "individual", _tab_individual()
+    if mode_choice == "hybrid_serial":
+        return "hybrid_serial", _tab_hybrid_serial()
+    return "hybrid_parallel", _tab_hybrid_parallel()
 
-    # ── Search button ───────────────────────────────────────────────────────
+
+def _render_search_button(query: str, active_mode: str, mode_cfg: dict) -> None:
     st.divider()
-    if st.button("🚀 Search", type="primary", use_container_width=True, key="btn_search"):
-        if not st.session_state.get(SS_SELECTED_DATASET):
-            st.error("⚠️ Please select a dataset first before searching.")
-        elif not query.strip():
-            st.error("❌ Enter a query.")
-        else:
-            _run_search(query.strip(), active_mode, active_mode_cfg)
-            st.rerun()
+    if not st.button("🚀 Search", type="primary", use_container_width=True, key="btn_search"):
+        return
 
-    # ── Results ─────────────────────────────────────────────────────────────
+    if not st.session_state.get(SS_SELECTED_DATASET):
+        st.error("⚠️ Please select a dataset first before searching.")
+    elif not query.strip():
+        st.error("❌ Enter a query.")
+    else:
+        _run_search(query.strip(), active_mode, mode_cfg)
+        st.rerun()
+
+
+def _render_results_panel() -> None:
     results_state = st.session_state.get(SS_SEARCH_RESULTS)
-    if results_state:
-        elapsed = results_state.get("elapsed_ms", 0)
-        results_by_model = results_state.get("results_by_model", {})
-        total_docs = sum(len(v) for v in results_by_model.values())
+    if not results_state:
+        return
 
-        st.divider()
-        m1, m2, m3 = st.columns(3)
-        with m1:
-            st.metric("⏱️ Latency", f"{elapsed:.0f} ms")
-        with m2:
-            st.metric("📄 Results", total_docs)
-        with m3:
-            st.metric("🎯 Mode", results_state.get("mode", "—").replace("_", " ").title())
+    elapsed = results_state.get("elapsed_ms", 0)
+    results_by_model = results_state.get("results_by_model", {})
+    total_docs = sum(len(v) for v in results_by_model.values())
 
-        render_refinement_banner(results_state.get("refinement") or {})
+    st.divider()
+    m1, m2, m3 = st.columns(3)
+    with m1:
+        st.metric("⏱️ Latency", f"{elapsed:.0f} ms")
+    with m2:
+        st.metric("📄 Results", total_docs)
+    with m3:
+        st.metric("🎯 Mode", results_state.get("mode", "—").replace("_", " ").title())
 
-        if len(results_by_model) > 1:
-            render_results_grid(results_by_model)
-        else:
-            for model_label, docs in results_by_model.items():
-                st.markdown(f"#### {model_label} — {len(docs)} results")
-                for idx, doc in enumerate(docs, 1):
-                    render_result_card(doc, idx, model_label=model_label)
+    render_refinement_banner(results_state.get("refinement") or {})
 
-    # ── Query history ───────────────────────────────────────────────────────
+    if len(results_by_model) > 1:
+        render_results_grid(results_by_model)
+        return
+
+    for model_label, docs in results_by_model.items():
+        st.markdown(f"#### {model_label} — {len(docs)} results")
+        for idx, doc in enumerate(docs, 1):
+            render_result_card(doc, idx, model_label=model_label)
+
+
+def _render_history_panel() -> None:
     history = st.session_state.get(SS_QUERY_HISTORY, [])
-    if history:
-        with st.expander(f"🕑 Query History ({len(history)})", expanded=False):
-            for i, q in enumerate(reversed(history)):
-                hc1, hc2 = st.columns([4, 1])
-                with hc1:
-                    st.text(q)
-                with hc2:
-                    if st.button("↩ Reuse", key=f"hist_reuse_{i}"):
-                        st.session_state[SS_CURRENT_QUERY] = q
-                        st.rerun()
+    if not history:
+        return
+
+    with st.expander(f"🕑 Query History ({len(history)})", expanded=False):
+        for i, q in enumerate(reversed(history)):
+            hc1, hc2 = st.columns([4, 1])
+            with hc1:
+                st.text(q)
+            with hc2:
+                if st.button("↩ Reuse", key=f"hist_reuse_{i}"):
+                    st.session_state[SS_CURRENT_QUERY] = q
+                    st.rerun()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main page render function
+# ─────────────────────────────────────────────────────────────────────────────
+
+def render() -> None:
+    st.markdown("## 🔍 Search")
+
+    inject_style("search_layout")
+
+    _render_dataset_section()
+    st.divider()
+
+    query = _render_query_bar()
+    _render_refinement_preview(query)
+    _render_preprocessing_section(query)
+    _render_refinement_toggle()
+
+    active_mode, active_mode_cfg = _render_mode_selector()
+
+    _render_search_button(query, active_mode, active_mode_cfg)
+    _render_results_panel()
+    _render_history_panel()

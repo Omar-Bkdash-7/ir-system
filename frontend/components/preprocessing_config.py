@@ -1,8 +1,14 @@
 """
-Preprocessing configuration widget.
+Preprocessing configuration widgets — the only place preprocessing options are drawn.
 
-render_preprocessing_config() — full config form, returns dict matching PreprocessingConfig.
-render_preprocessing_preset_selector() — quick preset picker that populates session state.
+Three entry points, kept apart because they are different forms on purpose:
+
+* `render_preprocessing_config()` — the labelled form used by Search / Lab.
+* `render_indexing_preprocessing_config()` — the compact form the Indexing page uses
+  before a build; it returns a config only when "Apply custom preprocessing" is on.
+* `render_preprocessing_preset_selector()` — quick preset picker that populates session state.
+
+They share the session-state seeding below rather than each re-deriving defaults.
 """
 from __future__ import annotations
 
@@ -33,6 +39,109 @@ def render_preprocessing_preset_selector() -> None:
     if chosen != current or st.session_state.get(SS_PREPROCESSING_CONFIG) is None:
         st.session_state[SS_PREPROCESSING_PRESET] = chosen
         st.session_state[SS_PREPROCESSING_CONFIG] = dict(config.PREPROCESSING_PRESETS[chosen])
+
+
+def render_indexing_preprocessing_config() -> dict | None:
+    """
+    Compact preprocessing form for the Indexing page.
+
+    Returns the config dict only when the user opts into a custom configuration,
+    otherwise None so the build falls back to the server defaults.
+    """
+    defaults = config.DEFAULT_PREPROCESSING_CONFIG
+
+    with st.expander("Preprocessing Configuration", expanded=False):
+        st.caption("Configure how documents are preprocessed before indexing")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("**Text Normalization**")
+            normalize_unicode = st.checkbox(
+                "Normalize Unicode",
+                value=defaults["normalize_unicode"],
+                help="Convert text to normalized Unicode form",
+            )
+            lowercase = st.checkbox(
+                "Lowercase",
+                value=defaults["lowercase"],
+                help="Convert all text to lowercase",
+            )
+            remove_punctuation = st.checkbox(
+                "Remove Punctuation",
+                value=defaults["remove_punctuation"],
+                help="Remove punctuation marks",
+            )
+            keep_numbers = st.checkbox(
+                "Keep Numbers",
+                value=defaults["keep_numbers"],
+                help="Keep numeric tokens",
+            )
+
+        with col2:
+            st.markdown("**Token Processing**")
+            remove_stopwords = st.checkbox(
+                "Remove Stopwords",
+                value=defaults["remove_stopwords"],
+                help="Remove common English stopwords",
+            )
+            use_lemmatization = st.checkbox(
+                "Use Lemmatization",
+                value=defaults["use_lemmatization"],
+                help="Reduce words to base form (better, slower)",
+            )
+            use_stemming = st.checkbox(
+                "Use Stemming",
+                value=defaults["use_stemming"],
+                help="Reduce words to stem (faster, less accurate)",
+            )
+            use_spacy_tokenizer = st.checkbox(
+                "Use spaCy Tokenizer",
+                value=defaults["use_spacy_tokenizer"],
+                help="Use spaCy for advanced tokenization",
+            )
+
+        st.markdown("**Token Length Filters**")
+        col3, col4 = st.columns(2)
+        with col3:
+            min_token_length = st.number_input(
+                "Min Token Length",
+                min_value=1,
+                max_value=10,
+                value=defaults["min_token_length"],
+                help="Minimum character length for tokens",
+            )
+        with col4:
+            max_token_length = st.number_input(
+                "Max Token Length (0 = no limit)",
+                min_value=0,
+                max_value=100,
+                value=0,
+                help="Maximum character length for tokens",
+            )
+
+        apply_custom = st.checkbox(
+            "Apply custom preprocessing",
+            value=False,
+            help="Use the configuration above instead of defaults",
+        )
+
+        if apply_custom:
+            return {
+                "normalize_unicode": normalize_unicode,
+                "lowercase": lowercase,
+                "remove_punctuation": remove_punctuation,
+                "remove_stopwords": remove_stopwords,
+                "min_token_length": min_token_length,
+                "max_token_length": max_token_length if max_token_length > 0 else None,
+                "use_lemmatization": use_lemmatization,
+                "use_stemming": use_stemming,
+                "keep_numbers": keep_numbers,
+                "use_spacy_tokenizer": use_spacy_tokenizer,
+                "custom_stopwords": [],
+            }
+
+    return None
 
 
 def render_preprocessing_config(key_prefix: str = "prep") -> dict:

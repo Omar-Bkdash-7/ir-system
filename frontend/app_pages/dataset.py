@@ -11,7 +11,10 @@ import config
 import api.gateway as gateway
 import api.indexing as indexing_api
 from constants import SS_DATASET_VALIDATION_RESULT, SS_VALIDATION_IN_PROGRESS
+from obs import failure_hint, get_logger
 from ui_style import inject_style
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Curated catalogue (from ir-datasets.com/counts) — only rows with qrels
@@ -516,7 +519,7 @@ def _render_db_upload_form(db_resp) -> tuple[str | None, bool, bool]:
 def _render_db_upload_error(up_resp, s, upload_id: str) -> None:
     """Upload failure: corruption repair flow, or the raw error."""
     s.update(label="❌ Upload failed", state="error")
-    error_msg = up_resp.error or "Unknown error"
+    error_msg = failure_hint(up_resp)
 
     # Check if it's a corruption error
     if "corrupted" in error_msg.lower() or "decompression" in error_msg.lower() or "lz4" in error_msg.lower():

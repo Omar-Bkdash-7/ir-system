@@ -10,6 +10,7 @@ outcome -- success, 4xx, 5xx, connection refused, timeout -- into a single
 """
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -17,6 +18,13 @@ from typing import Any, Optional
 import requests
 
 import config
+from obs import get_logger
+
+_log = get_logger("api")
+
+# A successful call slower than this is worth a log line: it is what makes a
+# page feel sluggish even though nothing failed.
+SLOW_REQUEST_MS = 1000.0
 
 
 @dataclass
@@ -38,6 +46,28 @@ class APIResponse:
 
     def __bool__(self) -> bool:
         return self.ok
+
+
+def _log_call(method: str, url: str, resp: APIResponse) -> APIResponse:
+    """Log every service call; successes only when they are slow."""
+    if resp.ok:
+        if resp.elapsed_ms >= SLOW_REQUEST_MS:
+            _log.info("%s %s ok in %.0fms", method, url.split("?", 1)[0], resp.elapsed_ms)
+        else:
+            _log.debug("%s %s ok in %.0fms", method, url.split("?", 1)[0], resp.elapsed_ms)
+    else:
+        level = logging.ERROR if resp.reason in ("server", "connection", "timeout") else logging.WARNING
+        _log.log(
+            level,
+            "%s %s failed: reason=%s status=%s in %.0fms: %s",
+            method,
+            url.split("?", 1)[0],
+            resp.reason,
+            resp.status_code,
+            resp.elapsed_ms,
+            resp.error,
+        )
+    return resp
 
 
 def _extract_error_detail(response: requests.Response) -> str:
@@ -74,18 +104,23 @@ def _request(method: str, url: str, *, timeout: Optional[int] = None,
                     time.sleep(backoff)
                     backoff *= 2
                     continue
-                return APIResponse(False, None, last_error, response.status_code,
-                                   elapsed_ms, reason="server")
+                return _log_call(method, url, APIResponse(
+                    False, None, last_error, response.status_code, elapsed_ms, reason="server"
+                ))
 
             if response.status_code >= 400:
-                return APIResponse(False, None, _extract_error_detail(response),
-                                    response.status_code, elapsed_ms, reason="client")
+                return _log_call(method, url, APIResponse(
+                    False, None, _extract_error_detail(response),
+                    response.status_code, elapsed_ms, reason="client",
+                ))
 
             try:
                 payload = response.json()
             except ValueError:
                 payload = response.text
-            return APIResponse(True, payload, None, response.status_code, elapsed_ms)
+            return _log_call(method, url, APIResponse(
+                True, payload, None, response.status_code, elapsed_ms
+            ))
 
         except requests.exceptions.ConnectionError:
             last_error = "Connection refused — the service may be offline"
@@ -102,7 +137,7 @@ def _request(method: str, url: str, *, timeout: Optional[int] = None,
             backoff *= 2
 
     elapsed_ms = (time.perf_counter() - started) * 1000
-    return APIResponse(False, None, last_error, None, elapsed_ms, reason=reason)
+    return _log_call(method, url, APIResponse(False, None, last_error, None, elapsed_ms, reason=reason))
 
 
 def get(url: str, *, params: Optional[dict] = None, timeout: Optional[int] = None,
