@@ -1,333 +1,137 @@
-from fastapi import FastAPI, HTTPException
-import httpx
-from services.api_gateway.clients import (
-    get_dataset_info,
-    search_hybrid_serial,
-    search_hybrid_parallel,
-    search_basic,
-    refine_query
-)
+"""API gateway: the HTTP layer. Routing and validation only; the work lives in core/."""
+from contextlib import asynccontextmanager
+from typing import Any, Dict
+
+from fastapi import Depends, FastAPI, Request, status
+from fastapi.responses import JSONResponse
+
 from common.exception_handlers import register_exception_handlers
+from common.http_client import DownstreamError
 from common.logging_config import setup_logging
-from pydantic import BaseModel, Field, model_validator
-from typing import List, Optional, Dict
+from services.api_gateway.config import get_settings
+from services.api_gateway.core.rag import RagProxy
+from services.api_gateway.core.search import SearchService
+from services.api_gateway.schemas import (
+    BasicSearchRequest,
+    HybridParallelSearchRequest,
+    HybridSerialSearchRequest,
+    QueryRefineRequest,
+)
 
 logger = setup_logging("api_gateway")
 
-app = FastAPI(title="API Gateway")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.search = SearchService.create()
+    app.state.rag = RagProxy(get_settings())
+    logger.info("API gateway started")
+    try:
+        yield
+    finally:
+        app.state.search.close()
+        logger.info("API gateway stopped")
+
+
+app = FastAPI(title="API Gateway", lifespan=lifespan)
 register_exception_handlers(app)
 
 
-def _downstream_error(exc: httpx.HTTPStatusError) -> HTTPException:
-    """Reproduce the status a downstream service answered with (404 missing index, 422 bad request, ...).
-
-    Without this, every downstream failure was caught by the generic handler and reported as a 500.
+async def downstream_error_handler(request: Request, exc: DownstreamError) -> JSONResponse:
     """
-    try:
-        body = exc.response.json()
-        detail = body.get("detail") if isinstance(body, dict) else None
-    except ValueError:
-        detail = None
-    return HTTPException(status_code=exc.response.status_code, detail=detail or exc.response.text)
+    Reproduce the status a downstream service answered with (404 missing index, 422 bad request, ...).
+
+    Without this, every downstream failure reached the generic handler and looked
+    like a 500 from the gateway. A service that is simply unreachable has no
+    status, and becomes a 502.
+    """
+    logger.warning("Downstream failure on %s: %s", request.url.path, exc)
+    return JSONResponse(
+        status_code=exc.status_code or status.HTTP_502_BAD_GATEWAY,
+        content={"error": type(exc).__name__, "detail": exc.detail},
+    )
 
 
-class BasicSearchRequest(BaseModel):
-    query: str = Field(description="Search query text")
-    model: str = Field(default="tfidf", description="Model: tfidf, embedding, or bm25")
-    top_k: int = Field(default=50, ge=1, le=1000, description="Number of results")
-    bm25_k1: Optional[float] = Field(default=1.5, ge=0.0, le=3.0)
-    bm25_b: Optional[float] = Field(default=0.75, ge=0.0, le=1.0)
-    enable_refinement: bool = Field(default=False, description="Enable query refinement")
-    query_history: List[str] = Field(default=[], description="Query history for refinement")
-    dataset: Optional[str] = Field(default=None, description="Dataset name (e.g., 'cranfield', 'vaswani')")
+app.add_exception_handler(DownstreamError, downstream_error_handler)
 
 
-class HybridSerialSearchRequest(BaseModel):
-    query: str = Field(description="Search query text")
-    first_model: str = Field(description="First stage model: tfidf, embedding, or bm25")
-    second_model: str = Field(description="Second stage model: tfidf, embedding, or bm25")
-    first_stage_k: int = Field(default=1000, ge=10, le=5000, description="Number of candidates from first stage")
-    final_top_k: int = Field(default=50, ge=1, le=1000, description="Final number of results")
-    bm25_k1: Optional[float] = Field(default=1.5, ge=0.0, le=3.0)
-    bm25_b: Optional[float] = Field(default=0.75, ge=0.0, le=1.0)
-    enable_refinement: bool = Field(default=False, description="Enable query refinement")
-    query_history: List[str] = Field(default=[], description="Query history for refinement")
-    dataset: Optional[str] = Field(default=None, description="Dataset name (e.g., 'cranfield', 'vaswani')")
+def get_search(request: Request) -> SearchService:
+    service = getattr(request.app.state, "search", None)
+    if service is None:  # e.g. a TestClient used without running the lifespan
+        service = request.app.state.search = SearchService.create()
+    return service
 
 
-class HybridParallelSearchRequest(BaseModel):
-    query: str = Field(description="Search query text")
-    models: List[str] = Field(description="Models to run in parallel", min_length=2, max_length=3)
-    fusion_method: str = Field(default="rrf", description="Fusion method: rrf, combsum, combmnz, weighted")
-    model_weights: Optional[Dict[str, float]] = Field(default=None, description="Weights for weighted fusion")
-    top_k: int = Field(default=50, ge=1, le=1000, description="Final number of results")
-    candidates_per_model: int = Field(default=1000, ge=10, le=5000, description="Candidates per model")
-    rrf_k: int = Field(default=60, ge=1, le=100, description="RRF constant")
-    bm25_k1: Optional[float] = Field(default=1.5, ge=0.0, le=3.0)
-    bm25_b: Optional[float] = Field(default=0.75, ge=0.0, le=1.0)
-    enable_refinement: bool = Field(default=False, description="Enable query refinement")
-    query_history: List[str] = Field(default=[], description="Query history for refinement")
-    dataset: Optional[str] = Field(default=None, description="Dataset name (e.g., 'cranfield', 'vaswani')")
-    
-    @model_validator(mode='after')
-    def validate_weights(self):
-        if self.fusion_method == "weighted":
-            if not self.model_weights:
-                raise ValueError("model_weights required when fusion_method='weighted'")
-            for model in self.models:
-                if model not in self.model_weights:
-                    raise ValueError(f"Weight for model '{model}' is missing")
-            total = sum(self.model_weights.values())
-            if not (0.99 <= total <= 1.01):
-                raise ValueError(f"Weights must sum to 1.0, got {total}")
-        return self
+def get_rag(request: Request) -> RagProxy:
+    proxy = getattr(request.app.state, "rag", None)
+    if proxy is None:
+        proxy = request.app.state.rag = RagProxy(get_settings())
+    return proxy
 
 
-class QueryRefineRequest(BaseModel):
-    query: str = Field(description="Query to refine")
-    history: List[str] = Field(default_factory=list, description="Query history")
-    enabled: bool = Field(default=True, description="Enable refinement")
-    session_id: str = Field(default="default", description="Session identifier")
-    is_evaluation: bool = Field(default=False, description="Evaluation mode (deterministic spelling only)")
-    dataset: Optional[str] = Field(default=None, description="Dataset whose vocabulary protects domain terms")
-
-
+# ----------------------------------------------------------------------------------------------- health & data
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "api_gateway"}
 
 
 @app.get("/datasets/info")
-def datasets_info():
-    return get_dataset_info()
+def datasets_info(service: SearchService = Depends(get_search)):
+    return service.dataset_info()
 
 
+# ----------------------------------------------------------------------------------------------- query
 @app.post("/query/refine")
-def query_refine_endpoint(req: QueryRefineRequest):
-    try:
-        if not req.query or not req.query.strip():
-            raise HTTPException(status_code=400, detail="Query cannot be empty")
-        
-        # session_id used to be accepted by the UI and dropped here, so the service never saw the session.
-        result = refine_query(req.query, req.history, req.enabled, req.session_id, req.is_evaluation, req.dataset)
-        return result
-    except HTTPException:
-        raise
-    except httpx.HTTPStatusError as e:
-        raise _downstream_error(e)
-    except Exception as e:
-        logger.error(f"Query refinement failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+def query_refine_endpoint(req: QueryRefineRequest, service: SearchService = Depends(get_search)):
+    if not req.query or not req.query.strip():
+        raise ValueError("Query cannot be empty")
+    return service.refine(
+        req.query,
+        req.history,
+        req.enabled,
+        req.session_id,
+        req.is_evaluation,
+        req.dataset,
+    )
 
 
+# ----------------------------------------------------------------------------------------------- search
 @app.post("/search")
-def search_endpoint(req: BasicSearchRequest):
-    try:
-        if not req.query or not req.query.strip():
-            raise HTTPException(status_code=400, detail="Query cannot be empty")
-        
-        query_to_use = req.query
-        refinement_info = None
-        
-        if req.enable_refinement:
-            refinement_result = refine_query(req.query, req.query_history, True, dataset=req.dataset)
-            query_to_use = refinement_result.get("refined_query", req.query)
-            refinement_info = refinement_result
-        
-        results = search_basic(
-            query=query_to_use,
-            model=req.model,
-            top_k=req.top_k,
-            bm25_k1=req.bm25_k1,
-            bm25_b=req.bm25_b,
-            dataset=req.dataset
-        )
-        
-        if refinement_info:
-            results["refinement"] = refinement_info
-        
-        return results
-    except HTTPException:
-        raise
-    except httpx.HTTPStatusError as e:
-        raise _downstream_error(e)
-    except Exception as e:
-        logger.error(f"Basic search failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+def search_endpoint(req: BasicSearchRequest, service: SearchService = Depends(get_search)):
+    return service.search_basic(req)
 
 
 @app.post("/search/hybrid/serial")
-def search_hybrid_serial_endpoint(req: HybridSerialSearchRequest):
-    try:
-        if not req.query or not req.query.strip():
-            raise HTTPException(status_code=400, detail="Query cannot be empty")
-        
-        query_to_use = req.query
-        refinement_info = None
-        
-        if req.enable_refinement:
-            refinement_result = refine_query(req.query, req.query_history, True, dataset=req.dataset)
-            query_to_use = refinement_result.get("refined_query", req.query)
-            refinement_info = refinement_result
-        
-        results = search_hybrid_serial(
-            query=query_to_use,
-            first_model=req.first_model,
-            second_model=req.second_model,
-            first_stage_k=req.first_stage_k,
-            final_top_k=req.final_top_k,
-            bm25_k1=req.bm25_k1,
-            bm25_b=req.bm25_b,
-            dataset=req.dataset
-        )
-        
-        if refinement_info:
-            results["refinement"] = refinement_info
-        
-        return results
-    except HTTPException:
-        raise
-    except httpx.HTTPStatusError as e:
-        raise _downstream_error(e)
-    except Exception as e:
-        logger.error(f"Hybrid serial search failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+def search_hybrid_serial_endpoint(req: HybridSerialSearchRequest, service: SearchService = Depends(get_search)):
+    return service.search_hybrid_serial(req)
 
 
 @app.post("/search/hybrid/parallel")
-def search_hybrid_parallel_endpoint(req: HybridParallelSearchRequest):
-    try:
-        if not req.query or not req.query.strip():
-            raise HTTPException(status_code=400, detail="Query cannot be empty")
-        
-        query_to_use = req.query
-        refinement_info = None
-        
-        if req.enable_refinement:
-            refinement_result = refine_query(req.query, req.query_history, True, dataset=req.dataset)
-            query_to_use = refinement_result.get("refined_query", req.query)
-            refinement_info = refinement_result
-        
-        results = search_hybrid_parallel(
-            query=query_to_use,
-            models=req.models,
-            fusion_method=req.fusion_method,
-            model_weights=req.model_weights,
-            top_k=req.top_k,
-            candidates_per_model=req.candidates_per_model,
-            rrf_k=req.rrf_k,
-            bm25_k1=req.bm25_k1,
-            bm25_b=req.bm25_b,
-            dataset=req.dataset
-        )
-        
-        if refinement_info:
-            results["refinement"] = refinement_info
-        
-        return results
-    except HTTPException:
-        raise
-    except httpx.HTTPStatusError as e:
-        raise _downstream_error(e)
-    except Exception as e:
-        logger.error(f"Hybrid parallel search failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+def search_hybrid_parallel_endpoint(req: HybridParallelSearchRequest, service: SearchService = Depends(get_search)):
+    return service.search_hybrid_parallel(req)
 
 
+# ----------------------------------------------------------------------------------------------- rag
 @app.post("/rag/generate")
-async def rag_generate_endpoint(request: dict):
-    try:
-        import httpx
-        import os
-
-        rag_url = os.getenv("RAG_URL", "http://rag:8008")
-
-        # Worst case: remote attempt(s) + loading the local model + CPU inference
-        async with httpx.AsyncClient(timeout=300.0) as client:
-            response = await client.post(f"{rag_url}/generate", json=request)
-            response.raise_for_status()
-            return response.json()
-    except httpx.HTTPStatusError as e:
-        logger.error(f"RAG service error: {e.response.status_code} - {e.response.text}")
-        raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
-    except Exception as e:
-        logger.error(f"RAG request failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+async def rag_generate_endpoint(request: Dict[str, Any], rag: RagProxy = Depends(get_rag)):
+    return await rag.generate(request)
 
 
 @app.get("/rag/health")
-async def rag_health_endpoint():
-    try:
-        import httpx
-        import os
-
-        rag_url = os.getenv("RAG_URL", "http://rag:8008")
-
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(f"{rag_url}/health")
-            response.raise_for_status()
-            return response.json()
-    except httpx.HTTPStatusError as e:
-        raise _downstream_error(e)
-    except Exception as e:
-        logger.error(f"Error fetching RAG health: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+async def rag_health_endpoint(rag: RagProxy = Depends(get_rag)):
+    return await rag.health()
 
 
 @app.get("/rag/models")
-async def rag_models_endpoint():
-    try:
-        import httpx
-        import os
-
-        rag_url = os.getenv("RAG_URL", "http://rag:8008")
-
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(f"{rag_url}/models")
-            response.raise_for_status()
-            return response.json()
-    except httpx.HTTPStatusError as e:
-        raise _downstream_error(e)
-    except Exception as e:
-        logger.error(f"Error fetching RAG models: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+async def rag_models_endpoint(rag: RagProxy = Depends(get_rag)):
+    return await rag.models()
 
 
 @app.get("/rag/local-model")
-async def rag_local_model_status_endpoint():
-    try:
-        import httpx
-        import os
-
-        rag_url = os.getenv("RAG_URL", "http://rag:8008")
-
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(f"{rag_url}/local-model")
-            response.raise_for_status()
-            return response.json()
-    except httpx.HTTPStatusError as e:
-        raise _downstream_error(e)
-    except Exception as e:
-        logger.error(f"Error fetching RAG local model status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+async def rag_local_model_status_endpoint(rag: RagProxy = Depends(get_rag)):
+    return await rag.local_model()
 
 
 @app.post("/rag/local-model/download")
-async def rag_local_model_download_endpoint():
-    try:
-        import httpx
-        import os
-
-        rag_url = os.getenv("RAG_URL", "http://rag:8008")
-
-        # The RAG service downloads in the background and answers immediately
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            response = await client.post(f"{rag_url}/local-model/download")
-            response.raise_for_status()
-            return response.json()
-    except httpx.HTTPStatusError as e:
-        logger.error(f"RAG service error: {e.response.status_code} - {e.response.text}")
-        raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
-    except Exception as e:
-        logger.error(f"Error starting local model download: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+async def rag_local_model_download_endpoint(rag: RagProxy = Depends(get_rag)):
+    return await rag.download_local_model()

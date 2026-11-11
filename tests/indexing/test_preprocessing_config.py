@@ -262,14 +262,14 @@ class SavedConfigTest(WorkdirTestCase):
         with self.assertRaises(ValueError):
             self.service().save_preprocessing_config("", self.CONFIG)
 
-    @unittest.skipUnless(have("httpx"), "the gateway client needs httpx")
     def test_the_query_side_reads_what_the_build_saved(self):
         """api_gateway preprocesses every query with this config: it must find it in the same metadata."""
-        from services.api_gateway.clients.retrieval_client import _get_preprocessing_config_for_dataset
+        from services.api_gateway.core.dataset import preprocessing_config
+
         self.service().save_preprocessing_config(self.DATASET, self.CONFIG)
-        self.assertEqual(_get_preprocessing_config_for_dataset(self.DATASET), self.CONFIG)
-        self.assertIsNone(_get_preprocessing_config_for_dataset(None))
-        self.assertIsNone(_get_preprocessing_config_for_dataset("nothing/here"))
+        self.assertEqual(preprocessing_config("data/metadata", self.DATASET), self.CONFIG)
+        self.assertIsNone(preprocessing_config("data/metadata", None))
+        self.assertIsNone(preprocessing_config("data/metadata", "nothing/here"))
 
 
 if __name__ == "__main__":
