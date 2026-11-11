@@ -30,6 +30,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         app.state.search.close()
+        await app.state.rag.aclose()
         logger.info("API gateway stopped")
 
 

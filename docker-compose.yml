@@ -423,7 +423,9 @@ services:
     build: *build-ml
     image: ir-ml:latest
     container_name: ir_retrieval
-    command: python -m uvicorn services.retrieval.main:app --host 0.0.0.0 --port 8003
+    # One process by default. Each extra process loads its own copy of the indices, so raise
+    # RETRIEVAL_UVICORN_WORKERS only with memory to spare (see the memory limit below).
+    command: python -m uvicorn services.retrieval.main:app --host 0.0.0.0 --port 8003 --workers ${RETRIEVAL_UVICORN_WORKERS:-1}
     ports:
       - "${RETRIEVAL_PORT:-8003}:8003"
     depends_on:

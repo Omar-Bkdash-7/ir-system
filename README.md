@@ -303,6 +303,26 @@ SECRET_KEY=generate_with_openssl_rand_hex_32
 CORS_ORIGINS=http://localhost:8501
 ```
 
+### Service Tuning (optional)
+
+Each service reads its own defaults; these variables only change them. See the docstring at the top of
+each module for the full table and the matching `configs/config.yaml` key.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `EVALUATION_WORKERS` | `8` | Queries evaluated in parallel (1 = serial, capped at 64). `retrieval` must be able to answer concurrently for this to pay off. |
+| `RETRIEVAL_UVICORN_WORKERS` | `1` | Worker processes of the retrieval container. Each worker loads its own copy of the indices: raise it only when memory allows. |
+| `DB_POOL_ENABLED` | `true` | Reuse PostgreSQL connections instead of opening one per query. Set `false` to get the old behaviour. |
+| `DB_POOL_MIN` / `DB_POOL_MAX` | `1` / `8` | Bounds of that pool. |
+| `GATEWAY_RETRIEVAL_TIMEOUT` | `30` | Seconds the API gateway waits for a retrieval answer. |
+| `GATEWAY_HYBRID_TIMEOUT` | `60` | Same, for the two hybrid search paths (they run several models). |
+| `GATEWAY_REFINEMENT_TIMEOUT` | `10` | Same, for query refinement. |
+| `GATEWAY_RAG_TIMEOUT` | `300` | Same, for RAG generation — CPU generation is slow on purpose. |
+| `GATEWAY_MAX_RETRIES` / `GATEWAY_RETRY_BACKOFF` | `2` / `0.2` | Retries on a 5xx or a refused connection, and the delay between them. |
+| `GATEWAY_PREPROCESSING_URL`, `GATEWAY_RETRIEVAL_URL`, `GATEWAY_QUERY_REFINEMENT_URL`, `GATEWAY_RAG_URL` | compose service names | Override only when the gateway runs outside compose. |
+
+A value that cannot be parsed is logged and ignored, never fatal.
+
 ### Resource Limits
 
 Each service has CPU/Memory limits:
