@@ -13,17 +13,17 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from tempfile import NamedTemporaryFile
 
-from services.indexing.config import table_prefix as configured_table_prefix
+from services.indexing.config import get_settings, table_prefix as configured_table_prefix
 from services.indexing.dataset.metadata_manager import known_dataset_ids
 from services.indexing.indexers import TFIDFIndexer, EmbeddingIndexer, BM25Indexer
 from services.indexing.naming import index_slug, table_name as build_table_name, table_slug, table_to_dataset_id
 from services.indexing.storage import try_lock
-from common.config import get_config
 
 
 logger = logging.getLogger(__name__)
 
-SERVER_CURSOR_ROWS = 2000  # rows fetched per round trip when a dataset is streamed out of PostgreSQL
+# rows fetched per round trip when a dataset is streamed out of PostgreSQL
+SERVER_CURSOR_ROWS = get_settings().server_cursor_rows
 
 
 class DatasetNotInDatabaseError(FileNotFoundError):
@@ -198,8 +198,7 @@ def _preprocess_documents(
             raise InvalidPreprocessingConfigError(f"Invalid preprocessing_config: {exc}") from exc
     
     # Get the correct table name for this dataset
-    table_prefix = get_config("database.table_prefix", "dataset")
-    table_name = build_table_name(dataset_name, table_prefix)
+    table_name = build_table_name(dataset_name, configured_table_prefix())
     
     # Check if dataset exists in database first
     _check_dataset_in_database(dataset_name, table_name)
@@ -628,7 +627,7 @@ def build_all_indices(dataset_name: str, force_rebuild: bool = False, preprocess
     }
     
     # Step 1: Build preprocessing once and save to shared location
-    processed_data_dir = Path(get_config("paths.processed", "data/processed"))
+    processed_data_dir = Path(get_settings().processed_dir)
     processed_data_dir.mkdir(parents=True, exist_ok=True)
     
     safe_dataset_name = table_slug(dataset_name)

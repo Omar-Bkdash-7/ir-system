@@ -125,26 +125,26 @@ class ApiTest(WorkdirTestCase):
 
     # ---- build endpoints ---------------------------------------------------------------------------------------------------
     def test_a_failed_build_is_an_http_error_not_a_200(self):
-        from services.indexing import main as indexing_main
+        from services.indexing.services import build_service as builders
         for reason, expected in (("dataset_not_in_database", 400), ("invalid_preprocessing_config", 400),
                                  ("build_failed", 500), (None, 500)):
             with self.subTest(reason=reason):
                 failure = {"status": "error", "message": f"boom ({reason})"}
                 if reason:
                     failure["reason"] = reason
-                with mock.patch.object(indexing_main, "build_bm25_index", return_value=failure), \
-                        mock.patch.object(indexing_main, "build_all_indices", return_value=failure):
+                with mock.patch.object(builders, "build_bm25_index", return_value=failure), \
+                        mock.patch.object(builders, "build_all_indices", return_value=failure):
                     for url in ("/index/bm25/build", "/index/build-all"):
                         response = self.client.post(url, params={"dataset_name": "demo/ds"})
                         self.assertEqual(response.status_code, expected, url)
                         self.assertIn("boom", response.json()["detail"])
 
     def test_a_skipped_or_finished_build_stays_a_200(self):
-        from services.indexing import main as indexing_main
+        from services.indexing.services import build_service as builders
         for result in ({"status": "skipped", "message": "BM25 index already exists."},
                        {"status": "success", "vocab_size": 8}):
             with self.subTest(status=result["status"]), \
-                    mock.patch.object(indexing_main, "build_bm25_index", return_value=result):
+                    mock.patch.object(builders, "build_bm25_index", return_value=result):
                 response = self.client.post("/index/bm25/build", params={"dataset_name": "demo/ds"})
                 self.assertEqual((response.status_code, response.json()), (200, result))
 
