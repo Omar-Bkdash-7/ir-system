@@ -1,126 +1,104 @@
-"""
-Metrics calculation engine for IR evaluation.
-Implements standard metrics: MAP, nDCG, Recall, Precision.
-"""
+"""Standard IR metrics, one formula each.
 
-import numpy as np
-from typing import List, Dict
+Graded relevance is supported throughout (a qrel grade of 2 counts twice as much
+as 1 in nDCG, and as one relevant document in AP/recall/precision, which is what
+trec_eval does).
+
+    nDCG@k  = DCG@k / IDCG@k,  gain = 2^rel - 1,  discount = log2(rank + 1)
+    AP      = (sum of precision@i over relevant hits at i) / (number of relevant)
+    Recall  = relevant retrieved / relevant in qrels
+    P@k     = relevant retrieved / retrieved
+"""
+from __future__ import annotations
+
+import math
+from typing import Dict, List, Mapping, Sequence
+
+
+def _gain(grade: int) -> float:
+    return float(2 ** grade - 1)
+
+
+def _discount(rank: int) -> float:
+    """Rank is 1-based."""
+    return math.log2(rank + 1)
+
+
+def relevant_count(relevant_docs: Mapping[str, int]) -> int:
+    return sum(1 for grade in relevant_docs.values() if grade > 0)
+
+
+def retrieved_relevant(retrieved_doc_ids: Sequence[str], relevant_docs: Mapping[str, int]) -> int:
+    return sum(1 for doc_id in retrieved_doc_ids if relevant_docs.get(doc_id, 0) > 0)
 
 
 class MetricsCalculator:
-    """Calculate IR metrics for evaluation"""
-    
+    """Per-query IR metrics; all methods are pure and return 0.0 when undefined."""
+
     @staticmethod
-    def calculate_ndcg(retrieved_doc_ids: List[str], 
-                      relevant_docs: Dict[str, int], 
-                      k: int) -> float:
-        """
-        Calculate Normalized Discounted Cumulative Gain (nDCG@k).
-        
-        Args:
-            retrieved_doc_ids: List of retrieved document IDs
-            relevant_docs: Dictionary mapping doc_id -> relevance score
-            k: Cutoff for evaluation
-            
-        Returns:
-            nDCG@k score
-        """
-        dcg = 0.0
-        for i, doc_id in enumerate(retrieved_doc_ids[:k]):
-            if doc_id in relevant_docs:
-                rel = relevant_docs[doc_id]
-                dcg += (2**rel - 1) / np.log2(i + 2)
-        
-        ideal_rels = sorted(relevant_docs.values(), reverse=True)[:k]
-        idcg = sum((2**rel - 1) / np.log2(i + 2) for i, rel in enumerate(ideal_rels))
-        
+    def calculate_ndcg(
+        retrieved_doc_ids: List[str],
+        relevant_docs: Dict[str, int],
+        k: int,
+    ) -> float:
+        dcg = sum(
+            _gain(relevant_docs.get(doc_id, 0)) / _discount(rank)
+            for rank, doc_id in enumerate(retrieved_doc_ids[:k], start=1)
+            if doc_id in relevant_docs
+        )
+
+        ideal_grades = sorted(
+            (grade for grade in relevant_docs.values() if grade > 0), reverse=True
+        )[:k]
+        idcg = sum(_gain(grade) / _discount(rank) for rank, grade in enumerate(ideal_grades, start=1))
+
         return dcg / idcg if idcg > 0 else 0.0
-    
+
     @staticmethod
-    def calculate_average_precision(retrieved_doc_ids: List[str], 
-                                    relevant_docs: Dict[str, int]) -> float:
-        """
-        Calculate Average Precision (AP).
-        
-        Args:
-            retrieved_doc_ids: List of retrieved document IDs
-            relevant_docs: Dictionary mapping doc_id -> relevance score
-            
-        Returns:
-            Average Precision score
-        """
-        num_relevant = 0
-        sum_precision = 0.0
-        
-        for i, doc_id in enumerate(retrieved_doc_ids):
-            if doc_id in relevant_docs and relevant_docs[doc_id] > 0:
-                num_relevant += 1
-                precision_at_i = num_relevant / (i + 1)
-                sum_precision += precision_at_i
-        
-        total_relevant = sum(1 for rel in relevant_docs.values() if rel > 0)
-        return sum_precision / total_relevant if total_relevant > 0 else 0.0
-    
+    def calculate_average_precision(
+        retrieved_doc_ids: List[str],
+        relevant_docs: Dict[str, int],
+    ) -> float:
+        hits = 0
+        precision_sum = 0.0
+
+        for position, doc_id in enumerate(retrieved_doc_ids, start=1):
+            if relevant_docs.get(doc_id, 0) > 0:
+                hits += 1
+                precision_sum += hits / position
+
+        total_relevant = relevant_count(relevant_docs)
+        return precision_sum / total_relevant if total_relevant > 0 else 0.0
+
     @staticmethod
-    def calculate_recall(retrieved_doc_ids: List[str], 
-                        relevant_docs: Dict[str, int]) -> float:
-        """
-        Calculate Recall@k.
-        
-        Args:
-            retrieved_doc_ids: List of retrieved document IDs
-            relevant_docs: Dictionary mapping doc_id -> relevance score
-            
-        Returns:
-            Recall score
-        """
-        relevant_retrieved = sum(
-            1 for doc_id in retrieved_doc_ids 
-            if doc_id in relevant_docs and relevant_docs[doc_id] > 0
-        )
-        total_relevant = sum(1 for rel in relevant_docs.values() if rel > 0)
-        
-        return relevant_retrieved / total_relevant if total_relevant > 0 else 0.0
-    
+    def calculate_recall(
+        retrieved_doc_ids: List[str],
+        relevant_docs: Dict[str, int],
+    ) -> float:
+        total_relevant = relevant_count(relevant_docs)
+        if total_relevant <= 0:
+            return 0.0
+        return retrieved_relevant(retrieved_doc_ids, relevant_docs) / total_relevant
+
     @staticmethod
-    def calculate_precision(retrieved_doc_ids: List[str], 
-                           relevant_docs: Dict[str, int]) -> float:
-        """
-        Calculate Precision@k.
-        
-        Args:
-            retrieved_doc_ids: List of retrieved document IDs
-            relevant_docs: Dictionary mapping doc_id -> relevance score
-            
-        Returns:
-            Precision score
-        """
-        relevant_retrieved = sum(
-            1 for doc_id in retrieved_doc_ids 
-            if doc_id in relevant_docs and relevant_docs[doc_id] > 0
-        )
-        
-        return relevant_retrieved / len(retrieved_doc_ids) if retrieved_doc_ids else 0.0
-    
+    def calculate_precision(
+        retrieved_doc_ids: List[str],
+        relevant_docs: Dict[str, int],
+    ) -> float:
+        if not retrieved_doc_ids:
+            return 0.0
+        return retrieved_relevant(retrieved_doc_ids, relevant_docs) / len(retrieved_doc_ids)
+
     @classmethod
-    def calculate_all_metrics(cls, 
-                             retrieved_doc_ids: List[str], 
-                             relevant_docs: Dict[str, int], 
-                             k: int) -> Dict[str, float]:
-        """
-        Calculate all metrics for a single query.
-        
-        Args:
-            retrieved_doc_ids: List of retrieved document IDs
-            relevant_docs: Dictionary mapping doc_id -> relevance score
-            k: Cutoff for evaluation
-            
-        Returns:
-            Dictionary with all metric scores
-        """
+    def calculate_all_metrics(
+        cls,
+        retrieved_doc_ids: List[str],
+        relevant_docs: Dict[str, int],
+        k: int,
+    ) -> Dict[str, float]:
         return {
             "ndcg": cls.calculate_ndcg(retrieved_doc_ids, relevant_docs, k),
             "ap": cls.calculate_average_precision(retrieved_doc_ids, relevant_docs),
             "recall": cls.calculate_recall(retrieved_doc_ids, relevant_docs),
-            "precision": cls.calculate_precision(retrieved_doc_ids, relevant_docs)
+            "precision": cls.calculate_precision(retrieved_doc_ids, relevant_docs),
         }

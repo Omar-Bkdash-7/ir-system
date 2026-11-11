@@ -33,3 +33,7 @@ class EvaluationResponse(BaseModel):
         default=None,
         description="Per-query results (optional)"
     )
+    warnings: Optional[List[str]] = Field(
+        default=None,
+        description="Queries that could not be scored (partial results), if any"
+    )
