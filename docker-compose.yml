@@ -242,14 +242,9 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 2G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
+    cpus: 2.0
+    mem_limit: 2G
+    mem_reservation: 512M
 
   # ---------------------------------------------------------------------------
   # Redis - Caching Layer
@@ -283,14 +278,9 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 1G
-        reservations:
-          cpus: '0.25'
-          memory: 256M
+    cpus: 1.0
+    mem_limit: 1G
+    mem_reservation: 256M
 
   # ---------------------------------------------------------------------------
   # API Gateway - Entry point for all requests
@@ -343,14 +333,9 @@ services:
       EVALUATION_URL: http://evaluation:8006
       CLUSTERING_URL: http://clustering:8007
       RAG_URL: http://rag:8008
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 1G
-        reservations:
-          cpus: '0.25'
-          memory: 256M
+    cpus: 1.0
+    mem_limit: 1G
+    mem_reservation: 256M
 
   # ---------------------------------------------------------------------------
   # Preprocessing Service - NLP preprocessing
@@ -373,14 +358,9 @@ services:
       <<: *common-env
       SERVICE_NAME: preprocessing
       SERVICE_VERSION: "1.0.0"
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 2G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
+    cpus: 2.0
+    mem_limit: 2G
+    mem_reservation: 512M
 
   # ---------------------------------------------------------------------------
   # Indexing Service - Build and manage indices
@@ -406,14 +386,9 @@ services:
       SERVICE_NAME: indexing
       SERVICE_VERSION: "1.0.0"
       PREPROCESSING_URL: http://preprocessing:8001
-    deploy:
-      resources:
-        limits:
-          cpus: '4.0'
-          memory: 4G
-        reservations:
-          cpus: '1.0'
-          memory: 1G
+    cpus: 4.0
+    mem_limit: 4G
+    mem_reservation: 1G
 
   # ---------------------------------------------------------------------------
   # Retrieval Service - Document retrieval
@@ -425,7 +400,7 @@ services:
     container_name: ir_retrieval
     # One process by default. Each extra process loads its own copy of the indices, so raise
     # RETRIEVAL_UVICORN_WORKERS only with memory to spare (see the memory limit below).
-    command: python -m uvicorn services.retrieval.main:app --host 0.0.0.0 --port 8003 --workers ${RETRIEVAL_UVICORN_WORKERS:-1}
+    command: python -m uvicorn services.retrieval.main:app --host 0.0.0.0 --port 8003 --workers ${RETRIEVAL_UVICORN_WORKERS:-2}
     ports:
       - "${RETRIEVAL_PORT:-8003}:8003"
     depends_on:
@@ -441,14 +416,9 @@ services:
       SERVICE_NAME: retrieval
       SERVICE_VERSION: "1.0.0"
       INDEXING_URL: http://indexing:8002
-    deploy:
-      resources:
-        limits:
-          cpus: '4.0'
-          memory: 4G
-        reservations:
-          cpus: '1.0'
-          memory: 1G
+    cpus: 4.0
+    mem_limit: 4G
+    mem_reservation: 1G
 
   # ---------------------------------------------------------------------------
   # Ranking Service - Result ranking and scoring
@@ -471,14 +441,9 @@ services:
       <<: *common-env
       SERVICE_NAME: ranking
       SERVICE_VERSION: "1.0.0"
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 2G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
+    cpus: 2.0
+    mem_limit: 2G
+    mem_reservation: 512M
 
   # ---------------------------------------------------------------------------
   # Query Refinement Service - Query enhancement
@@ -501,14 +466,9 @@ services:
       <<: *common-env
       SERVICE_NAME: query_refinement
       SERVICE_VERSION: "1.0.0"
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 2G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
+    cpus: 2.0
+    mem_limit: 2G
+    mem_reservation: 512M
 
   # ---------------------------------------------------------------------------
   # Evaluation Service - Performance metrics
@@ -531,14 +491,9 @@ services:
       <<: *common-env
       SERVICE_NAME: evaluation
       SERVICE_VERSION: "1.0.0"
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 2G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
+    cpus: 2.0
+    mem_limit: 2G
+    mem_reservation: 512M
 
   # ---------------------------------------------------------------------------
   # Clustering Service - Document clustering and topic detection
@@ -564,14 +519,9 @@ services:
       SERVICE_NAME: clustering
       SERVICE_VERSION: "1.0.0"
       INDEXING_URL: http://indexing:8002
-    deploy:
-      resources:
-        limits:
-          cpus: '4.0'
-          memory: 4G
-        reservations:
-          cpus: '1.0'
-          memory: 1G
+    cpus: 4.0
+    mem_limit: 4G
+    mem_reservation: 1G
 
   # ---------------------------------------------------------------------------
   # RAG Service - Retrieval-Augmented Generation
@@ -619,14 +569,9 @@ services:
       RAG_LOCAL_THREADS: ${RAG_LOCAL_THREADS:-2}
       RAG_LOCAL_DTYPE: ${RAG_LOCAL_DTYPE:-float32}
       HF_HOME: /models/hf-home
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 4G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
+    cpus: 2.0
+    mem_limit: 4G
+    mem_reservation: 512M
 
   # ---------------------------------------------------------------------------
   # Frontend - Streamlit Web UI
@@ -659,12 +604,7 @@ services:
       RANKING_URL: http://ranking:8004
       QUERY_REFINEMENT_URL: http://query_refinement:8005
       EVALUATION_URL: http://evaluation:8006
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 1G
-        reservations:
-          cpus: '0.25'
-          memory: 256M
+    cpus: 1.0
+    mem_limit: 1G
+    mem_reservation: 256M
 

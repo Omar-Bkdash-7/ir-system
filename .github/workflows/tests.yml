@@ -32,12 +32,13 @@ jobs:
           cache-from: type=gha,scope=ir-ml
           cache-to: type=gha,mode=max,scope=ir-ml
 
+      # tests/integration needs the running stack; the contract job below owns it.
       - name: Backend suite
         run: |
           docker run --rm -e PYTHONDONTWRITEBYTECODE=1 \
             -v "$PWD:/repo" -w /repo --entrypoint /bin/bash ir-ml:ci -c '
               python -m pip install -q pytest
-              python -m pytest tests -q'
+              python -m pytest tests -q --ignore=tests/integration'
 
       - name: Build the frontend image
         uses: docker/build-push-action@v6
@@ -56,3 +57,48 @@ jobs:
             -v "$PWD:/repo" -w /repo --entrypoint /bin/bash ir-frontend:ci -c '
               python -m pip install -q pytest
               python -m pytest tests/frontend -q'
+
+  # The unit suites fake their neighbours, so they cannot notice a service changing
+  # a field name or a status code. This job runs the real services together.
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the images the stack needs
+        run: |
+          for target in light nlp ml; do
+            docker buildx build --load -f docker/unified.Dockerfile \
+              --target "runtime-$target" -t "ir-$target:ci" \
+              --cache-from "type=gha,scope=ir-$target" \
+              --cache-to "type=gha,mode=max,scope=ir-$target" .
+          done
+
+      - name: Start the stack
+        env:
+          IR_LIGHT_IMAGE: ir-light:ci
+          IR_NLP_IMAGE: ir-nlp:ci
+          IR_ML_IMAGE: ir-ml:ci
+        run: >-
+          docker compose -f docker-compose.ci.yml up -d --wait
+          postgres preprocessing retrieval api_gateway
+
+      - name: Seed and assert the contract
+        env:
+          IR_LIGHT_IMAGE: ir-light:ci
+          IR_NLP_IMAGE: ir-nlp:ci
+          IR_ML_IMAGE: ir-ml:ci
+        run: |
+          docker compose -f docker-compose.ci.yml run --rm seed
+          docker compose -f docker-compose.ci.yml run --rm tests
+
+      - name: Service logs
+        if: failure()
+        run: docker compose -f docker-compose.ci.yml logs --no-color --tail 120
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v

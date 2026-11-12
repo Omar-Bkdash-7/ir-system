@@ -177,3 +177,9 @@ def clear_all_results(service: EvaluationService = Depends(get_service)):
     """Delete every stored evaluation result. This cannot be undone."""
     count = service.clear_results()
     return {"success": True, "message": "All evaluation results cleared", "count": count}
+
+
+# --- shared HTTP protections -------------------------------------------------
+from common.security import install_cors  # noqa: E402
+
+install_cors(app)  # installed last, so the policy also covers throttled responses

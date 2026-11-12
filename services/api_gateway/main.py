@@ -136,3 +136,10 @@ async def rag_local_model_status_endpoint(rag: RagProxy = Depends(get_rag)):
 @app.post("/rag/local-model/download")
 async def rag_local_model_download_endpoint(rag: RagProxy = Depends(get_rag)):
     return await rag.download_local_model()
+
+
+# --- shared HTTP protections -------------------------------------------------
+from common.security import install_cors, install_rate_limit  # noqa: E402
+
+install_rate_limit(app)  # only the public entry point is throttled
+install_cors(app)  # installed last, so the policy also covers throttled responses

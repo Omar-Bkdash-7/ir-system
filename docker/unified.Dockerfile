@@ -103,6 +103,19 @@ RUN mkdir -p /app /opt/venv && \
 WORKDIR /app
 
 # =============================================================================
+# Stage: runtime-base
+# Everything the six runtime targets share: curl (used by the compose healthchecks),
+# the unprivileged user and the writable application directories. Defined once here
+# instead of being copied into every runtime stage.
+# =============================================================================
+FROM python:3.11-slim AS runtime-base
+
+RUN mkdir -p /app /app/logs /app/data && \
+    chown -R appuser:appuser /app
+
+WORKDIR /app
+
+# =============================================================================
 # Stage: base-builder
 # Core dependencies: fastapi, uvicorn, httpx, pydantic, numpy, pandas, psycopg2, redis
 # =============================================================================
@@ -235,17 +248,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Minimal runtime for services with basic dependencies
 # Services: api_gateway, ranking, evaluation
 # =============================================================================
-FROM python:3.11-slim AS runtime-light
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-RUN groupadd -r appuser --gid=1000 && \
-    useradd -r -g appuser --uid=1000 --home-dir=/home/appuser --shell=/bin/bash appuser && \
-    mkdir -p /home/appuser && \
-    chown -R appuser:appuser /home/appuser
+FROM runtime-base AS runtime-light
 
 RUN mkdir -p /app /app/logs /app/data && \
     chown -R appuser:appuser /app
@@ -270,17 +273,7 @@ USER appuser
 # NLP runtime with spaCy and NLTK
 # Services: preprocessing
 # =============================================================================
-FROM python:3.11-slim AS runtime-nlp
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-RUN groupadd -r appuser --gid=1000 && \
-    useradd -r -g appuser --uid=1000 --home-dir=/home/appuser --shell=/bin/bash appuser && \
-    mkdir -p /home/appuser && \
-    chown -R appuser:appuser /home/appuser
+FROM runtime-base AS runtime-nlp
 
 RUN mkdir -p /app /app/logs /app/data && \
     chown -R appuser:appuser /app
@@ -307,23 +300,12 @@ USER appuser
 # ML runtime with PyTorch, Transformers, and SentenceTransformers
 # Services: indexing, retrieval, query_refinement
 # =============================================================================
-FROM python:3.11-slim AS runtime-ml
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-RUN groupadd -r appuser --gid=1000 && \
-    useradd -r -g appuser --uid=1000 --home-dir=/home/appuser --shell=/bin/bash appuser && \
-    mkdir -p /home/appuser && \
-    chown -R appuser:appuser /home/appuser
+FROM runtime-base AS runtime-ml
 
 RUN mkdir -p /app /app/logs /app/data /app/data/models && \
     chown -R appuser:appuser /app
 
 COPY --from=transformers-builder /opt/venv /opt/venv
-COPY --from=transformers-builder /opt/models /app/data/models
 COPY --chown=appuser:appuser --from=nlp-builder /opt/nltk_data /app/.cache/nltk_data
 
 COPY --chown=appuser:appuser common/ /app/common/
@@ -349,23 +331,12 @@ USER appuser
 # Clustering runtime with additional clustering libraries
 # Services: clustering
 # =============================================================================
-FROM python:3.11-slim AS runtime-clustering
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-RUN groupadd -r appuser --gid=1000 && \
-    useradd -r -g appuser --uid=1000 --home-dir=/home/appuser --shell=/bin/bash appuser && \
-    mkdir -p /home/appuser && \
-    chown -R appuser:appuser /home/appuser
+FROM runtime-base AS runtime-clustering
 
 RUN mkdir -p /app /app/logs /app/data /app/data/models && \
     chown -R appuser:appuser /app
 
 COPY --from=clustering-builder /opt/venv /opt/venv
-COPY --from=transformers-builder /opt/models /app/data/models
 COPY --chown=appuser:appuser --from=nlp-builder /opt/nltk_data /app/.cache/nltk_data
 
 COPY --chown=appuser:appuser common/ /app/common/
@@ -391,17 +362,7 @@ USER appuser
 # Frontend runtime with Streamlit
 # Services: frontend
 # =============================================================================
-FROM python:3.11-slim AS runtime-frontend
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-RUN groupadd -r appuser --gid=1000 && \
-    useradd -r -g appuser --uid=1000 --home-dir=/home/appuser --shell=/bin/bash appuser && \
-    mkdir -p /home/appuser && \
-    chown -R appuser:appuser /home/appuser
+FROM runtime-base AS runtime-frontend
 
 RUN mkdir -p /app /app/logs /app/data && \
     chown -R appuser:appuser /app
@@ -428,23 +389,12 @@ USER appuser
 # RAG runtime with LangChain, OpenAI, and document embeddings
 # Services: rag
 # =============================================================================
-FROM python:3.11-slim AS runtime-rag
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
-
-RUN groupadd -r appuser --gid=1000 && \
-    useradd -r -g appuser --uid=1000 --home-dir=/home/appuser --shell=/bin/bash appuser && \
-    mkdir -p /home/appuser && \
-    chown -R appuser:appuser /home/appuser
+FROM runtime-base AS runtime-rag
 
 RUN mkdir -p /app /app/logs /app/data /app/data/models /models/rag /models/hf-home && \
     chown -R appuser:appuser /app /models
 
 COPY --from=rag-builder /opt/venv /opt/venv
-COPY --from=transformers-builder /opt/models /app/data/models
 COPY --chown=appuser:appuser --from=nlp-builder /opt/nltk_data /app/.cache/nltk_data
 
 COPY --chown=appuser:appuser common/ /app/common/

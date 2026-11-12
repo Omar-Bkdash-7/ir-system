@@ -81,3 +81,9 @@ def preprocess_batch(req: PreprocessBatchRequest):
 
     results = _core_preprocess_batch(req.texts, config)
     return PreprocessBatchResponse(results=results, total=len(results))
+
+
+# --- shared HTTP protections -------------------------------------------------
+from common.security import install_cors  # noqa: E402
+
+install_cors(app)  # installed last, so the policy also covers throttled responses

@@ -259,6 +259,20 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm -T query
 
 `tests/frontend` exercises the Streamlit app without a browser: retry/error normalization in `api/client.py`, the request payloads of the service clients, and the stylesheet contract (every `inject_style("name")` must resolve to `frontend/styles/name.css`). It imports `frontend/`, which the dev compose mounts into this service.
 
+#### Contract test (real services)
+
+Unit tests fake their neighbours, so a renamed field or a changed status code between two services stays invisible. `docker-compose.ci.yml` runs the smallest stack that can disagree with itself (postgres, preprocessing, retrieval, api_gateway), seeds one three-document dataset and asserts the contract the frontend depends on:
+
+```bash
+# Rebuild the images first when service code changed: the stack runs the code baked into them.
+docker compose -f docker-compose.ci.yml up -d --wait postgres preprocessing retrieval api_gateway
+docker compose -f docker-compose.ci.yml run --rm seed
+docker compose -f docker-compose.ci.yml run --rm tests
+docker compose -f docker-compose.ci.yml down -v
+```
+
+The same sequence runs in the `contract` job of `.github/workflows/tests.yml`, which builds the three images itself. No host ports are published, so it can run next to a dev stack.
+
 ## 📊 Performance Optimizations
 
 ### Build Time
@@ -279,6 +293,11 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml run --rm -T query
 - **Database Queries**: Optimized with indexes + materialized views
 
 ## 🔧 Configuration
+
+### Rate limiting and CORS
+
+`common/security.py` installs the CORS policy in every service and the request limit in the API gateway.
+`RATE_LIMIT` is the number of requests one client address may make per `RATE_LIMIT_WINDOW` seconds (`0` disables it); `/health`, `/metrics`, `/docs` and the other probe routes stay exempt, so health checks never trip it. Both are installed last, so a throttled `429` still carries `Retry-After` and the CORS headers.
 
 ### Environment Variables
 

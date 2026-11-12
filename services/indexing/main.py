@@ -269,3 +269,9 @@ def delete_index(
 ):
     """Delete one index type of a dataset."""
     return service.indices.delete(index_type, dataset_name)
+
+
+# --- shared HTTP protections -------------------------------------------------
+from common.security import install_cors  # noqa: E402
+
+install_cors(app)  # installed last, so the policy also covers throttled responses

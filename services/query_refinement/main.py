@@ -51,3 +51,9 @@ def refine_endpoint(request: RefineRequest) -> RefineResponse:
         request.dataset,
     )
     return RefineResponse(**result)
+
+
+# --- shared HTTP protections -------------------------------------------------
+from common.security import install_cors  # noqa: E402
+
+install_cors(app)  # installed last, so the policy also covers throttled responses

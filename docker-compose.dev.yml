@@ -2,9 +2,19 @@
 # Docker Compose - Development Overrides
 # =============================================================================
 # Usage: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+#
+# This file only overrides what is different in development:
+#   - bind mounts replace the named volumes, so editing code needs no rebuild
+#   - commands add --reload (uvicorn) / --server.runOnSave (Streamlit)
+#   - ENVIRONMENT=development and DEBUG logging
+#
+# Build targets, healthchecks, dependencies, ports and resource limits are NOT
+# repeated here: docker-compose.yml defines them once per service tier and this
+# file inherits them. Each service body below is one anchor merge plus its own
+# command, so a mount set is written once instead of ten times.
 # =============================================================================
 
-# Override named volumes with empty definitions to use bind mounts instead
+# Named volumes are disabled so the bind mounts below take their place.
 volumes:
   datasets: null
   indices: null
@@ -14,233 +24,148 @@ volumes:
   logs: null
   metadata: null
 
+# Environment every FastAPI service runs with in development.
+x-dev-environment: &dev-environment
+  ENVIRONMENT: development
+  DEBUG: "true"
+  LOG_LEVEL: DEBUG
+  RELOAD: "true"
+  IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
+
+# Bind mounts of the services that read only code, config and the shared data dirs.
+x-dev-volumes-minimal: &dev-volumes-minimal
+  - ./services:/app/services
+  - ./common:/app/common
+  - ./configs:/app/configs
+  - ./logs:/app/logs
+  - ./data/datasets:/app/data/datasets
+  - ./data/indices:/app/data/indices
+  - ./data/cache:/app/data/cache
+  - ./data/processed:/app/data/processed
+  - ./data/evaluation:/app/data/evaluation
+  - ./data/metadata:/app/data/metadata
+
+# The same, plus the test tree (services that run the suite inside the container).
+x-dev-volumes-with-tests: &dev-volumes-with-tests
+  - ./services:/app/services
+  - ./common:/app/common
+  - ./configs:/app/configs
+  - ./tests:/app/tests
+  - ./logs:/app/logs
+  - ./data/datasets:/app/data/datasets
+  - ./data/indices:/app/data/indices
+  - ./data/cache:/app/data/cache
+  - ./data/processed:/app/data/processed
+  - ./data/evaluation:/app/data/evaluation
+  - ./data/metadata:/app/data/metadata
+
+# ML services: they also own the model cache and the CLUSTERS output directory.
+x-dev-volumes-ml: &dev-volumes-ml
+  - ./services:/app/services
+  - ./common:/app/common
+  - ./configs:/app/configs
+  - ./tests:/app/tests
+  - ./logs:/app/logs
+  - ./data/datasets:/app/data/datasets
+  - ./data/indices:/app/data/indices
+  - ./data/cache:/app/data/cache
+  - ./data/models:/app/data/models
+  - ./data/processed:/app/data/processed
+  - ./data/evaluation:/app/data/evaluation
+  - ./data/metadata:/app/data/metadata
+  - ./data/clusters:/app/data/clusters
+
+# Same mounts as the ML group, in the order this service has always declared them
+# (compose hashes the list, and an equal hash means `up` leaves the container alone).
+x-dev-volumes-evaluation: &dev-volumes-evaluation
+  - ./services:/app/services
+  - ./tests:/app/tests
+  - ./common:/app/common
+  - ./configs:/app/configs
+  - ./logs:/app/logs
+  - ./data/datasets:/app/data/datasets
+  - ./data/indices:/app/data/indices
+  - ./data/cache:/app/data/cache
+  - ./data/models:/app/data/models
+  - ./data/processed:/app/data/processed
+  - ./data/evaluation:/app/data/evaluation
+  - ./data/metadata:/app/data/metadata
+  - ./data/clusters:/app/data/clusters
+
+# The two services that also import frontend code, and run pytest with the repo config.
+x-dev-volumes-with-frontend: &dev-volumes-with-frontend
+  - ./services:/app/services
+  - ./frontend:/app/frontend
+  - ./tests:/app/tests
+  - ./pytest.ini:/app/pytest.ini
+  - ./common:/app/common
+  - ./configs:/app/configs
+  - ./logs:/app/logs
+  - ./data/datasets:/app/data/datasets
+  - ./data/indices:/app/data/indices
+  - ./data/cache:/app/data/cache
+  - ./data/models:/app/data/models
+  - ./data/processed:/app/data/processed
+  - ./data/evaluation:/app/data/evaluation
+  - ./data/metadata:/app/data/metadata
+  - ./data/clusters:/app/data/clusters
+
 services:
 
   # ---------------------------------------------------------------------------
-  # Development overrides for all services
+  # Entry point
   # ---------------------------------------------------------------------------
 
   api_gateway:
-    build:
-      context: .
-      dockerfile: docker/unified.Dockerfile
-      target: runtime-light
+    volumes: *dev-volumes-minimal
+    environment: *dev-environment
     command: python -m uvicorn services.api_gateway.main:app --host 0.0.0.0 --port 8000 --reload
-    volumes:
-      - ./services:/app/services
-      - ./common:/app/common
-      - ./configs:/app/configs
-      - ./logs:/app/logs
-      - ./data/datasets:/app/data/datasets
-      - ./data/indices:/app/data/indices
-      - ./data/cache:/app/data/cache
-      - ./data/processed:/app/data/processed
-      - ./data/evaluation:/app/data/evaluation
-      - ./data/metadata:/app/data/metadata
-    environment:
-      ENVIRONMENT: development
-      DEBUG: "true"
-      LOG_LEVEL: DEBUG
-      RELOAD: "true"
-      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
+
+  # ---------------------------------------------------------------------------
+  # Backend services
+  # ---------------------------------------------------------------------------
 
   preprocessing:
-    build:
-      context: .
-      dockerfile: docker/unified.Dockerfile
-      target: runtime-nlp
+    volumes: *dev-volumes-with-tests
+    environment: *dev-environment
     command: python -m uvicorn services.preprocessing.api.main:app --host 0.0.0.0 --port 8001 --reload
-    volumes:
-      - ./services:/app/services
-      - ./common:/app/common
-      - ./configs:/app/configs
-      - ./tests:/app/tests
-      - ./logs:/app/logs
-      - ./data/datasets:/app/data/datasets
-      - ./data/indices:/app/data/indices
-      - ./data/cache:/app/data/cache
-      - ./data/processed:/app/data/processed
-      - ./data/evaluation:/app/data/evaluation
-      - ./data/metadata:/app/data/metadata
-    environment:
-      ENVIRONMENT: development
-      DEBUG: "true"
-      LOG_LEVEL: DEBUG
-      RELOAD: "true"
-      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
 
   indexing:
-    build:
-      context: .
-      dockerfile: docker/unified.Dockerfile
-      target: runtime-ml
+    volumes: *dev-volumes-ml
+    environment: *dev-environment
     command: python -m uvicorn services.indexing.main:app --host 0.0.0.0 --port 8002 --reload
-    volumes:
-      - ./services:/app/services
-      - ./common:/app/common
-      - ./configs:/app/configs
-      - ./tests:/app/tests
-      - ./logs:/app/logs
-      - ./data/datasets:/app/data/datasets
-      - ./data/indices:/app/data/indices
-      - ./data/cache:/app/data/cache
-      - ./data/models:/app/data/models
-      - ./data/processed:/app/data/processed
-      - ./data/evaluation:/app/data/evaluation
-      - ./data/metadata:/app/data/metadata
-      - ./data/clusters:/app/data/clusters
-    environment:
-      ENVIRONMENT: development
-      DEBUG: "true"
-      LOG_LEVEL: DEBUG
-      RELOAD: "true"
-      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
 
   retrieval:
-    build:
-      context: .
-      dockerfile: docker/unified.Dockerfile
-      target: runtime-ml
+    volumes: *dev-volumes-ml
+    environment: *dev-environment
     command: python -m uvicorn services.retrieval.main:app --host 0.0.0.0 --port 8003 --reload
-    volumes:
-      - ./services:/app/services
-      - ./common:/app/common
-      - ./configs:/app/configs
-      - ./tests:/app/tests
-      - ./logs:/app/logs
-      - ./data/datasets:/app/data/datasets
-      - ./data/indices:/app/data/indices
-      - ./data/cache:/app/data/cache
-      - ./data/models:/app/data/models
-      - ./data/processed:/app/data/processed
-      - ./data/evaluation:/app/data/evaluation
-      - ./data/metadata:/app/data/metadata
-      - ./data/clusters:/app/data/clusters
-    environment:
-      ENVIRONMENT: development
-      DEBUG: "true"
-      LOG_LEVEL: DEBUG
-      RELOAD: "true"
-      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
 
   ranking:
-    build:
-      context: .
-      dockerfile: docker/unified.Dockerfile
-      target: runtime-light
+    volumes: *dev-volumes-ml
+    environment: *dev-environment
     command: python -m uvicorn services.ranking.main:app --host 0.0.0.0 --port 8004 --reload
-    volumes:
-      - ./services:/app/services
-      - ./common:/app/common
-      - ./configs:/app/configs
-      - ./tests:/app/tests
-      - ./logs:/app/logs
-      - ./data/datasets:/app/data/datasets
-      - ./data/indices:/app/data/indices
-      - ./data/cache:/app/data/cache
-      - ./data/models:/app/data/models
-      - ./data/processed:/app/data/processed
-      - ./data/evaluation:/app/data/evaluation
-      - ./data/metadata:/app/data/metadata
-      - ./data/clusters:/app/data/clusters
-    environment:
-      ENVIRONMENT: development
-      DEBUG: "true"
-      LOG_LEVEL: DEBUG
-      RELOAD: "true"
-      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
 
   query_refinement:
-    build:
-      context: .
-      dockerfile: docker/unified.Dockerfile
-      target: runtime-ml
+    volumes: *dev-volumes-with-frontend
+    environment: *dev-environment
     command: python -m uvicorn services.query_refinement.main:app --host 0.0.0.0 --port 8005 --reload
-    volumes:
-      - ./services:/app/services
-      - ./frontend:/app/frontend
-      - ./tests:/app/tests
-      - ./pytest.ini:/app/pytest.ini
-      - ./common:/app/common
-      - ./configs:/app/configs
-      - ./logs:/app/logs
-      - ./data/datasets:/app/data/datasets
-      - ./data/indices:/app/data/indices
-      - ./data/cache:/app/data/cache
-      - ./data/models:/app/data/models
-      - ./data/processed:/app/data/processed
-      - ./data/evaluation:/app/data/evaluation
-      - ./data/metadata:/app/data/metadata
-      - ./data/clusters:/app/data/clusters
-    environment:
-      ENVIRONMENT: development
-      DEBUG: "true"
-      LOG_LEVEL: DEBUG
-      RELOAD: "true"
-      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
 
   evaluation:
-    build:
-      context: .
-      dockerfile: docker/unified.Dockerfile
-      target: runtime-ml
+    volumes: *dev-volumes-evaluation
+    environment: *dev-environment
     command: python -m uvicorn services.evaluation.main:app --host 0.0.0.0 --port 8006 --reload
-    volumes:
-      - ./services:/app/services
-      - ./tests:/app/tests
-      - ./common:/app/common
-      - ./configs:/app/configs
-      - ./logs:/app/logs
-      - ./data/datasets:/app/data/datasets
-      - ./data/indices:/app/data/indices
-      - ./data/cache:/app/data/cache
-      - ./data/models:/app/data/models
-      - ./data/processed:/app/data/processed
-      - ./data/evaluation:/app/data/evaluation
-      - ./data/metadata:/app/data/metadata
-      - ./data/clusters:/app/data/clusters
-    environment:
-      ENVIRONMENT: development
-      DEBUG: "true"
-      LOG_LEVEL: DEBUG
-      RELOAD: "true"
-      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
 
   clustering:
-    build:
-      context: .
-      dockerfile: docker/unified.Dockerfile
-      target: runtime-clustering
+    volumes: *dev-volumes-with-frontend
+    environment: *dev-environment
     command: python -m uvicorn services.clustering.main:app --host 0.0.0.0 --port 8007 --reload
-    volumes:
-      - ./services:/app/services
-      - ./frontend:/app/frontend
-      - ./tests:/app/tests
-      - ./pytest.ini:/app/pytest.ini
-      - ./common:/app/common
-      - ./configs:/app/configs
-      - ./logs:/app/logs
-      - ./data/datasets:/app/data/datasets
-      - ./data/indices:/app/data/indices
-      - ./data/cache:/app/data/cache
-      - ./data/models:/app/data/models
-      - ./data/processed:/app/data/processed
-      - ./data/evaluation:/app/data/evaluation
-      - ./data/metadata:/app/data/metadata
-      - ./data/clusters:/app/data/clusters
-    environment:
-      ENVIRONMENT: development
-      DEBUG: "true"
-      LOG_LEVEL: DEBUG
-      RELOAD: "true"
-      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
+
+  # ---------------------------------------------------------------------------
+  # RAG and frontend: their own mount sets
+  # ---------------------------------------------------------------------------
 
   rag:
-    build:
-      context: .
-      dockerfile: docker/unified.Dockerfile
-      target: runtime-rag
-    command: python -m uvicorn services.rag.main:app --host 0.0.0.0 --port 8008 --reload --reload-dir /app/services --reload-dir /app/common
+    # data/models/rag holds the local generation model, mounted at the image's /models/rag
     volumes:
       - ./services:/app/services
       - ./common:/app/common
@@ -255,19 +180,11 @@ services:
       - ./data/evaluation:/app/data/evaluation
       - ./data/metadata:/app/data/metadata
     environment:
-      ENVIRONMENT: development
-      DEBUG: "true"
-      LOG_LEVEL: DEBUG
-      RELOAD: "true"
-      IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
+      <<: *dev-environment
       RAG_ENABLE_DIAGNOSTICS: "true"
+    command: python -m uvicorn services.rag.main:app --host 0.0.0.0 --port 8008 --reload --reload-dir /app/services --reload-dir /app/common
 
   frontend:
-    build:
-      context: .
-      dockerfile: docker/unified.Dockerfile
-      target: runtime-frontend
-    command: streamlit run frontend/app.py --server.port=8501 --server.fileWatcherType=poll --server.runOnSave=true
     volumes:
       - ./services:/app/services
       - ./frontend:/app/frontend
@@ -288,4 +205,4 @@ services:
       DEBUG: "true"
       LOG_LEVEL: DEBUG
       IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
-
+    command: streamlit run frontend/app.py --server.port=8501 --server.fileWatcherType=poll --server.runOnSave=true

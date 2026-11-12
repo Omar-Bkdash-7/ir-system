@@ -30,3 +30,9 @@ def rank_endpoint(req: RankingRequest):
 def fuse_endpoint(req: FusionRequest):
     result_lists = [[{"doc_id": hit.doc_id, "score": hit.score} for hit in hits] for hits in req.result_lists]
     return fuse_result_lists(result_lists, req.method, req.weights, req.rrf_k, req.top_k)
+
+
+# --- shared HTTP protections -------------------------------------------------
+from common.security import install_cors  # noqa: E402
+
+install_cors(app)  # installed last, so the policy also covers throttled responses
