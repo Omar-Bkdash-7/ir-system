@@ -83,21 +83,6 @@ def overall_status(dataset: Optional[str] = None, service: RetrievalService = De
     return service.overall_status(dataset)
 
 
-@app.get("/status/tfidf")
-def tfidf_status(dataset: Optional[str] = None, service: RetrievalService = Depends(get_service)):
-    return service.model_status(dataset, "tfidf")
-
-
-@app.get("/status/embedding")
-def embedding_status(dataset: Optional[str] = None, service: RetrievalService = Depends(get_service)):
-    return service.model_status(dataset, "embedding")
-
-
-@app.get("/status/bm25")
-def bm25_status(dataset: Optional[str] = None, service: RetrievalService = Depends(get_service)):
-    return service.model_status(dataset, "bm25")
-
-
 # --- shared HTTP protections -------------------------------------------------
 from common.security import install_cors  # noqa: E402
 

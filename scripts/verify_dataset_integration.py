@@ -10,7 +10,6 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-import logging
 from common.logging_config import setup_logging
 
 logger = setup_logging("verify_integration")

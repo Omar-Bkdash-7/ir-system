@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from collections import OrderedDict
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 from services.evaluation.core.dataset import DatasetSplit
 

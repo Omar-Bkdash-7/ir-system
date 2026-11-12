@@ -1,7 +1,6 @@
 import logging
 import logging.handlers
 from pathlib import Path
-from typing import Optional
 
 
 def setup_logging(service_name: str, log_to_file: bool = True) -> logging.Logger:

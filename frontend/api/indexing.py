@@ -62,14 +62,6 @@ def index_status(index_type: str, dataset_name: str = None) -> APIResponse:
     )
 
 
-def clear_single_index_status_cache() -> None:
-    index_status.clear()
-
-
-def all_stats() -> APIResponse:
-    return get(f"{config.INDEXING_URL}/index/stats")
-
-
 def validate_dataset(dataset_id: str) -> APIResponse:
     return post(
         f"{config.INDEXING_URL}/validate",
@@ -82,10 +74,6 @@ def validate_dataset(dataset_id: str) -> APIResponse:
 @st.cache_data(ttl=config.CACHE_TTL_INDEX_STATUS, show_spinner=False)
 def list_local_datasets() -> APIResponse:
     return get(f"{config.INDEXING_URL}/datasets/local", max_retries=1)
-
-
-def clear_local_datasets_cache() -> None:
-    list_local_datasets.clear()
 
 
 def delete_local_dataset(dataset_id: str) -> APIResponse:
@@ -119,10 +107,6 @@ def delete_dataset_from_db(dataset_id: str) -> APIResponse:
 @st.cache_data(ttl=config.CACHE_TTL_INDEX_STATUS, show_spinner=False)
 def get_db_info() -> APIResponse:
     return get(f"{config.INDEXING_URL}/datasets/db-info", max_retries=1)
-
-
-def clear_db_info_cache() -> None:
-    get_db_info.clear()
 
 
 def health() -> APIResponse:
@@ -162,10 +146,6 @@ def clear_index_status_cache() -> None:
 def get_inverted_index_stats() -> APIResponse:
     """Get comprehensive inverted index statistics (cached)."""
     return get(f"{config.INDEXING_URL}/index/inverted/stats")
-
-
-def clear_inverted_index_stats_cache() -> None:
-    get_inverted_index_stats.clear()
 
 
 def get_term_info(term: str) -> APIResponse:

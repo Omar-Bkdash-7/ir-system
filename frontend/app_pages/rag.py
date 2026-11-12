@@ -220,11 +220,6 @@ def _render_models_status(models: Optional[Dict[str, Any]]):
         st.caption("⚠️ Configured model not found in provider catalog")
 
 
-def _render_remote_status(models: Optional[Dict[str, Any]]):
-    """Legacy function - kept for backward compatibility"""
-    _render_models_status(models)
-
-
 def _get_available_modes(models: Optional[Dict[str, Any]]) -> list:
     if models is None:
         return ["auto"]

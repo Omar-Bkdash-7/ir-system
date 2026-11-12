@@ -3,7 +3,6 @@ Utility functions for dataset operations in the frontend.
 """
 from pathlib import Path
 from typing import List
-import os
 import logging
 
 logger = logging.getLogger(__name__)

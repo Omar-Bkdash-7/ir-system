@@ -6,7 +6,6 @@ contain '/' (beir/quora) are routed to the same handler instead of 404-ing on th
 """
 from __future__ import annotations
 
-import logging
 from contextlib import asynccontextmanager
 from typing import Dict, Optional, Type
 

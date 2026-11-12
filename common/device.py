@@ -37,8 +37,3 @@ def get_torch_device() -> str:
     
     return _device
 
-
-def force_cpu_only():
-    global _device
-    _device = "cpu"
-    logger.info("Device forced to CPU")

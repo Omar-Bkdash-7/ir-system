@@ -4,7 +4,6 @@ Run this before first use to set up the database structure.
 """
 
 import sys
-import logging
 from pathlib import Path
 
 # Add project root to path

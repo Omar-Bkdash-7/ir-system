@@ -72,24 +72,6 @@ def _normalize_metrics(raw: Dict[str, dict]) -> Dict[str, dict]:
     return out
 
 
-def _metric_table(metrics: Dict[str, dict]) -> None:
-    import pandas as pd
-    rows = []
-    for model, vals in metrics.items():
-        rows.append({
-            "Model":      model,
-            "MAP":        f"{vals.get('map', 0):.4f}",
-            "Recall@100": f"{vals.get('recall', 0):.4f}",
-            "P@10":       f"{vals.get('precision_at_10', 0):.4f}",
-            "nDCG@10":    f"{vals.get('ndcg_at_10', 0):.4f}",
-        })
-    if rows:
-        st.dataframe(
-            pd.DataFrame(rows).set_index("Model"),
-            use_container_width=True,
-        )
-
-
 def _render_evaluation_inputs(available_datasets: list[str]) -> tuple[str, str, int, int]:
     """Model, dataset, top_k and the query limit."""
     col1, col2 = st.columns(2)

@@ -136,28 +136,6 @@ def cache_set(key: str, value: Any, ttl: Optional[int] = None) -> bool:
         return False
 
 
-def cache_delete(key: str) -> bool:
-    """
-    Delete key from cache.
-    
-    Args:
-        key: Cache key
-    
-    Returns:
-        True if successful
-    """
-    client = get_redis_client()
-    if not client:
-        return False
-    
-    try:
-        client.delete(key)
-        return True
-    except Exception as e:
-        logger.error(f"Cache delete error: {e}")
-        return False
-
-
 def cache_clear_pattern(pattern: str) -> int:
     """
     Clear all keys matching pattern.
@@ -223,19 +201,6 @@ def cached(prefix: str, ttl: Optional[int] = None):
         
         return wrapper
     return decorator
-
-
-# Convenience function for query caching
-def cache_query_results(query: str, method: str, results: list, ttl: int = 300):
-    """Cache query results."""
-    key = generate_cache_key("query", query, method)
-    return cache_set(key, results, ttl)
-
-
-def get_cached_query_results(query: str, method: str) -> Optional[list]:
-    """Get cached query results."""
-    key = generate_cache_key("query", query, method)
-    return cache_get(key)
 
 
 # Stats

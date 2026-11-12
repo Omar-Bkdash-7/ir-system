@@ -6,7 +6,6 @@ from services.preprocessing.core.config import PreprocessingConfig
 from services.preprocessing.core.pipeline import (
     preprocess as _core_preprocess,
     preprocess_batch as _core_preprocess_batch,
-    get_preprocessor,
 )
 from services.preprocessing.core.resources import warmup_resources
 from services.preprocessing.api.schemas import PreprocessRequest, PreprocessResponse, PreprocessBatchRequest, PreprocessBatchResponse

@@ -33,7 +33,6 @@ from components.result_card import (
 from constants import (
     SS_CURRENT_QUERY,
     SS_LAST_SEARCH_TIME,
-    SS_PREPROCESSING_CONFIG,
     SS_QUERY_HISTORY,
     SS_REFINEMENT_ENABLED,
     SS_REFINEMENT_RESULT,
@@ -64,14 +63,6 @@ def _add_to_history(query: str) -> None:
         if len(hist) > 10:
             hist.pop(0)
     st.session_state[SS_QUERY_HISTORY] = hist
-
-
-def _active_preprocessing_config() -> dict:
-    cfg = st.session_state.get(SS_PREPROCESSING_CONFIG)
-    if cfg is None:
-        cfg = dict(config.DEFAULT_PREPROCESSING_CONFIG)
-        st.session_state[SS_PREPROCESSING_CONFIG] = cfg
-    return cfg
 
 
 def _on_dataset_change() -> None:

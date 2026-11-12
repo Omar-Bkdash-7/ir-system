@@ -5,14 +5,12 @@ from __future__ import annotations
 
 import streamlit as st
 
-import config
 from api.preprocessing import preprocess
 from components.preprocessing_config import (
     render_preprocessing_config,
     render_preprocessing_preset_selector,
 )
 from constants import (
-    SS_PREPROCESSING_CONFIG,
     SS_PREPROCESSING_LAB_INPUT,
     SS_PREPROCESSING_LAB_RESULT,
 )

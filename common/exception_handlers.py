@@ -4,9 +4,6 @@ from common.exceptions import (
     IRSystemException,
     IndexNotFoundError,
     InvalidQueryError,
-    RetrievalError,
-    RankingError,
-    PreprocessingError,
     ModelLoadError
 )
 import logging

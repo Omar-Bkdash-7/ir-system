@@ -86,10 +86,8 @@ class HttpTests(unittest.TestCase):
         overall = self.client.get("/status").json()
         self.assertEqual(overall["service"], "retrieval")
         self.assertEqual(overall["models"], {"tfidf": "ready", "embedding": "ready", "bm25": "ready"})  # what System Monitor reads
-        for model in ("tfidf", "embedding", "bm25"):
-            self.assertEqual(self.client.get(f"/status/{model}", params={"dataset": "toy"}).json()["status"], "ready")
-            self.assertEqual(self.client.get(f"/status/{model}", params={"dataset": "none"}).json()["status"], "not_built")
-            self.assertEqual(self.client.get(f"/status/{model}").status_code, 400)
+        self.assertEqual(self.client.get("/status", params={"dataset": "toy"}).json()["models"]["tfidf"], "ready")
+        self.assertEqual(self.client.get("/status", params={"dataset": "none"}).json()["models"]["tfidf"], "not_built")
 
 
 if __name__ == "__main__":

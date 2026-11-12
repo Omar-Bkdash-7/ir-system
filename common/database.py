@@ -72,15 +72,6 @@ def _get_pool() -> pg_pool.ThreadedConnectionPool:
     return _pool
 
 
-def close_pool() -> None:
-    """Close every pooled connection (shutdown, or a test that must start clean)."""
-    global _pool
-    with _pool_lock:
-        if _pool is not None:
-            _pool.closeall()
-            _pool = None
-
-
 class PooledConnection:
     """A psycopg2 connection whose ``close()`` returns it to the pool.
 
@@ -138,11 +129,6 @@ def _release(connection: Any, pool: pg_pool.ThreadedConnectionPool) -> None:
     except psycopg2.Error as exc:  # a full pool refuses the connection; drop it instead
         logger.debug("Closing a connection the pool refused: %s", exc)
         connection.close()
-
-
-def get_connection():
-    """Legacy: a brand new connection. Prefer get_db_connection()."""
-    return psycopg2.connect(_dsn())
 
 
 def get_db_connection():

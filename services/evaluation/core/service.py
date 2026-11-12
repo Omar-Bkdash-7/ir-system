@@ -20,8 +20,7 @@ from services.evaluation.schemas import (
 from services.evaluation.services.results_storage import ResultsStorage
 
 from .clients import JsonClient
-from .dataset import DatasetSplit
-from .names import SINGLE_MODELS, is_hybrid, require_fusion, require_model
+from .names import is_hybrid, require_fusion, require_model
 from .query import QueryPipeline
 from .reports import latest_metrics_by_model, per_query_analysis, refinement_comparison
 from .runner import RunResult, Retrieve, run_over_queries

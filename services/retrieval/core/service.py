@@ -271,25 +271,11 @@ class RetrievalService:
         models = {kind: "ready" if any(state[kind] == "ready" for state in detail.values()) else "not_built" for kind in KINDS}
         return {
             "service": "retrieval",
-            "message": "Retrievers loaded on-demand per dataset. Use /status/{model}?dataset=<name> for specific status.",
+            "message": "Retrievers loaded on-demand per dataset. /status returns every model for every known dataset.",
             "models": models,
             "datasets": detail,
             "loaded_indexes": self._store.loaded(),
         }
-
-    def model_status(self, dataset: Optional[str], kind: str) -> Dict[str, Any]:
-        dataset = self._require_dataset(dataset)
-        kind = self._require_model(kind)
-        if not self._store.is_built(dataset, kind):
-            return {
-                "status": "not_built",
-                "dataset": dataset,
-                "message": f"{LABELS[kind]} index has not been built yet. Build it via /index/{kind}/build endpoint on indexing service.",
-            }
-        info: Dict[str, Any] = {"status": "ready", "dataset": dataset, "loaded": True, **self._store.get(dataset, kind).stats()}
-        if kind == "embedding":
-            info.update(self._encoder.info())
-        return info
 
     # ---------------------------------------------------------------------------------------------------------------
     # warm-up and shutdown

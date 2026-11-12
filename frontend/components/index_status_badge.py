@@ -33,19 +33,6 @@ def _status_text(status: str) -> str:
     return {"ready": "READY", "building": "BUILDING…", "not_built": "NOT BUILT"}.get(status, "UNKNOWN")
 
 
-def render_index_badge_compact(index_type: str, status_data: dict) -> None:
-    """Small one-line badge used in the sidebar."""
-    status = _status_of(status_data)
-    doc_count = status_data.get("doc_count") or status_data.get("document_count")
-    count_str = f" · {doc_count:,}" if isinstance(doc_count, (int, float)) else ""
-    st.markdown(
-        f'<div class="ir-badge"><span class="ir-dot {_dot_class(status)}"></span>'
-        f'{_ICONS.get(index_type, "🔹")} {_LABELS.get(index_type, index_type)} '
-        f'<span class="ir-mono" style="color:var(--ctp-subtext0)">{_status_text(status)}{count_str}</span></div>',
-        unsafe_allow_html=True,
-    )
-
-
 def render_index_card(
     index_type: str, 
     status_data: dict, 

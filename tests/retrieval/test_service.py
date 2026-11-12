@@ -253,21 +253,6 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(self.service.overall_status("toy")["models"]["bm25"], "not_built")
         self.assertEqual(self.service.overall_status("unknown")["models"], {"tfidf": "not_built", "embedding": "not_built", "bm25": "not_built"})
 
-    def test_model_status(self):
-        bm25 = self.service.model_status("toy", "bm25")
-        self.assertEqual((bm25["status"], bm25["dataset"], bm25["total_docs"]), ("ready", "toy", len(TOY_DOCS)))
-        self.assertIn("avg_doc_length", bm25)
-        tfidf = self.service.model_status("toy", "tfidf")
-        self.assertEqual(tfidf["vocab_size"] > 0, True)
-        embedding = self.service.model_status("toy", "embedding")
-        self.assertEqual((embedding["embedding_dimension"], embedding["device"]), (32, "cpu"))
-        for kind in ("bm25", "tfidf", "embedding"):
-            missing = self.service.model_status("nope", kind)
-            self.assertEqual(missing["status"], "not_built")
-            self.assertIn(f"/index/{kind}/build", missing["message"])
-        with self.assertRaises(InvalidQueryError):
-            self.service.model_status(None, "bm25")
-
     # ------------------------------------------------------------------------------------------ warm-up
     def test_warmup_loads_the_requested_indexes_and_ignores_unbuilt_ones(self):
         self.service.warm(["toy:bm25|tfidf", "toy:embedding", "nothing", "toy:bogus"])

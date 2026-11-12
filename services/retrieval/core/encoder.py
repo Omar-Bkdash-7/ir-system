@@ -107,7 +107,7 @@ class QueryEncoder:
         return self._model is not None
 
     def info(self) -> Dict[str, Any]:
-        """What /status/embedding reports; reads configuration only, never loads the model."""
+        """The embedding half of /status; reads configuration only, never loads the model."""
         return {
             "device": self._device_name(),
             "model_name": get_config("models.embedding.model_name", "sentence-transformers/all-MiniLM-L6-v2"),

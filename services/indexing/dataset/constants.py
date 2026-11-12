@@ -2,7 +2,6 @@
 Constants and configuration for dataset service.
 """
 
-from pathlib import Path
 from typing import FrozenSet
 
 # Default configuration values

@@ -79,11 +79,6 @@ def _parse_filter(v: str):
 # ---------------------------------------------------------------------------
 # Section: catalogue browser
 # ---------------------------------------------------------------------------
-def _trigger_filter():
-    """on_change callback — forces an immediate rerun which re-evaluates the filter."""
-    st.session_state["_filter_ts"] = time.time()
-
-
 def _render_browser() -> str | None:
     st.markdown("### Browse Datasets")
 

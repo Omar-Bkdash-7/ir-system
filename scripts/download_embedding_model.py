@@ -3,10 +3,7 @@ Download and verify embedding model.
 This script downloads the embedding model to the local cache directory.
 """
 import sys
-import logging
 from pathlib import Path
-from common.config import get_config
-from common.device import get_torch_device
 from common.model_loader import load_embedding_model, get_embedding_model_config
 from common.logging_config import setup_logging
 

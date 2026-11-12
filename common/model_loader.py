@@ -2,7 +2,6 @@
 Centralized model loading utilities for embedding models.
 Provides consistent model loading across all services.
 """
-import os
 import logging
 from pathlib import Path
 from typing import Optional
@@ -117,9 +116,3 @@ def get_embedding_model_config() -> dict:
         "device": get_torch_device()
     }
 
-
-def clear_embedding_model_cache():
-    """Clear the cached embedding model instance."""
-    global _embedding_model_cache
-    _embedding_model_cache = None
-    logger.info("Embedding model cache cleared")

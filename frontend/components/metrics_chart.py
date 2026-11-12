@@ -10,7 +10,6 @@ import streamlit as st
 
 try:
     import plotly.graph_objects as go
-    import plotly.express as px
     _PLOTLY = True
 except ImportError:
     _PLOTLY = False
@@ -169,36 +168,6 @@ def render_precision_at_k_curve(
         yaxis_title="Precision",
         yaxis_range=[y_min, y_max],
         height=550,
-        **_base_layout(),
-    )
-    st.plotly_chart(fig, use_container_width=True)
-
-
-def render_score_distribution(
-    scores_by_model: Dict[str, List[float]],
-) -> None:
-    """Histogram overlay: retrieval score distribution per model."""
-    if not _PLOTLY:
-        return _no_plotly()
-    if not scores_by_model:
-        return
-
-    fig = go.Figure()
-    for idx, (model_name, scores) in enumerate(scores_by_model.items()):
-        fig.add_trace(
-            go.Histogram(
-                x=scores,
-                name=model_name,
-                nbinsx=40,
-                opacity=0.7,
-                marker_color=_COLORS[idx % len(_COLORS)],
-            )
-        )
-    fig.update_layout(
-        barmode="overlay",
-        title="Retrieval Score Distribution",
-        xaxis_title="Score",
-        yaxis_title="Count",
         **_base_layout(),
     )
     st.plotly_chart(fig, use_container_width=True)

@@ -6,8 +6,7 @@ including term statistics, posting lists, and vocabulary analysis.
 """
 
 import logging
-from typing import Dict, List, Any, Optional
-from collections import Counter
+from typing import Dict, Any, Optional
 
 from services.indexing.indexers import BM25Indexer
 from services.indexing.services.index_cache import load_cached

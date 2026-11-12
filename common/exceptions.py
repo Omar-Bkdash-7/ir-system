@@ -19,9 +19,6 @@ class PreprocessingError(IRSystemException):
 class DatasetValidationError(IRSystemException):
     pass
 
-class ForbiddenDatasetError(IRSystemException):
-    pass
-
 class ModelLoadError(IRSystemException):
     pass
 
