@@ -346,7 +346,6 @@ def _parse_size_to_mb(size_str):
     size_str = size_str.replace(' ', '')
 
     # Extract number and unit
-    import re
     match = re.match(r'([\d.]+)([A-Za-z]+)', size_str)
     if not match:
         return 0.0
@@ -374,7 +373,6 @@ def _render_db_dataset_row(ds: dict) -> None:
     ds_id = ds.get("dataset_id", "—")
     table_name = ds.get("table_name", "—")
     doc_count = ds.get("doc_count", 0)
-    size = ds.get("size", "—")
 
     cols = st.columns([3, 2, 1, 1])
     cols[0].write(ds_id)

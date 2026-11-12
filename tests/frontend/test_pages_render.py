@@ -140,3 +140,60 @@ def test_the_indexing_page_renders_with_a_selected_dataset(monkeypatch, frontend
     assert metrics.get("Docs") == "1,398"
     buttons = " ".join(str(b.label) for b in app.button)
     assert "Build All Indices" in buttons
+
+
+def _clustering_page(monkeypatch, frontend_dir, datasets):
+    """Render the clustering page with one dataset in the database."""
+    import api.clustering as clustering_api
+    import api.indexing as indexing_api
+    import app_pages.clustering as page
+
+    monkeypatch.setattr(page, "_get_datasets_with_embeddings", lambda: datasets)
+    monkeypatch.setattr(
+        indexing_api,
+        "get_db_info",
+        lambda: StubResponse(data={"datasets": [{"dataset_id": "cranfield", "doc_count": 1398}]}),
+    )
+    monkeypatch.setattr(clustering_api, "status", lambda dataset: StubResponse(data={"status": "not_clustered"}))
+
+    app = AppTest.from_file(str(frontend_dir / "app.py"), default_timeout=180)
+    app.session_state["selected_page"] = "clustering"
+    app.session_state["selected_dataset"] = "cranfield"
+    app.run()
+    return app
+
+
+def test_the_clustering_page_offers_the_run_action(monkeypatch, frontend_dir):
+    app = _clustering_page(monkeypatch, frontend_dir, ["cranfield"])
+
+    assert list(app.exception) == []
+    buttons = " ".join(str(b.label) for b in app.button)
+    assert "Run Clustering" in buttons
+
+
+def test_the_clustering_page_reaches_the_service_when_run_is_pressed(monkeypatch, frontend_dir):
+    """Pressing Run must reach the service; a leftover guard once made this a NameError."""
+    import api.clustering as clustering_api
+
+    calls = []
+
+    def fake_run(dataset, **kwargs):
+        calls.append((dataset, kwargs))
+        return StubResponse(ok=False, data=None, error="service offline")
+
+    monkeypatch.setattr(clustering_api, "run", fake_run)
+    app = _clustering_page(monkeypatch, frontend_dir, ["cranfield"])
+
+    next(b for b in app.button if "Run Clustering" in str(b.label)).click().run()
+
+    assert list(app.exception) == []
+    assert calls and calls[0][0] == "cranfield"
+    assert any("Clustering failed" in str(e.value) for e in app.error)
+
+
+def test_the_clustering_page_explains_why_it_cannot_run(monkeypatch, frontend_dir):
+    """The help screen used to read a variable that only existed inside render()."""
+    app = _clustering_page(monkeypatch, frontend_dir, [])
+
+    assert list(app.exception) == []
+    assert any("No datasets with embeddings" in str(w.value) for w in app.warning)

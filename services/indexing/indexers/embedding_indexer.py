@@ -101,7 +101,7 @@ class EmbeddingIndexer:
 
         self.doc_ids = doc_ids
 
-        logger.info(f"Embeddings created successfully")
+        logger.info("Embeddings created successfully")
         logger.info(f"  Shape: {self.embeddings.shape}")
         logger.info(f"  Dtype: {self.embeddings.dtype}")
         logger.info(f"  Memory: {self.embeddings.nbytes / (1024**2):.2f} MB")

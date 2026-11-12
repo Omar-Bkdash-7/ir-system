@@ -71,7 +71,7 @@ def list_directory_contents(path: str, max_items: int = 10) -> None:
             if item.is_file():
                 try:
                     size = f" ({item.stat().st_size:,} bytes)"
-                except:
+                except OSError:
                     pass
             print(f"     - {item.name} [{item_type}]{size}")
         

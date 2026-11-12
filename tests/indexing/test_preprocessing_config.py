@@ -10,7 +10,7 @@ import types
 import unittest
 from unittest import mock
 
-from tests.indexing._support import FakeDatabase, WorkdirTestCase, have
+from tests.indexing._support import FakeDatabase, WorkdirTestCase
 
 DATASET = "demo/ds"
 TABLE = "dataset_demo_ds"

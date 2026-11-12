@@ -8,7 +8,6 @@ import time
 import streamlit as st
 
 import config
-import api.gateway as gateway
 import api.health as health_api
 import api.indexing as indexing_api
 from constants import (

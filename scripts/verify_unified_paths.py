@@ -180,7 +180,7 @@ def list_local_datasets():
         if not ir_home.exists():
             print(f"{YELLOW}⚠ IR_DATASETS_HOME does not exist yet{RESET}")
             print(f"   Path: {ir_home}")
-            print(f"   This is normal if no datasets have been downloaded yet.")
+            print("   This is normal if no datasets have been downloaded yet.")
             return True
         
         scanner = LocalDatasetScanner()
@@ -196,7 +196,7 @@ def list_local_datasets():
                 print(f"    Size: {size_mb} MB, Files: {file_count}")
         else:
             print(f"{YELLOW}No datasets found (or empty directory){RESET}")
-            print(f"   This is normal if no datasets have been downloaded yet.")
+            print("   This is normal if no datasets have been downloaded yet.")
         
         return True
         
@@ -209,7 +209,7 @@ def list_local_datasets():
 def main():
     """Run all verification checks."""
     print(f"\n{BLUE}{'=' * 80}")
-    print(f"Dataset Paths Unified Verification")
+    print("Dataset Paths Unified Verification")
     print(f"{'=' * 80}{RESET}\n")
     
     results = {

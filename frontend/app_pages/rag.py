@@ -184,7 +184,7 @@ def _render_models_status(models: Optional[Dict[str, Any]]):
         if remote_state == "ok":
             st.success(f"🌐 Remote: {remote_name}")
         elif remote_state == "not_configured":
-            st.error(f"🌐 Remote: Not configured")
+            st.error("🌐 Remote: Not configured")
         else:
             problem = REMOTE_PROBLEMS.get(remote_state, remote_state)
             st.warning(f"🌐 Remote: {problem}")
@@ -194,15 +194,15 @@ def _render_models_status(models: Optional[Dict[str, Any]]):
             loaded = " (loaded)" if local.get("loaded") else ""
             st.success(f"💻 Local: {local_name}{loaded}")
         elif local_state == "downloading":
-            st.info(f"💻 Local: Downloading...")
+            st.info("💻 Local: Downloading...")
         elif local_state == "disabled":
-            st.info(f"💻 Local: Disabled")
+            st.info("💻 Local: Disabled")
         elif local_state == "error":
-            st.error(f"💻 Local: Download failed")
+            st.error("💻 Local: Download failed")
         else:
             col_status, col_btn = st.columns([3, 1])
             with col_status:
-                st.warning(f"💻 Local: Not downloaded")
+                st.warning("💻 Local: Not downloaded")
             with col_btn:
                 if st.button("📥", key="rag_local_download_quick", help="Download local model"):
                     if _start_local_download():

@@ -38,7 +38,7 @@ def render_result_card(doc: Dict, rank: int, model_label: str = "") -> None:
     text = doc.get("text", "")
 
     rank_icon, rank_css = _RANK_BADGES.get(rank, (f"#{rank}", ""))
-    border_extra = f"border-color:var(--ctp-yellow)" if rank == 1 else (
+    border_extra = "border-color:var(--ctp-yellow)" if rank == 1 else (
         "border-color:var(--ctp-subtext0)" if rank == 2 else (
         "border-color:var(--ctp-peach)" if rank == 3 else ""))
 
@@ -49,8 +49,6 @@ def render_result_card(doc: Dict, rank: int, model_label: str = "") -> None:
     full_text_html = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     
     # Use CSS for show/hide functionality without page refresh
-    expand_id = f"expand_{model_label}_{doc_id}_{rank}".replace(" ", "_").replace("/", "_")
-    
     if len(text) > _SNIPPET_LEN:
         # Collapsible card with pure CSS
         st.markdown(

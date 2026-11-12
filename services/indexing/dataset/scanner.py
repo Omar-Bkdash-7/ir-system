@@ -39,7 +39,7 @@ class LocalDatasetScanner:
         home = self.path_resolver.get_ir_home()
         
         logger.info("=" * 80)
-        logger.info(f"Starting dataset scan")
+        logger.info("Starting dataset scan")
         logger.info(f"IR_DATASETS_HOME: {home}")
         logger.info(f"Directory exists: {home.exists()}")
         logger.info(f"Directory is_dir: {home.is_dir() if home.exists() else 'N/A'}")

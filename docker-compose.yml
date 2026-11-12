@@ -34,7 +34,7 @@
 # ------------
 # Healthchecks are defined in compose (not Dockerfile) because shared images can't
 # have per-service healthcheck commands baked in. All app services use curl to hit
-# their /health endpoint; postgres uses pg_isready; redis uses redis-cli ping.
+# their /health endpoint; postgres uses pg_isready.
 #
 # DEV VS PROD DIFFERENCES (applied by docker-compose.dev.yml override)
 # --------------------------------------------------------------------
@@ -54,7 +54,7 @@
 #
 #   8000: api_gateway       8004: ranking            8501: frontend
 #   8001: preprocessing     8005: query_refinement   5432: postgres
-#   8002: indexing          8006: evaluation         6379: redis
+#   8002: indexing          8006: evaluation
 #   8003: retrieval         8007: clustering
 #   8008: rag
 #
@@ -87,9 +87,6 @@ volumes:
   postgres_data:
     name: ir_postgres_data
   
-  # Cache
-  redis_data:
-    name: ir_redis_data
   
   # Persistent application data
   datasets:
@@ -167,11 +164,6 @@ x-common-environment: &common-env
   PYTHONUNBUFFERED: "1"
   ENVIRONMENT: ${ENVIRONMENT:-production}
   DATABASE_URL: postgresql://${POSTGRES_USER:-ir_user}:${POSTGRES_PASSWORD:-ir_pass}@postgres:5432/${POSTGRES_DB:-ir_db}
-  REDIS_URL: redis://:${REDIS_PASSWORD:-redis_change_me_in_production}@redis:6379/0
-  REDIS_HOST: redis
-  REDIS_PORT: 6379
-  REDIS_PASSWORD: ${REDIS_PASSWORD:-redis_change_me_in_production}
-  CACHE_TTL: ${CACHE_TTL:-3600}
   IR_DATASETS_HOME: /app/data/datasets/.ir_datasets
   SENTENCE_TRANSFORMERS_HOME: /app/data/models
   TORCH_HOME: /app/data/cache/torch
@@ -247,42 +239,6 @@ services:
     mem_reservation: 512M
 
   # ---------------------------------------------------------------------------
-  # Redis - Caching Layer
-  # ---------------------------------------------------------------------------
-  redis:
-    image: redis:7-alpine
-    container_name: ir_redis
-    command: >
-      redis-server
-      --appendonly yes
-      --maxmemory 512mb
-      --maxmemory-policy allkeys-lru
-      --requirepass ${REDIS_PASSWORD:-redis_change_me_in_production}
-      --bind 0.0.0.0
-      --protected-mode yes
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    volumes:
-      - redis_data:/data
-    networks:
-      - backend_net
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD:-redis_change_me_in_production}", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    cpus: 1.0
-    mem_limit: 1G
-    mem_reservation: 256M
-
-  # ---------------------------------------------------------------------------
   # API Gateway - Entry point for all requests
   # ---------------------------------------------------------------------------
   api_gateway:
@@ -298,8 +254,6 @@ services:
       - backend_net
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
       preprocessing:
         condition: service_started

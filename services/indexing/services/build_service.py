@@ -131,7 +131,7 @@ def _check_dataset_in_database(dataset_name: str, table_name: str) -> None:
                     "",
                     "Problem Details:",
                     f"  • Expected database table: {table_name}",
-                    f"  • Table status: Does not exist",
+                    "  • Table status: Does not exist",
                     f"  • Available datasets in database: {', '.join(available_datasets) if available_datasets else 'None'}",
                     "",
                     "Required Action:",

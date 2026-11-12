@@ -83,7 +83,7 @@ def _display_dataset_info(dataset: str):
         try:
             size_bytes = embeddings_file.stat().st_size
             index_size_mb = size_bytes / (1024 * 1024)
-        except:
+        except OSError:
             pass
     
     with st.container(border=True):
@@ -152,24 +152,25 @@ def render():
 
 
 def _render_missing_embeddings_help() -> None:
-    """Explain what the user must build before clustering is possible."""
-    if not available_datasets:
-        st.warning("⚠️ No datasets with embeddings available for clustering")
-        st.info("""
-        **To perform clustering, you need datasets with embeddings built:**
-        1. ✓ Dataset downloaded locally
-        2. ✓ Dataset uploaded to database
-        3. ✓ **Embedding index built**
-        
-        **Next steps:**
-        - Go to **Indexing** page
-        - Select a dataset
-        - Build **Embedding Index**
-        - Return here to perform clustering
-        """)
-        if st.button("🗂️ Go to Indexing", type="primary"):
-            st.switch_page("app_pages/indexing.py")
-        return
+    """Explain what the user must build before clustering is possible.
+
+    Only reached when no dataset has an embedding index, so it does not need the list.
+    """
+    st.warning("⚠️ No datasets with embeddings available for clustering")
+    st.info("""
+    **To perform clustering, you need datasets with embeddings built:**
+    1. ✓ Dataset downloaded locally
+    2. ✓ Dataset uploaded to database
+    3. ✓ **Embedding index built**
+    
+    **Next steps:**
+    - Go to **Indexing** page
+    - Select a dataset
+    - Build **Embedding Index**
+    - Return here to perform clustering
+    """)
+    if st.button("🗂️ Go to Indexing", type="primary"):
+        st.switch_page("app_pages/indexing.py")
     
 
 
@@ -208,7 +209,7 @@ def _render_clustering_status(status: Optional[Dict], clusters_exist: bool) -> N
         col1, col2, col3 = st.columns([2, 2, 1])
         
         with col1:
-            st.success(f"✅ Clusters Available")
+            st.success("✅ Clusters Available")
         
         with col2:
             st.info(
@@ -326,45 +327,46 @@ def _run_clustering(
     metric: str,
     force_recompute: bool,
 ) -> None:
-    """Call the clustering service and render the outcome."""
-    # Run clustering
-    if run_clustering:
-        with st.spinner("Clustering documents... This may take a few minutes."):
-            response = clustering_api.run(
-                dataset,
-                min_cluster_size=min_cluster_size,
-                min_samples=min_samples,
-                metric=metric,
-                force_recompute=force_recompute,
-                long_run=True,
-            )
-            
-            if response.ok:
-                st.success("✅ Clustering completed successfully!")
-                st.session_state["clustering_result"] = response.data
-                st.rerun()
+    """Call the clustering service and render the outcome.
+
+    The caller only calls this after the Run/Rebuild button was pressed.
+    """
+    with st.spinner("Clustering documents... This may take a few minutes."):
+        response = clustering_api.run(
+            dataset,
+            min_cluster_size=min_cluster_size,
+            min_samples=min_samples,
+            metric=metric,
+            force_recompute=force_recompute,
+            long_run=True,
+        )
+
+        if response.ok:
+            st.success("✅ Clustering completed successfully!")
+            st.session_state["clustering_result"] = response.data
+            st.rerun()
+        else:
+            error_msg = response.error or "Unknown error"
+
+            # Check if it's the libraries not installed error
+            if "not installed" in error_msg.lower() or response.status_code == 503:
+                st.error("❌ Clustering Libraries Not Installed")
+                st.warning(
+                    """
+                    **The clustering feature requires additional libraries that are not yet installed.**
+                    
+                    To enable clustering, rebuild the Docker image:
+                    ```bash
+                    docker-compose -f docker-compose.yml -f docker-compose.dev.yml build clustering
+                    docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d clustering
+                    ```
+                    
+                    **Required libraries:** hdbscan, umap-learn
+                    """
+                )
             else:
-                error_msg = response.error or "Unknown error"
-                
-                # Check if it's the libraries not installed error
-                if "not installed" in error_msg.lower() or response.status_code == 503:
-                    st.error("❌ Clustering Libraries Not Installed")
-                    st.warning(
-                        """
-                        **The clustering feature requires additional libraries that are not yet installed.**
-                        
-                        To enable clustering, rebuild the Docker image:
-                        ```bash
-                        docker-compose -f docker-compose.yml -f docker-compose.dev.yml build clustering
-                        docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d clustering
-                        ```
-                        
-                        **Required libraries:** hdbscan, umap-learn
-                        """
-                    )
-                else:
-                    st.error(f"❌ Clustering failed: {error_msg}")
-    
+                st.error(f"❌ Clustering failed: {error_msg}")
+
     st.divider()
     
 

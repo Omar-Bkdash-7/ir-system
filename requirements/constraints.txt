@@ -235,7 +235,6 @@ protobuf==4.25.9
     # via
     #   -r requirements/05-transformers.txt
     #   streamlit
-psutil==7.2.2
     # via
     #   -r requirements/01-base.txt
     #   accelerate
@@ -281,7 +280,6 @@ pyyaml==6.0.3
     #   uvicorn
 rank-bm25==0.2.2
     # via -r requirements/07-ir.txt
-redis==8.1.0
     # via -r requirements/01-base.txt
 referencing==0.37.0
     # via

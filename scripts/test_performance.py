@@ -29,7 +29,7 @@ def test_lazy_loading():
     
     for page_name in pages:
         start = time.perf_counter()
-        module = app._get_page_module(page_name)
+        app._get_page_module(page_name)
         elapsed = time.perf_counter() - start
         print(f"  ✓ Page '{page_name}' loaded in {elapsed*1000:.2f}ms")
 

@@ -1,6 +1,6 @@
 # Snapshot of the module as it was BEFORE the rewrite, kept only as the reference for tests/ranking/test_differential.py.
 # Do not import it from the service.
-from typing import List, Dict
+from typing import List
 import logging
 
 logger = logging.getLogger(__name__)

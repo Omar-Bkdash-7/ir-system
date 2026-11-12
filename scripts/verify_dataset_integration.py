@@ -247,7 +247,6 @@ def check_file_structure():
         "data/cache",
     ]
     
-    all_exist = True
     for dir_path in expected_dirs:
         full_path = project_root / dir_path
         if full_path.exists():

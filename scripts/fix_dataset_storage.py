@@ -10,7 +10,6 @@ This script:
 
 import os
 import shutil
-import json
 import logging
 from pathlib import Path
 
@@ -121,19 +120,19 @@ def consolidate_datasets():
             correct_size = correct_datasets[dataset_id]['size_bytes']
             duplicate_size = info['size_bytes']
             
-            logger.info(f"  Dataset exists in both locations:")
+            logger.info("  Dataset exists in both locations:")
             logger.info(f"    Correct:   {correct_size / 1024 / 1024:.1f} MB")
             logger.info(f"    Duplicate: {duplicate_size / 1024 / 1024:.1f} MB")
             
             if correct_size >= duplicate_size:
-                logger.info(f"  ✅ Correct location has complete data. Removing duplicate...")
+                logger.info("  ✅ Correct location has complete data. Removing duplicate...")
                 try:
                     shutil.rmtree(duplicate_path)
                     logger.info(f"  ✅ Removed duplicate at {duplicate_path}")
                 except Exception as e:
                     logger.error(f"  ❌ Failed to remove duplicate: {e}")
             else:
-                logger.warning(f"  ⚠️  Duplicate has more data. Moving to correct location...")
+                logger.warning("  ⚠️  Duplicate has more data. Moving to correct location...")
                 try:
                     if correct_path.exists():
                         shutil.rmtree(correct_path)
@@ -144,7 +143,7 @@ def consolidate_datasets():
                 except Exception as e:
                     logger.error(f"  ❌ Failed to move dataset: {e}")
         else:
-            logger.info(f"  Dataset only exists in duplicate location. Moving...")
+            logger.info("  Dataset only exists in duplicate location. Moving...")
             try:
                 correct_path.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(duplicate_path), str(correct_path))

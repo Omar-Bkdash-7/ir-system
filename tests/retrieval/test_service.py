@@ -1,7 +1,5 @@
 import unittest
 
-import numpy as np
-
 from common.exceptions import IndexNotFoundError, InvalidQueryError, RetrievalError
 from services.retrieval.config import RetrievalSettings
 from services.retrieval.core.compact import CompactCache

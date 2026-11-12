@@ -474,7 +474,7 @@ def _render_dataset_filter(metrics: Dict[str, dict], data_source: str) -> str:
             history = history_resp.data.get("history", [])
             datasets_set = set(item.get("dataset") for item in history if item.get("dataset"))
             available_datasets = sorted(list(datasets_set))
-    except:
+    except Exception:  # the history filter is optional; the page works without it
         available_datasets = []
 
     # ── Dataset selector & source indicator ────────────────────────────────

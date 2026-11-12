@@ -1,6 +1,6 @@
 # 🔍 Information Retrieval System
 
-A production-ready, scalable Information Retrieval system built with microservices architecture, featuring multiple retrieval methods (TF-IDF, BM25, Embeddings, Hybrid), Redis caching, and comprehensive monitoring.
+A production-ready, scalable Information Retrieval system built with microservices architecture, featuring multiple retrieval methods (TF-IDF, BM25, Embeddings, Hybrid) and a Streamlit interface.
 
 ## 🌟 Features
 
@@ -13,7 +13,6 @@ A production-ready, scalable Information Retrieval system built with microservic
 ### Production Features
 - **Microservices Architecture**: 8 independent services with clear separation of concerns
 - **Docker Optimization**: Multi-stage builds, layer caching, ~90% build time reduction
-- **Redis Caching**: Query result caching with LRU eviction
 - **Health Monitoring**: Real-time metrics (CPU, memory, response times)
 - **Database Optimization**: Indexed columns, materialized views for common queries
 - **Resource Management**: CPU/Memory limits per service
@@ -50,12 +49,11 @@ A production-ready, scalable Information Retrieval system built with microservic
 │   3.5GB    │  │    800MB    │  │   3.5GB      │
 └────────────┘  └─────────────┘  └──────────────┘
                          │
-        ┌────────────────┴────────────────┐
-        │ database_net                    │
-┌───────┴────────┐              ┌─────────┴──────┐
-│   PostgreSQL   │              │     Redis      │
-│  (Data Store)  │              │    (Cache)     │
-└────────────────┘              └────────────────┘
+                         ▼
+               ┌──────────────────┐
+               │    PostgreSQL    │
+               │   (Data Store)   │
+               └──────────────────┘
 ```
 
 ## 🚀 Quick Start
@@ -173,7 +171,6 @@ ir-project/
 │   └── frontend/                   # Web UI
 │
 ├── common/                          # Shared utilities
-│   ├── cache.py                    # Redis caching
 │   ├── database.py                 # PostgreSQL
 │   ├── health.py                   # Health endpoints
 │   ├── monitoring.py               # Metrics collection
@@ -182,7 +179,6 @@ ir-project/
 ├── scripts/                         # Management tools
 │   ├── init_db.py                  # Initialize DB schema
 │   ├── check_data.py               # Data status checker
-│   ├── clear_cache.py              # Redis cache management
 │   ├── refresh_views.py            # Refresh materialized views
 │   └── build_indices.py            # Build all indices
 │
@@ -224,10 +220,6 @@ make logs-retrieval      # Retrieval service
 make ps                  # Show running services
 make restart             # Restart all
 make health              # Health status
-
-# Cache management
-make cache-stats         # Cache statistics
-make clear-cache         # Clear all cache
 
 # Database
 make refresh-views       # Refresh materialized views
@@ -289,7 +281,6 @@ The same sequence runs in the `contract` job of `.github/workflows/tests.yml`, w
 
 ### Runtime Performance
 - **Startup Time**: 30 seconds (models preloaded)
-- **Query Caching**: 10-50x faster for repeated queries
 - **Database Queries**: Optimized with indexes + materialized views
 
 ## 🔧 Configuration
@@ -308,10 +299,6 @@ Key variables in `.env`:
 POSTGRES_USER=ir_user
 POSTGRES_PASSWORD=your_secure_password
 POSTGRES_DB=ir_db
-
-# Cache
-REDIS_PORT=6379
-CACHE_TTL=3600
 
 # Service Ports
 API_GATEWAY_PORT=8000
@@ -383,16 +370,6 @@ make stats
 # Clean up
 make down-volumes
 docker system prune -a --volumes
-```
-
-### Cache issues
-
-```bash
-# Clear Redis cache
-make clear-cache
-
-# Check cache stats
-make cache-stats
 ```
 
 ## 💾 Disk Management

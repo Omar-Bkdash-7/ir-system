@@ -22,7 +22,7 @@ def build_tfidf_index(force_rebuild: bool = False):
         logger.info("TF-IDF index already exists")
         logger.info("Use --force to rebuild")
         indexer.load()
-        logger.info(f"Current index stats:")
+        logger.info("Current index stats:")
         logger.info(f"  Documents: {len(indexer.doc_ids)}")
         logger.info(f"  Vocabulary size: {len(indexer.vectorizer.vocabulary_)}")
         logger.info(f"  Matrix shape: {indexer.matrix.shape}")

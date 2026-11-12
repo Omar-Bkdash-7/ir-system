@@ -26,7 +26,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-import config                                        # noqa: E402
 from constants import DEFAULTS, SS_SELECTED_PAGE    # noqa: E402
 from obs import get_logger, setup_logging           # noqa: E402
 from components.sidebar import render_sidebar       # noqa: E402
