@@ -265,6 +265,20 @@ docker compose -f docker-compose.ci.yml down -v
 
 The same sequence runs in the `contract` job of `.github/workflows/tests.yml`, which builds the three images itself. No host ports are published, so it can run next to a dev stack.
 
+#### Lint
+
+`ruff` comes from the same dev requirements, so the gate that runs in CI can be run against the checkout without installing anything on the host. The rules live in `ruff.toml` at the repository root and ruff must see that file, so the whole checkout is mounted at `/repo` — the dev compose mounts only `services/`, `common/` and `tests/`, which would hide `frontend/`, `scripts/` and the config:
+
+```bash
+# Any image built after ruff was added to requirements/10-dev.txt carries it.
+docker run --rm -v "$PWD":/repo -w /repo ir-light:latest ruff check .
+
+# Windows Git Bash needs the path made literal, otherwise it rewrites /repo:
+MSYS_NO_PATHCONV=1 docker run --rm -v "D:/path/to/ir:/repo" -w /repo ir-light:latest ruff check .
+```
+
+Only the pyflakes rules (F) are enabled: unused imports and variables, undefined names, redefinitions. The test suite covers the branches it enters; this covers the rest — the `undefined name` class of bug only fires on the path nobody exercised. The same command is the `lint` job in `.github/workflows/tests.yml`, pinned to the ruff version in `requirements/constraints.txt`.
+
 ## 📊 Performance Optimizations
 
 ### Build Time

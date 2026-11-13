@@ -1,8 +1,10 @@
-# Test tooling only.
-# Installed by the shared base-builder stage, so `python -m pytest` works inside every service
-# image after a rebuild - no ad-hoc `pip install pytest` in a running container.
+# Test tooling and the linter.
+# Installed by the shared base-builder stage, so `python -m pytest` and `ruff check` work inside
+# every service image after a rebuild - no ad-hoc `pip install` in a running container.
+# The rule set is in ruff.toml at the repository root; CI runs the same command.
 -c constraints.txt
 
 pytest
 iniconfig
 pluggy
+ruff
