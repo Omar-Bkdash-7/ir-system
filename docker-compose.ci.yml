@@ -111,9 +111,9 @@ services:
   # One-shot: the contract assertions themselves.
   tests:
     image: ${IR_LIGHT_IMAGE:-ir-light:latest}
-    # Runs as root only to install pytest into the shared venv; it writes nothing else.
-    user: "0:0"
-    command: sh -c "python -m pip install -q pytest && python -m pytest tests/integration -q"
+    # pytest ships in requirements/10-dev.txt, which every image installs, so the run
+    # needs neither root nor a network round trip to PyPI.
+    command: python -m pytest tests/integration -q
     environment:
       <<: *common-env
       GATEWAY_URL: http://api_gateway:8000

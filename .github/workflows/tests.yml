@@ -33,11 +33,11 @@ jobs:
           cache-to: type=gha,mode=max,scope=ir-ml
 
       # tests/integration needs the running stack; the contract job below owns it.
+      # pytest comes from requirements/10-dev.txt inside the image, so no install step.
       - name: Backend suite
         run: |
           docker run --rm -e PYTHONDONTWRITEBYTECODE=1 \
             -v "$PWD:/repo" -w /repo --entrypoint /bin/bash ir-ml:ci -c '
-              python -m pip install -q pytest
               python -m pytest tests -q --ignore=tests/integration'
 
       - name: Build the frontend image
@@ -55,7 +55,6 @@ jobs:
         run: |
           docker run --rm -e PYTHONDONTWRITEBYTECODE=1 \
             -v "$PWD:/repo" -w /repo --entrypoint /bin/bash ir-frontend:ci -c '
-              python -m pip install -q pytest
               python -m pytest tests/frontend -q'
 
   # The unit suites fake their neighbours, so they cannot notice a service changing
