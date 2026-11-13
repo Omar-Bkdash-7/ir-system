@@ -102,3 +102,23 @@ jobs:
       - name: Stop the stack
         if: always()
         run: docker compose -f docker-compose.ci.yml down -v
+
+  # Unit tests only cover code that runs; this gate covers the mistakes that never
+  # reach them: an undefined name in a branch a test does not take, an import nobody
+  # uses, a variable computed and dropped. Rules are limited to pyflakes (F) in
+  # ruff.toml, so nothing here argues about formatting. Takes seconds — no images.
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff==0.17.5
+
+      - name: Ruff (pyflakes rules)
+        run: ruff check .

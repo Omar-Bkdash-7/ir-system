@@ -1,0 +1,48 @@
+# Minimal lint gate.
+#
+# Only pyflakes rules (F): unused imports/variables, undefined names, redefinitions,
+# unreachable code. No style rules, so nothing here can argue about formatting —
+# the job exists to catch the mistakes that make a service crash at runtime, which
+# is exactly what `undefined name` bugs did in the UI.
+#
+#   ruff check .          # from the repository root
+#
+# Ruff understands `# noqa: F401`, which is how the deliberate import probes
+# (skip-detection in tests, the import smoke test in scripts/validate_clustering.py)
+# stay green without loosening the rule.
+
+target-version = "py311"
+line-length = 120
+
+exclude = [
+    # the same defaults ruff ships with, spelled out because `exclude` replaces them
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".tox",
+    ".venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "node_modules",
+    "site-packages",
+    "venv",
+    # repository-specific
+    ".agents",
+    "data",
+    "docs",
+    "logs",
+    "temp",
+]
+
+[lint]
+select = [
+    "F",   # pyflakes
+]
+
+[lint.per-file-ignores]
+# A package's __init__ re-exports its public surface; those names are used from
+# the outside, so pyflakes would call every one of them unused.
+"common/__init__.py" = ["F401"]
