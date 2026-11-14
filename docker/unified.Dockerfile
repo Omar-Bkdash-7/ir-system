@@ -110,6 +110,10 @@ WORKDIR /app
 # =============================================================================
 FROM python:3.11-slim AS runtime-base
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd -r appuser --gid=1000 && \
     useradd -r -g appuser --uid=1000 --home-dir=/home/appuser --shell=/bin/bash appuser && \
     mkdir -p /home/appuser && \
