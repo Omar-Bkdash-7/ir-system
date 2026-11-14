@@ -1,6 +1,8 @@
 # 🔍 Information Retrieval System
 
-A production-ready, scalable Information Retrieval system built with microservices architecture, featuring multiple retrieval methods (TF-IDF, BM25, Embeddings, Hybrid) and a Streamlit interface.
+An Information Retrieval system built as microservices: eight FastAPI services behind one gateway, a Streamlit interface, and multiple retrieval methods (TF-IDF, BM25, Embeddings, Hybrid).
+
+**Status:** the services and the three test levels (unit, contract, lint) are in place and passing. Two things are deliberately not there yet, and the rest of this file does not pretend otherwise: compose runs the development overrides only (a production variant is described but not written), and there is no metrics layer — observability is `/health`, container healthchecks and rotating log files (see [Observability](#-observability)). The images are built from the same requirements the tests use, so a rebuild is all that is needed for an existing image to carry `pytest` and `ruff`.
 
 ## 🌟 Features
 
@@ -10,51 +12,34 @@ A production-ready, scalable Information Retrieval system built with microservic
 - **Query Refinement**: Spell correction, synonym expansion
 - **Performance Evaluation**: MAP, Precision@K, Recall, nDCG
 
-### Production Features
-- **Microservices Architecture**: 8 independent services with clear separation of concerns
-- **Docker Optimization**: Multi-stage builds, layer caching, ~90% build time reduction
-- **Health Monitoring**: Real-time metrics (CPU, memory, response times)
-- **Database Optimization**: Indexed columns, materialized views for common queries
-- **Resource Management**: CPU/Memory limits per service
-- **Network Isolation**: Separate networks for frontend/backend/database layers
+### Engineering Features
+- **Microservices**: one gateway plus eight services (preprocessing, indexing, retrieval, ranking, query_refinement, evaluation, clustering, rag), and a Streamlit frontend that talks to the gateway only
+- **Shared image tiers**: six images, one per dependency tier, so adding a library rebuilds one tier instead of every service (sizes below)
+- **Database**: indexed columns and materialized views for the common queries
+- **Resource limits**: `cpus` / `mem_limit` / `mem_reservation` on all twelve blocks in `docker-compose.yml`
+- **Network isolation**: three networks (frontend / backend / database)
+- **Logging**: one logger per service, console plus a rotating file handler (10MB × 5) under `logs/`
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────┐
-│  Frontend   │ (Streamlit - Port 8501)
-│  (500MB)    │
-└──────┬──────┘
-       │ frontend_net
-       │
-┌──────┴────────────────────────────────────────┐
-│            API Gateway                        │
-│         (FastAPI - Port 8000)                 │
-│              (250MB)                          │
-└───────────────┬───────────────────────────────┘
-                │ backend_net
-        ┌───────┴───────┐
-        │               │
-┌───────┴────┐  ┌──────┴────────┐  ┌──────────────┐
-│Preprocessing│  │   Indexing    │  │  Retrieval   │
-│   (NLP)     │  │     (ML)      │  │     (ML)     │
-│   800MB     │  │    3.5GB      │  │    3.5GB     │
-└─────────────┘  └───────────────┘  └──────────────┘
-                         │
-        ┌────────────────┼────────────────┐
-        │                │                │
-┌───────┴────┐  ┌────────┴────┐  ┌───────┴──────┐
-│  Ranking   │  │Query Refine │  │ Evaluation   │
-│    (ML)    │  │    (NLP)    │  │    (ML)      │
-│   3.5GB    │  │    800MB    │  │   3.5GB      │
-└────────────┘  └─────────────┘  └──────────────┘
-                         │
-                         ▼
-               ┌──────────────────┐
-               │    PostgreSQL    │
-               │   (Data Store)   │
-               └──────────────────┘
+frontend (Streamlit, 8501)
+  │ frontend_net
+api_gateway (FastAPI, 8000)        CORS, rate limit, timeouts, retries
+  │ backend_net
+  ├── preprocessing   8001   nlp tier
+  ├── indexing        8002   ml tier
+  ├── retrieval       8003   ml tier    (owns the indices and the embedding model)
+  ├── ranking         8004   light tier
+  ├── query_refinement 8005  ml tier
+  ├── evaluation      8006   ml tier
+  ├── clustering      8007   clustering tier
+  └── rag             8008   rag tier
+        │ database_net
+     postgres:15     5432
 ```
+
+The names on the right are the image tiers from `docker-compose.yml`; their sizes are in [Image sizes](#image-sizes). The frontend talks to the gateway only — never to a service directly.
 
 ## 🚀 Quick Start
 
@@ -76,63 +61,54 @@ cp .env.example .env
 # Edit .env if needed (passwords, ports, etc.)
 nano .env
 
-# Build all services (one command, no manual steps)
-make build
+# Build the six tier images (one command, no manual steps)
+docker compose build
 ```
 
-**Build time**: ~30 minutes (first time with cold cache), ~7 seconds (incremental rebuild)
+**Build time**: ~30 minutes on a cold cache (network-bound), a few seconds when nothing changed.
 
 ### 2. Start Database & Initialize
 
 ```bash
-# Start PostgreSQL
-docker compose up -d postgres
-
-# Wait 10 seconds for PostgreSQL to be ready
-sleep 10
+# Start PostgreSQL and wait for its healthcheck instead of guessing a delay
+docker compose up -d --wait postgres
 
 # Initialize database schema (creates tables, indexes, materialized views)
-make init-db
+docker compose -f docker-compose.yml -f docker-compose.tools.yml --profile tools run --rm -T init_db
 ```
 
 ### 3. Data Preparation
 
-#### Option A: If you have existing data in PostgreSQL
+The one-off data jobs live in `docker-compose.tools.yml`: each is a container that runs a single script and exits. `--profile tools` is what makes compose accept them.
 
 ```bash
-# Check what you have
-make check-data
+TOOLS="docker compose -f docker-compose.yml -f docker-compose.tools.yml --profile tools"
 
-# Rebuild indices only
-make build-indices
+# Option A - you already have documents and indices
+$TOOLS run --rm -T check_data      # status of the datasets, indices and database
+$TOOLS run --rm -T build_indices   # rebuild TF-IDF + BM25 + embeddings
+
+# Option B - start from raw data
+$TOOLS run --rm -T download_dataset    # fetch a dataset with ir-datasets
+$TOOLS run --rm -T preprocess_dataset  # NLP cleaning and tokenization
+$TOOLS run --rm -T load_to_db          # write documents to PostgreSQL
+$TOOLS run --rm -T build_indices       # build TF-IDF, BM25 and embedding indices
 ```
 
-#### Option B: Starting from scratch
-
-```bash
-# Download dataset (using ir-datasets)
-make download-dataset
-
-# Preprocess data (NLP cleaning, tokenization)
-make preprocess-data
-
-# Load to database
-make load-to-db
-
-# Build all indices (TF-IDF, BM25, Embeddings)
-make build-indices
-```
+Single-index variants exist as `build_tfidf`, `build_bm25` and `build_embeddings`; `run_evaluation` scores a model over a dataset with `scripts/evaluate_retrieval.py`.
 
 **Time**: ~30-60 minutes depending on dataset size
 
 ### 4. Start All Services
 
 ```bash
-# Start everything
-make up
+# Development stack: bind mounts and --reload
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
-# Check health
-make health
+# Every service answers /health
+for p in 8000 8001 8002 8003 8004 8005 8006 8007 8008; do
+  printf '%s ' "$p"; curl -fsS -o /dev/null -w '%{http_code}\n' "http://localhost:$p/health"
+done
 ```
 
 ### 5. Access
@@ -145,55 +121,73 @@ make health
 ## 📦 Project Structure
 
 ```
-ir-project/
-├── docker/                          # Dockerfiles
-│   ├── python-base.Dockerfile      # Shared base (180MB)
-│   ├── base.Dockerfile             # API services (250MB)
-│   ├── service-nlp.Dockerfile      # NLP services (800MB)
-│   ├── ml.Dockerfile               # ML services (3.5GB)
-│   └── frontend.Dockerfile         # Streamlit (500MB)
+ir/
+├── docker/
+│   └── unified.Dockerfile          # Every stage: system → base-builder → ir/scientific/nlp/
+│                                   #   torch/transformers/clustering/rag builders → runtime-* targets
 │
-├── requirements/                    # Split dependencies
-│   ├── base.txt                    # Core APIs
-│   ├── ml.txt                      # ML/DL libraries
-│   ├── nlp.txt                     # NLP libraries
-│   ├── ir.txt                      # IR-specific
-│   └── frontend.txt                # Streamlit
+├── requirements/                   # Dependency tiers, installed in order by the Dockerfile
+│   ├── 00-system.txt               # pip/setuptools floor (no OS packages here)
+│   ├── 01-base.txt                 # fastapi, uvicorn, httpx, pydantic, numpy, pandas, psycopg2
+│   ├── 02-scientific.txt           # scikit-learn, scipy (builds on 01)
+│   ├── 03-nlp.txt                  # spacy, nltk, without torch
+│   ├── 04-torch.txt                # CPU-only torch; the version is held to avoid CUDA wheels
+│   ├── 05-transformers.txt         # transformers + sentence-transformers (builds on 04)
+│   ├── 06-clustering.txt           # hdbscan, umap-learn (topics come from c-TF-IDF, not BERTopic)
+│   ├── 07-ir.txt                   # ir-datasets, rank-bm25, ir-measures
+│   ├── 08-frontend.txt             # streamlit, plotly
+│   ├── 09-rag.txt                  # HuggingFace Inference API client; no local models
+│   ├── 10-dev.txt                  # pytest + ruff (every image, for the suite and the lint gate)
+│   ├── constraints.txt             # Pinned versions
+│   └── requirements.in             # pip-compile input
 │
-├── services/                        # Microservices
-│   ├── api_gateway/                # Entry point
+├── services/                       # Microservices
+│   ├── api_gateway/                # Entry point, CORS + rate limit, calls the others
 │   ├── preprocessing/              # Text preprocessing
 │   ├── indexing/                   # Index building
 │   ├── retrieval/                  # Document retrieval
 │   ├── ranking/                    # Result ranking
 │   ├── query_refinement/           # Query enhancement
 │   ├── evaluation/                 # Performance metrics
-│   └── frontend/                   # Web UI
+│   ├── clustering/                 # Topic clustering
+│   └── rag/                        # Retrieval-augmented generation
 │
-├── common/                          # Shared utilities
+├── frontend/                       # Streamlit app (app.py, app_pages/, components/, api/, styles/)
+│
+├── common/                         # Shared, imported by every service
+│   ├── config.py                   # YAML + environment settings
 │   ├── database.py                 # PostgreSQL
-│   ├── health.py                   # Health endpoints
-│   ├── monitoring.py               # Metrics collection
-│   └── logging_config.py           # Logging setup
+│   ├── security.py                 # Unified CORS + rate limiting
+│   ├── logging_config.py           # Per-service logger, rotating file handler
+│   ├── http_client.py              # Inter-service calls with retries/timeouts
+│   ├── exceptions.py               # Also: exception_handlers.py
+│   ├── dataset_context.py          # Active-dataset resolution
+│   ├── device.py                   # CPU/CUDA selection
+│   └── model_loader.py             # Cached model loading
 │
-├── scripts/                         # Management tools
-│   ├── init_db.py                  # Initialize DB schema
-│   ├── check_data.py               # Data status checker
+├── configs/config.yaml             # Defaults every service reads through common/config.py
+├── scripts/                        # One-shot jobs, each wrapped by docker-compose.tools.yml
+│   ├── init_db.py                  # Schema, indexes, materialized views
+│   ├── check_data.py               # Data/indices status
 │   ├── refresh_views.py            # Refresh materialized views
-│   └── build_indices.py            # Build all indices
+│   ├── build_indices.py            # All indices (also build_tfidf/bm25/embedding_index.py)
+│   ├── download_dataset.py, preprocess_dataset.py, load_documents_to_db.py
+│   ├── evaluate_retrieval.py       # Evaluation runs
+│   └── ci_seed.py                  # Seeds the contract-test dataset
 │
-├── data/                            # Data volumes (Docker)
-│   ├── datasets/                   # Raw datasets
-│   ├── indices/                    # Built indices
-│   ├── models/                     # ML models
-│   ├── cache/                      # Temp cache
-│   └── evaluation/                 # Results
+├── tests/                          # pytest suites, one package per service plus frontend/, integration/, system/
+├── data/                           # Bind-mounted in dev: datasets, indices, models, cache,
+│                                   #   processed, evaluation, metadata, clusters
+├── logs/                           # Rotating per-service logs
+├── docs/                           # Design notes, deployment guide, user guide
 │
-├── docker-compose.yml               # Production config
-├── docker-compose.dev.yml           # Development overrides
-├── docker-compose.tools.yml         # Scripts & tools
-├── Makefile                         # Automation commands
-└── .env.example                     # Environment template
+├── docker-compose.yml              # Base stack (all services, limits, healthchecks)
+├── docker-compose.dev.yml          # Development overrides: bind mounts, --reload
+├── docker-compose.tools.yml        # One-shot scripts (init_db, build_indices, ...)
+├── docker-compose.ci.yml           # Contract-test stack: postgres + 3 services + seed + tests
+├── pytest.ini                      # Collection limited to tests/
+├── ruff.toml                       # Lint rules (pyflakes only)
+└── .env.example                    # Environment template
 ```
 
 ## 🛠️ Development
@@ -208,31 +202,31 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 ### Useful Commands
 
 ```bash
-# View all available commands
-make help
+DEV="docker compose -f docker-compose.yml -f docker-compose.dev.yml"
+TOOLS="docker compose -f docker-compose.yml -f docker-compose.tools.yml --profile tools"
 
-# View logs
-make logs                # All services
-make logs-api            # API Gateway only
-make logs-retrieval      # Retrieval service
+# Logs
+$DEV logs -f                 # all services
+$DEV logs -f api_gateway     # one service
+$DEV logs -f retrieval
 
 # Service management
-make ps                  # Show running services
-make restart             # Restart all
-make health              # Health status
+$DEV ps                      # running services and their health
+$DEV restart                 # restart all
+$DEV restart api_gateway     # restart one
 
 # Database
-make refresh-views       # Refresh materialized views
-make db-shell            # PostgreSQL shell
-make db-backup           # Backup database
+$TOOLS run --rm -T refresh_views        # refresh materialized views
+$DEV exec postgres psql -U ${POSTGRES_USER:-ir_user} -d ${POSTGRES_DB:-ir_db}
+$DEV exec -T postgres pg_dump -U ${POSTGRES_USER:-ir_user} ${POSTGRES_DB:-ir_db} > backup.sql
 
-# Data checks
-make check-data          # Status of datasets/indices
+# Data
+$TOOLS run --rm -T check_data           # status of datasets/indices
 
 # Cleanup
-make down                # Stop services
-make down-volumes        # Stop + remove data
-make clean-all           # Remove everything
+$DEV down                    # stop services
+$DEV down -v                 # stop + remove the data volumes
+docker system prune -a --volumes   # remove everything: images, cache, volumes
 ```
 
 ### Tests
@@ -279,23 +273,30 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "D:/path/to/ir:/repo" -w /repo ir-light:la
 
 Only the pyflakes rules (F) are enabled: unused imports and variables, undefined names, redefinitions. The test suite covers the branches it enters; this covers the rest — the `undefined name` class of bug only fires on the path nobody exercised. The same command is the `lint` job in `.github/workflows/tests.yml`, pinned to the ruff version in `requirements/constraints.txt`.
 
-## 📊 Performance Optimizations
+## 📊 Image sizes and build time
 
-### Build Time
-- **Before**: 5 minutes per build
-- **After**: 30 seconds (with cache)
-- **Improvement**: 90% faster
+<a id="image-sizes"></a>
 
-### Image Sizes
-| Service | Before | After | Reduction |
-|---------|--------|-------|-----------|
-| API Gateway | 2.1GB | 250MB | -88% |
-| Preprocessing | 2.1GB | 800MB | -62% |
-| Frontend | 2.1GB | 500MB | -76% |
+Measured on this checkout with `docker images`; one image serves every service in its tier:
 
-### Runtime Performance
-- **Startup Time**: 30 seconds (models preloaded)
-- **Database Queries**: Optimized with indexes + materialized views
+| Image | Services | Size |
+|---|---|---|
+| `ir-light:latest` | api_gateway, ranking | 615MB |
+| `ir-frontend:latest` | frontend | 765MB |
+| `ir-nlp:latest` | preprocessing | 835MB |
+| `ir-ml:latest` | indexing, retrieval, query_refinement, evaluation | 1.84GB |
+| `ir-rag:latest` | rag | 1.9GB |
+| `ir-clustering:latest` | clustering | 2.23GB |
+
+The spread is the dependency tiers, not waste: CPU torch and transformers dominate `ir-ml`, and `ir-clustering` adds hdbscan/UMAP on top of it. `ir-rag` is large mostly because it inherits the same chain.
+
+How the sizes translate into build time:
+
+- **First build**: ~30 minutes, almost entirely downloading dependencies.
+- **Rebuild with the same requirements**: a few seconds — BuildKit cache mounts keep the pip wheels.
+- **Adding a library**: only the tier that needs it rebuilds, and only the new wheel downloads.
+
+Runtime: services start in seconds. The first call that needs an embedding model pays for loading it, then it stays in `data/models` and the process keeps it in memory — the retrieval container's memory footprint after loading the `vaswani` index was measured at ~117MB, which is why it runs two uvicorn workers (`RETRIEVAL_UVICORN_WORKERS`).
 
 ## 🔧 Configuration
 
@@ -345,12 +346,21 @@ A value that cannot be parsed is logged and ignored, never fatal.
 
 ### Resource Limits
 
-Each service has CPU/Memory limits:
-- **API Gateway**: 1 CPU, 512MB RAM
-- **Preprocessing**: 2 CPUs, 2GB RAM
-- **ML Services**: 4 CPUs, 4GB RAM each
+Set with `cpus` / `mem_limit` / `mem_reservation` (the keys compose actually enforces outside swarm; `deploy.resources` is ignored there):
 
-Adjust in `docker-compose.yml` if needed.
+| Service | cpus | mem_limit |
+|---|---|---|
+| postgres | 2.0 | 2G |
+| api_gateway | 1.0 | 1G |
+| frontend | 1.0 | 1G |
+| preprocessing | 2.0 | 2G |
+| ranking | 2.0 | 2G |
+| query_refinement | 2.0 | 2G |
+| evaluation | 2.0 | 2G |
+| rag | 2.0 | 4G |
+| indexing | 4.0 | 4G |
+| retrieval | 4.0 | 4G |
+| clustering | 4.0 | 4G |
 
 ## 🐛 Troubleshooting
 
@@ -378,17 +388,17 @@ docker compose restart postgres
 ### Out of memory
 
 ```bash
-# Check resource usage
-make stats
+# Check resource usage against the configured limits
+docker stats --no-stream
 
 # Clean up
-make down-volumes
+$DEV down -v
 docker system prune -a --volumes
 ```
 
 ## 💾 Disk Management
 
-The Docker restructure achieves ~79% disk savings (39GB → 8GB after pruning).
+Images, build cache and data volumes are all on the same disk; measure before trusting any figure, because the numbers move with the datasets and models that have been downloaded.
 
 ### Check Disk Usage
 
@@ -414,12 +424,15 @@ docker system prune -a -f
 docker builder prune -a -f
 ```
 
-### Current Disk Usage (after restructure)
+### Where the space goes
 
-- **Images**: 2.7GB (5 shared tier images)
-- **Build Cache**: 5GB (cached pip wheels for incremental builds)
-- **Volumes**: 539MB (models, datasets, indices)
-- **Total**: ~8GB (vs. 39GB baseline, 79% reduction)
+```bash
+docker system df -v
+```
+
+- **Images**: the sum of the six tiers in [Image sizes](#image-sizes), ~8GB.
+- **Build cache**: pip wheels kept by the BuildKit cache mounts; this is what makes incremental builds take seconds.
+- **Volumes and bind mounts**: `data/` (datasets, indices, models) grows the most — embedding models alone are several hundred MB per model.
 
 ### BuildKit Cache Strategy
 
@@ -430,40 +443,32 @@ The unified Dockerfile uses BuildKit cache mounts for pip installs. This means:
 
 Cache is preserved across builds until you run `docker builder prune`.
 
-## 📈 Monitoring
+## 📈 Observability
 
-### Health Endpoints
+### Health
 
-Each service exposes:
-- `/health` - Basic health check
-- `/metrics` - Detailed metrics (CPU, memory, requests)
-- `/readiness` - Readiness probe
-- `/liveness` - Liveness probe
-
-### Metrics Example
+Every service exposes `GET /health`, which is a liveness check: the process answers and its imports resolved. Compose uses the same route for the container healthchecks (30s interval, 10s timeout, 3 retries, 40s start period).
 
 ```bash
-curl http://localhost:8000/metrics
+curl -fsS http://localhost:8000/health
 ```
 
-```json
-{
-  "service": "api_gateway",
-  "status": "healthy",
-  "uptime_seconds": 145.23,
-  "requests": {
-    "total": 1234,
-    "errors": 5,
-    "error_rate": 0.004,
-    "avg_response_time_ms": 23.4
-  },
-  "system": {
-    "cpu_percent": 15.2,
-    "memory_percent": 42.1,
-    "process_memory_mb": 128.5
-  }
-}
+There are no `/readiness` or `/liveness` routes: those paths appear in `common/security.py` only so that, if a probe is added later, it is exempt from the rate limit.
+
+### Metrics
+
+The application itself does not sample CPU or memory and does not expose a Prometheus endpoint. For resource usage use Docker:
+
+```bash
+docker stats --no-stream
+docker compose ps
 ```
+
+The only `/metrics` route in the system belongs to the evaluation service (`GET /metrics`, plus `/metrics/per-query` and `/metrics/refinement-comparison`), and it reports retrieval quality per model — MAP, P@K, nDCG — not system resources.
+
+### Logs
+
+`common/logging_config.py` gives each service a console handler and a rotating file handler at `logs/<service>.log` (10MB per file, 5 backups), reusing the `logs` volume. Set `LOG_LEVEL` (default `INFO`) to change verbosity; if the file cannot be created the service continues with console logging only.
 
 ## 🔒 Security
 
@@ -486,6 +491,10 @@ curl http://localhost:8000/metrics
 ## 📚 Documentation
 
 For detailed documentation, see:
-- API docs: http://localhost:8000/docs
-- Architecture diagrams: `/docs/architecture.md`
-- Database schema: `/docs/database.md`
+- API docs: http://localhost:8000/docs (generated by FastAPI from the gateway's routes)
+- `docs/ir.md` — design notes for the retrieval side
+- `docs/run.md` — running the stack step by step
+- `docs/deployment-guide.md` — deployment notes
+- `docs/RAG.md` — the RAG service
+- `docs/project-context.md` — how the pieces fit together
+- `docs/user-guide/` — end-user guide (Arabic and English)
