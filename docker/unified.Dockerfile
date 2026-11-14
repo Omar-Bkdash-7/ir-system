@@ -97,7 +97,16 @@ RUN groupadd -r appuser --gid=1000 && \
     mkdir -p /home/appuser && \
     chown -R appuser:appuser /home/appuser
 
-RUN mkdir -p /app /opt/venv && \
+# The data directories are created here, owned by appuser, because compose mounts named
+# volumes on top of them: Docker seeds a fresh volume with the directory found in the
+# image *including its ownership*. Without this a new volume lands as root:root, the
+# service (uid 1000) cannot create anything inside it, and `import ir_datasets` (which
+# creates its home directory while importing) turns into a PermissionError that surfaces
+# as HTTP 500 on every dataset endpoint.
+RUN mkdir -p /app /opt/venv /app/logs \
+        /app/data/datasets/.ir_datasets /app/data/indices /app/data/models \
+        /app/data/cache /app/data/processed /app/data/evaluation \
+        /app/data/metadata /app/data/clusters && \
     chown -R appuser:appuser /app
 
 WORKDIR /app

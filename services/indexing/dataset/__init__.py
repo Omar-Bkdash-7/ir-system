@@ -25,7 +25,38 @@ Public API:
     - get_db_dataset_info: Get database statistics
 """
 
+import logging
+import os
+from pathlib import Path
+
 from services.indexing._lazy import install_lazy_exports
+
+_logger = logging.getLogger(__name__)
+
+
+def _ensure_ir_datasets_home() -> None:
+    """
+    Create ``IR_DATASETS_HOME`` before anything imports ``ir_datasets``.
+
+    ``ir_datasets`` creates its download root while being imported, so a missing or
+    unwritable directory raises ``PermissionError`` at import time and takes down every
+    endpoint of the modules that import it -- including the ones that only read the
+    filesystem, such as listing local datasets or metadata.
+
+    Creating the root here, once per package import, keeps that failure out of the import
+    chain. A directory this process is not allowed to create is left alone: the calls that
+    genuinely need ``ir_datasets`` then fail individually with a clear message.
+    """
+    home = os.environ.get("IR_DATASETS_HOME")
+    if not home:
+        return
+    try:
+        Path(home).mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        _logger.warning("Cannot create IR_DATASETS_HOME %s: %s", home, exc)
+
+
+_ensure_ir_datasets_home()
 
 # Public names are resolved on first access (PEP 562), so importing this package no longer drags in psycopg2,
 # ir_datasets, scikit-learn and numpy. Every old import path keeps working.

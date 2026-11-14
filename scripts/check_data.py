@@ -88,7 +88,9 @@ def check_processed_data():
         logger.warning("⚠️  Processed data directory not found")
         return
     
-    files = list(processed_dir.glob("*.jsonl"))
+    # Layout-agnostic: processed output can sit directly in the directory or in a
+    # per-dataset subdirectory, depending on which builder wrote it.
+    files = sorted(processed_dir.rglob("*.jsonl"))
     if files:
         logger.info(f"📝 Processed files: {len(files)}")
         for f in files:
@@ -111,21 +113,30 @@ def check_indices():
         logger.warning("⚠️  Indices directory not found")
         return
     
-    # Check for different index types
-    index_files = {
-        "TF-IDF": ["tfidf_matrix.npz", "tfidf_vectorizer.pkl", "tfidf_doc_ids.json"],
-        "BM25": ["bm25_index.pkl", "doc_id_map.json"],
-        "Embeddings": ["embeddings.npy", "doc_id_map.json"]
-    }
-    
-    for index_type, files in index_files.items():
-        found = all((indices_dir / f).exists() for f in files)
-        if found:
-            total_size = sum((indices_dir / f).stat().st_size for f in files)
-            size_mb = total_size / (1024 * 1024)
-            logger.info(f"✅ {index_type}: {size_mb:.2f} MB")
+    # Indices live per dataset: data/indices/<dataset>/{tfidf,bm25,embedding}/.
+    # The old check looked for a single flat layout (data/indices/tfidf_matrix.npz),
+    # which no longer exists, so every index reported "Not built" even when present.
+    required = ("tfidf", "bm25", "embedding")
+
+    dataset_dirs = sorted(d for d in indices_dir.iterdir() if d.is_dir())
+    if not dataset_dirs:
+        logger.warning("⚠️  No dataset has built indices")
+        return
+
+    for dataset_dir in dataset_dirs:
+        missing = [name for name in required if not (dataset_dir / name).is_dir()]
+        size_mb = sum(
+            f.stat().st_size for f in dataset_dir.rglob("*") if f.is_file()
+        ) / (1024 * 1024)
+
+        if missing:
+            logger.warning(
+                f"⚠️  {dataset_dir.name}: {size_mb:.2f} MB - missing {', '.join(missing)}"
+            )
         else:
-            logger.warning(f"❌ {index_type}: Not built")
+            logger.info(
+                f"✅ {dataset_dir.name}: {size_mb:.2f} MB (tfidf, bm25, embedding)"
+            )
 
 
 def check_metadata():
