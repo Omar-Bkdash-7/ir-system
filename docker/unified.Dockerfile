@@ -110,7 +110,11 @@ WORKDIR /app
 # =============================================================================
 FROM python:3.11-slim AS runtime-base
 
-RUN mkdir -p /app /app/logs /app/data && \
+RUN groupadd -r appuser --gid=1000 && \
+    useradd -r -g appuser --uid=1000 --home-dir=/home/appuser --shell=/bin/bash appuser && \
+    mkdir -p /home/appuser && \
+    chown -R appuser:appuser /home/appuser && \
+    mkdir -p /app /app/logs /app/data && \
     chown -R appuser:appuser /app
 
 WORKDIR /app
@@ -250,9 +254,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # =============================================================================
 FROM runtime-base AS runtime-light
 
-RUN mkdir -p /app /app/logs /app/data && \
-    chown -R appuser:appuser /app
-
 COPY --from=ir-builder /opt/venv /opt/venv
 
 COPY --chown=appuser:appuser common/ /app/common/
@@ -274,9 +275,6 @@ USER appuser
 # Services: preprocessing
 # =============================================================================
 FROM runtime-base AS runtime-nlp
-
-RUN mkdir -p /app /app/logs /app/data && \
-    chown -R appuser:appuser /app
 
 COPY --from=nlp-builder /opt/venv /opt/venv
 COPY --chown=appuser:appuser --from=nlp-builder /opt/nltk_data /app/.cache/nltk_data
@@ -302,8 +300,7 @@ USER appuser
 # =============================================================================
 FROM runtime-base AS runtime-ml
 
-RUN mkdir -p /app /app/logs /app/data /app/data/models && \
-    chown -R appuser:appuser /app
+RUN mkdir -p /app/data/models && chown -R appuser:appuser /app/data/models
 
 COPY --from=transformers-builder /opt/venv /opt/venv
 COPY --chown=appuser:appuser --from=nlp-builder /opt/nltk_data /app/.cache/nltk_data
@@ -333,8 +330,7 @@ USER appuser
 # =============================================================================
 FROM runtime-base AS runtime-clustering
 
-RUN mkdir -p /app /app/logs /app/data /app/data/models && \
-    chown -R appuser:appuser /app
+RUN mkdir -p /app/data/models && chown -R appuser:appuser /app/data/models
 
 COPY --from=clustering-builder /opt/venv /opt/venv
 COPY --chown=appuser:appuser --from=nlp-builder /opt/nltk_data /app/.cache/nltk_data
@@ -364,9 +360,6 @@ USER appuser
 # =============================================================================
 FROM runtime-base AS runtime-frontend
 
-RUN mkdir -p /app /app/logs /app/data && \
-    chown -R appuser:appuser /app
-
 COPY --from=frontend-builder /opt/venv /opt/venv
 
 COPY --chown=appuser:appuser common/ /app/common/
@@ -391,8 +384,8 @@ USER appuser
 # =============================================================================
 FROM runtime-base AS runtime-rag
 
-RUN mkdir -p /app /app/logs /app/data /app/data/models /models/rag /models/hf-home && \
-    chown -R appuser:appuser /app /models
+RUN mkdir -p /app/data/models /models/rag /models/hf-home && \
+    chown -R appuser:appuser /app/data/models /models
 
 COPY --from=rag-builder /opt/venv /opt/venv
 COPY --chown=appuser:appuser --from=nlp-builder /opt/nltk_data /app/.cache/nltk_data
