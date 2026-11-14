@@ -55,7 +55,9 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
-      start_period: 20s
+      # spaCy and the NLTK corpora are loaded in the lifespan hook, before uvicorn
+      # accepts connections; a cold CI runner needs more room than a warm laptop.
+      start_period: 60s
 
   retrieval:
     image: ${IR_ML_IMAGE:-ir-ml:latest}

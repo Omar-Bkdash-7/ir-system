@@ -165,23 +165,65 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 RUN mkdir -p /opt/nltk_data
 
+# NLTK corpora are fetched once, at build time, and the archives are verified.
+# A download can return an HTML error page with HTTP 200 and nltk happily writes it to
+# corpora/<name>.zip; that file only fails later, at request time. wordnet and stopwords
+# are used by the pipeline, so a broken archive must stop the build; omw-1.4 only adds
+# multilingual lemmas (English lemmas come from wordnet) and its upstream archive has
+# been serving non-zip bodies, so it is kept when usable and dropped otherwise.
 RUN python - <<'PY'
-import sys, zipfile
+import os, shutil, sys, time, zipfile
+
 import nltk
 
 DATA = "/opt/nltk_data"
-for name in ("wordnet", "stopwords", "omw-1.4", "punkt", "punkt_tab"):
-    nltk.download(name, download_dir=DATA, quiet=True)
-    if name not in ("wordnet", "stopwords", "omw-1.4"):
-        continue
-    archive = f"{DATA}/corpora/{name}.zip"
+REQUIRED = ("wordnet", "stopwords")
+OPTIONAL = ("omw-1.4",)
+NO_VERIFY = ("punkt", "punkt_tab")
+
+
+def fetch(name, attempts=3):
+    for attempt in range(1, attempts + 1):
+        if nltk.download(name, download_dir=DATA, quiet=True):
+            return True
+        print(f"{name}: attempt {attempt} failed", flush=True)
+        time.sleep(2 * attempt)
+    print(f"{name}: giving up after {attempts} attempts", flush=True)
+    return False
+
+
+def archive_ok(path):
     try:
-        with zipfile.ZipFile(archive) as bundle:
+        with zipfile.ZipFile(path) as bundle:
             if not bundle.namelist():
-                raise ValueError("archive is empty")
+                return False, "archive is empty"
+        return True, ""
     except Exception as exc:
-        sys.exit(f"NLTK corpus {name!r} is unusable after download ({archive}): {exc}")
-    print(f"NLTK corpus {name!r} verified")
+        return False, str(exc)
+
+
+for name in REQUIRED + OPTIONAL + NO_VERIFY:
+    fetch(name)
+
+for name in REQUIRED:
+    path = f"{DATA}/corpora/{name}.zip"
+    ok, why = archive_ok(path)
+    if not ok:
+        sys.exit(f"NLTK corpus {name!r} is unusable after download ({path}): {why}")
+    print(f"NLTK corpus {name!r} verified", flush=True)
+
+for name in OPTIONAL:
+    path = f"{DATA}/corpora/{name}.zip"
+    ok, why = archive_ok(path)
+    if ok:
+        print(f"NLTK corpus {name!r} verified", flush=True)
+        continue
+    print(f"NLTK corpus {name!r} unusable ({why}); dropping it", flush=True)
+    shutil.rmtree(f"{DATA}/corpora/{name}", ignore_errors=True)
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 PY
 
 # =============================================================================

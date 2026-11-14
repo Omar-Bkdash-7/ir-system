@@ -121,43 +121,31 @@ x-build-light: &build-light
   context: .
   dockerfile: docker/unified.Dockerfile
   target: runtime-light
-  cache_from:
-    - ir-light:latest
 
 x-build-nlp: &build-nlp
   context: .
   dockerfile: docker/unified.Dockerfile
   target: runtime-nlp
-  cache_from:
-    - ir-nlp:latest
 
 x-build-ml: &build-ml
   context: .
   dockerfile: docker/unified.Dockerfile
   target: runtime-ml
-  cache_from:
-    - ir-ml:latest
 
 x-build-clustering: &build-clustering
   context: .
   dockerfile: docker/unified.Dockerfile
   target: runtime-clustering
-  cache_from:
-    - ir-clustering:latest
 
 x-build-rag: &build-rag
   context: .
   dockerfile: docker/unified.Dockerfile
   target: runtime-rag
-  cache_from:
-    - ir-rag:latest
 
 x-build-frontend: &build-frontend
   context: .
   dockerfile: docker/unified.Dockerfile
   target: runtime-frontend
-  cache_from:
-    - ir-frontend:latest
 
 x-common-environment: &common-env
   PYTHONPATH: /app

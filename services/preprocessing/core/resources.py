@@ -154,7 +154,7 @@ def warmup_resources(use_spacy: bool = True, use_stemming: bool = False,
 
 def _ensure_nltk_data():
     """
-    Make sure NLTK data (wordnet, omw-1.4, stopwords) is available.
+    Make sure NLTK data (wordnet, stopwords) is available.
 
     Data already present in the image is verified locally without any network
     access. A partially downloaded/corrupt zip is removed and re-downloaded,
@@ -162,9 +162,11 @@ def _ensure_nltk_data():
     breaks startup indefinitely. Any problem here is logged and swallowed:
     warmup is a best-effort fallback, the app must still start.
     """
+    # English lemmas come from wordnet alone. omw-1.4 only adds multilingual data, and
+    # its upstream archive has been serving non-zip bodies, so a missing copy must not
+    # turn startup into a download attempt.
     _required_nltk_data = {
         'wordnet': 'corpora/wordnet',
-        'omw-1.4': 'corpora/omw-1.4',
         'stopwords': 'corpora/stopwords',
     }
     missing = [
@@ -185,7 +187,7 @@ def _ensure_nltk_data():
         # blocking startup forever / leaving truncated downloads when the
         # network is unreachable
         old_timeout = socket.getdefaulttimeout()
-        socket.setdefaulttimeout(60)
+        socket.setdefaulttimeout(10)
         try:
             for pkg in missing:
                 _download_nltk_package(nltk, pkg)
