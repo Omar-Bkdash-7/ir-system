@@ -1,12 +1,15 @@
 import logging
 import logging.handlers
+import os
 from pathlib import Path
 
 
 def setup_logging(service_name: str, log_to_file: bool = True) -> logging.Logger:
     from common.config import get_config
 
-    log_level_str = get_config("logging.level", "INFO").upper()
+    # The environment wins: compose passes LOG_LEVEL into every container, and
+    # configs/config.yaml `logging.level` is the default when it is unset.
+    log_level_str = (os.getenv("LOG_LEVEL") or get_config("logging.level", "INFO")).upper()
     log_level = getattr(logging, log_level_str, logging.INFO)
 
     log_format = get_config(
