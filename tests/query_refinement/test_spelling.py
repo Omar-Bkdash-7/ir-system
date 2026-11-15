@@ -71,6 +71,22 @@ class DomainVocabularyTest(unittest.TestCase):
         checker = engine({"boundray": "boundary"}, frequencies={"boundary": 3252})
         self.assertEqual(checker.correct("boundray")[0], "boundary")
 
+    def test_a_single_edit_typo_of_a_domain_word_is_accepted(self):
+        # It really occurs 425 times: rare next to "boundary", but a one-edit fix of a long word is a typo.
+        checker = engine({"aerodynamcs": "aerodynamics"}, frequencies={"aerodynamics": 425})
+        self.assertEqual(checker.correct("aerodynamcs of wings")[0], "aerodynamics of wings")
+
+    def test_a_rare_single_edit_candidate_is_still_refused(self):
+        # "forebody" is an ordinary word in the aerodynamics corpus; "forebode" (50) is a guess one edit away.
+        checker = engine({"forebody": "forebode"}, frequencies={"forebode": 50})
+        self.assertEqual(checker.correct("forebody"), ("forebody", {}))
+
+    def test_the_single_edit_floor_is_configurable(self):
+        checker = engine(
+            {"aerodynamcs": "aerodynamics"}, frequencies={"aerodynamics": 425}, min_single_edit_frequency=500
+        )
+        self.assertEqual(checker.correct("aerodynamcs"), ("aerodynamcs", {}))
+
     def test_regional_spelling_variants_are_left_alone(self):
         # behaviour -> behavior is not a typo, and rewriting it breaks matching against a British-spelled corpus.
         checker = engine({"behaviour": "behavior"}, frequencies={"behavior": 24294})

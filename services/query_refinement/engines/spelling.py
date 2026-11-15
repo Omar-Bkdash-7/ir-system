@@ -31,14 +31,18 @@ class SpellingCorrectionEngine:
         spell_checker=None,
         stop_words: Optional[Set[str]] = None,
         min_correction_frequency: int = 1000,
+        min_single_edit_frequency: int = 100,
     ):
         self.spell_checker = spell_checker or SpellChecker()
         self.max_edit_distance = max_edit_distance
         self.confidence_threshold = confidence_threshold
         # Rare words are almost never the right replacement for an unknown word: the dictionary turned "aeroelastic"
         # into "ceroplastic" (frequency 50) and "forebody" into "forebode" (50), while real fixes (boundary 3252,
-        # question 213832) are common words.
+        # question 213832) are common words. That floor is meant for rewrites of several characters; a one-edit fix
+        # of a longer word is a typo, and a domain word like "aerodynamics" only occurs 425 times in the dictionary,
+        # so single-edit fixes get their own, lower floor instead of being blocked outright.
         self.min_correction_frequency = min_correction_frequency
+        self.min_single_edit_frequency = min_single_edit_frequency
         self._frequency = getattr(self.spell_checker, "word_frequency", {})
         self.stop_words = set(stop_words) if stop_words else self._load_stopwords()
         self.protected_terms = self._load_protected_terms()
@@ -95,13 +99,17 @@ class SpellingCorrectionEngine:
             # that spells the word the British way.
             return None
 
-        if self._frequency_count(candidate) < self.min_correction_frequency:
-            logger.debug("Rare candidate for %r: %r", word, candidate)
-            return None
-
         distance = levenshtein_distance(lower, candidate)
         if distance > self.max_edit_distance:
             logger.debug("Distance too high: %r -> %r (%d)", word, candidate, distance)
+            return None
+
+        # A one-edit fix only has to be a word the dictionary actually knows (100 occurrences); anything that
+        # moves two or more characters still has to be a common word.
+        floor = self.min_single_edit_frequency if distance <= 1 else self.min_correction_frequency
+        frequency = self._frequency_count(candidate)
+        if frequency < floor:
+            logger.debug("Rare candidate for %r: %r (frequency=%d < %d)", word, candidate, frequency, floor)
             return None
 
         confidence = 1.0 - distance / max(len(lower), len(candidate))

@@ -45,6 +45,7 @@ class QueryRefinementService:
             confidence_threshold=get_config("query_refinement.confidence_threshold", 0.7),
             stop_words=stop_words,
             min_correction_frequency=get_config("query_refinement.min_correction_frequency", 1000),
+            min_single_edit_frequency=get_config("query_refinement.min_single_edit_frequency", 100),
         )
         self.expansion_engine = expansion_engine or QueryExpansionEngine(
             max_synonyms_per_word=get_config("query_refinement.max_synonyms_per_word", 2),

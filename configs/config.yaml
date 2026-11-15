@@ -71,9 +71,12 @@ query_refinement:
   max_edit_distance: 2
   min_term_length: 4
   confidence_threshold: 0.7
-  # A replacement word needs this many dictionary occurrences; it rejects "ceroplastic" for aeroelastic (50) while
-  # keeping "boundary" for boundray (3252).
+  # A replacement word needs this many dictionary occurrences when the fix moves two or more characters; it rejects
+  # "ceroplastic" for aeroelastic (50) while keeping "boundary" for boundray (3252).
   min_correction_frequency: 1000
+  # A one-edit fix is a typo, not a guess, so it only needs the candidate to be a word the dictionary knows:
+  # "aerodynamcs" -> "aerodynamics" occurs 425 times, and "forebody" -> "forebode" (50) stays below this floor.
+  min_single_edit_frequency: 100
   max_query_words_for_expansion: 4
   # A synonym needs at least this many SemCor occurrences. At 2, boundary keeps "edge" but drops "bound" and layer
   # drops "bed": appending a word retrieval will run verbatim needs some evidence behind it.
