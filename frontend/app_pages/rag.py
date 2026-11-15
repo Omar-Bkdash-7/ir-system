@@ -330,7 +330,7 @@ def _render_download_notices(status: Dict[str, Any], phase: str):
     elif status.get("slow"):
         st.caption(
             "The connection is slow. The download continues, but it may take a long time. "
-            "See docs/RAG.md for faster alternatives."
+            "Raising RAG_LOCAL_THREADS (or the rag container's cpus limit) speeds it up."
         )
 
     if status.get("current_file") and status.get("files_total"):
