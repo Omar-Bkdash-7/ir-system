@@ -436,10 +436,6 @@ ir-system/
 └── .env.example                    # Environment template
 ```
 
-## 📝 License
-
-[Your License Here]
-
 ## 👥 Contributors
 
-[Your Name/Team]
+Solo project by **Omar Bkdash**.
